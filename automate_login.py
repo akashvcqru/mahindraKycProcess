@@ -3,9 +3,18 @@ import sys
 import time
 import logging
 import subprocess
+import re
 from datetime import datetime, timedelta
 from getpass import getpass
 from playwright.sync_api import sync_playwright
+import fitz  # PyMuPDF
+from pypdf import PdfReader
+from rapidfuzz import fuzz
+
+# Avoid charmap codec errors on Windows when printing Unicode/block characters
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 
 # Configure logging to console
 logging.basicConfig(
@@ -357,6 +366,32 @@ def download_supporting_documents(page, context, customer_name):
             return ".webp"
         return default
 
+    def get_filename_from_response(response):
+        # 1. Try Content-Disposition header
+        cd = response.headers.get("content-disposition", "")
+        if cd:
+            import re
+            match = re.search(r'filename=["\']?([^"\';]+)["\']?', cd)
+            if match:
+                return os.path.basename(match.group(1).strip())
+                
+        # 2. Try parsing filename from URL
+        url_path = response.url.split('?')[0]
+        base_name = os.path.basename(url_path)
+        if base_name and "." in base_name:
+            return os.path.basename(base_name)
+            
+        return None
+
+    def is_file_response(response):
+        try:
+            content_type = response.headers.get("content-type", "").lower()
+            if any(t in content_type for t in ["pdf", "image/", "octet-stream"]):
+                return True
+        except Exception:
+            pass
+        return False
+
     # Sanitize customer name for folder path
     safe_customer_name = "".join(c for c in customer_name if c.isalnum() or c in (" ", "_", "-")).strip()
     if not safe_customer_name:
@@ -375,12 +410,21 @@ def download_supporting_documents(page, context, customer_name):
         logging.warning("No download buttons (data-testid='downloadBtn') found/loaded within 15 seconds. Skipping.")
         return
         
-    buttons = page.locator(button_selector)
-    button_count = buttons.count()
-    logging.info(f"Found {button_count} document download buttons in Supporting Documents.")
+    all_buttons = page.locator(button_selector)
+    all_count = all_buttons.count()
+    
+    # Filter only visible and enabled buttons
+    buttons_to_download = []
+    for idx in range(all_count):
+        btn = all_buttons.nth(idx)
+        if btn.is_visible() and not btn.is_disabled():
+            buttons_to_download.append(btn)
+            
+    button_count = len(buttons_to_download)
+    logging.info(f"Found {all_count} download button slots, {button_count} are active/visible.")
     
     for i in range(button_count):
-        btn = buttons.nth(i)
+        btn = buttons_to_download[i]
         
         # Get the closest parent card ancestor to correctly extract the header title
         card = btn.locator("xpath=./ancestor::div[contains(@class, 'ant-card') or contains(@class, 'app_viewDocumentStrip')][1]").first
@@ -389,7 +433,7 @@ def download_supporting_documents(page, context, customer_name):
         try:
             title_el = card.locator(".ant-card-head-title, .ant-card-head")
             if title_el.count() > 0:
-                title_text = title_el.first.inner_text().split("\n")[0].strip()
+                title_text = title_el.first.text_content(timeout=1000).split("\n")[0].strip()
                 if title_text:
                     title = "".join(c for c in title_text if c.isalnum() or c in (" ", "_", "-")).strip()
         except Exception as title_err:
@@ -404,18 +448,29 @@ def download_supporting_documents(page, context, customer_name):
             "response": None
         }
         
+        # Watch for responses on the main page (handles lightbox/modal/inline fetches)
+        def on_main_response(res):
+            try:
+                if res.url == page.url or "dashboard" in res.url:
+                    return
+                if is_file_response(res):
+                    if event_result["response"] is None:
+                        event_result["response"] = res
+            except Exception:
+                pass
+
         def on_page(p):
             event_result["new_page"] = p
             
             # Watch for responses inside this new tab
-            def on_response(res):
+            def on_child_response(res):
                 try:
-                    if res.request.resource_type in ["document", "image"] or res.url == p.url:
+                    if is_file_response(res) or res.url == p.url:
                         if event_result["response"] is None:
                             event_result["response"] = res
                 except Exception:
                     pass
-            p.on("response", on_response)
+            p.on("response", on_child_response)
             
             # Watch for downloads inside this new tab
             p.on("download", lambda d: on_download(d))
@@ -425,6 +480,7 @@ def download_supporting_documents(page, context, customer_name):
             
         context.on("page", on_page)
         page.on("download", on_download)
+        page.on("response", on_main_response)
         
         success = False
         try:
@@ -440,6 +496,8 @@ def download_supporting_documents(page, context, customer_name):
             while time.time() - start_time < 10.0:
                 if event_result["download"] is not None:
                     break
+                if event_result["response"] is not None:
+                    break
                 if event_result["new_page"] is not None:
                     if page_open_time is None:
                         page_open_time = time.time()
@@ -451,18 +509,18 @@ def download_supporting_documents(page, context, customer_name):
             if event_result["download"] is not None:
                 download = event_result["download"]
                 suggested = download.suggested_filename
-                ext = ".pdf"
-                if "." in suggested:
-                    ext = "." + suggested.split(".")[-1]
-                target_path = os.path.join(target_dir, f"{title}{ext}")
+                target_path = os.path.join(target_dir, suggested)
                 download.save_as(target_path)
                 logging.info(f"Downloaded: {target_path}")
                 success = True
             elif event_result["response"] is not None:
                 response = event_result["response"]
                 body = response.body()
-                ext = get_extension_from_headers(response.headers)
-                target_path = os.path.join(target_dir, f"{title}{ext}")
+                filename = get_filename_from_response(response)
+                if not filename:
+                    ext = get_extension_from_headers(response.headers)
+                    filename = f"{title}{ext}"
+                target_path = os.path.join(target_dir, filename)
                 with open(target_path, "wb") as f:
                     f.write(body)
                 logging.info(f"Downloaded from response: {target_path}")
@@ -472,15 +530,19 @@ def download_supporting_documents(page, context, customer_name):
                 new_page.wait_for_load_state("load", timeout=5000)
                 url = new_page.url
                 
-                # Check for images or fallback
-                ext = ".pdf"
-                if any(img_ext in url.lower() for img_ext in [".png", ".jpg", ".jpeg", ".gif"]):
-                    for img_ext in [".png", ".jpg", ".jpeg", ".gif"]:
-                        if img_ext in url.lower():
-                            ext = img_ext
-                            break
+                # Check for filename from URL
+                url_path = url.split('?')[0]
+                filename = os.path.basename(url_path)
+                if not filename or "." not in filename:
+                    ext = ".pdf"
+                    if any(img_ext in url.lower() for img_ext in [".png", ".jpg", ".jpeg", ".gif"]):
+                        for img_ext in [".png", ".jpg", ".jpeg", ".gif"]:
+                            if img_ext in url.lower():
+                                ext = img_ext
+                                break
+                    filename = f"{title}{ext}"
                             
-                target_path = os.path.join(target_dir, f"{title}{ext}")
+                target_path = os.path.join(target_dir, filename)
                 
                 # Try fallback fetch
                 pdf_bytes = new_page.evaluate("""
@@ -515,12 +577,260 @@ def download_supporting_documents(page, context, customer_name):
                 page.remove_listener("download", on_download)
             except Exception:
                 pass
+            try:
+                page.remove_listener("response", on_main_response)
+            except Exception:
+                pass
                 
         if not success:
             logging.error(f"Could not download supporting document: {title}")
 
+_ocr_reader = None
+
+def get_ocr_reader():
+    global _ocr_reader
+    if _ocr_reader is None:
+        logging.info("Initializing EasyOCR reader (CPU mode)...")
+        import easyocr
+        _ocr_reader = easyocr.Reader(['en'], gpu=False)
+    return _ocr_reader
+
+def extract_text_hybrid(pdf_path):
+    logging.info(f"Extracting text from: {os.path.basename(pdf_path)}")
+    text = ""
+    try:
+        pdf_reader = PdfReader(pdf_path)
+        for page in pdf_reader.pages:
+            t = page.extract_text()
+            if t:
+                text += t + "\n"
+        text = text.strip()
+    except Exception as e:
+        logging.warning(f"Digital PDF read error for {pdf_path}: {e}")
+        
+    if text:
+        logging.info("--> Successfully extracted digital text.")
+        return text, True
+        
+    logging.info("--> No digital text found. Rendering pages for OCR...")
+    try:
+        reader = get_ocr_reader()
+        doc = fitz.open(pdf_path)
+        full_ocr_text = []
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            pix = page.get_pixmap(dpi=150)
+            png_bytes = pix.tobytes("png")
+            results = reader.readtext(png_bytes, detail=0)
+            page_text = " ".join(results)
+            full_ocr_text.append(page_text)
+        return "\n".join(full_ocr_text).strip(), False
+    except Exception as e:
+        logging.error(f"OCR failed for {pdf_path}: {e}")
+        return "", False
+
+def extract_best_name(text, claim_name):
+    cleaned_text = re.sub(r'[^A-Za-z\s]', ' ', text)
+    words = [w for w in cleaned_text.split() if len(w) > 0]
+    
+    claim_words = [w for w in re.sub(r'[^A-Za-z\s]', ' ', claim_name).split() if len(w) > 0]
+    n = len(claim_words)
+    if n == 0:
+        return "", 0.0
+        
+    best_name = ""
+    best_score = 0.0
+    
+    for size in [n, n+1, n+2]:
+        for i in range(len(words) - size + 1):
+            window_words = words[i:i+size]
+            candidate = " ".join(window_words)
+            score = fuzz.token_sort_ratio(candidate.lower(), claim_name.lower())
+            if score > best_score:
+                best_score = score
+                best_name = candidate
+                
+    return best_name, best_score
+
+def classify_and_extract(file_path, text, claim_customer_name):
+    filename = os.path.basename(file_path).upper()
+    text_upper = text.upper()
+    
+    is_pan = "PAN" in filename
+    is_cod = "COD" in filename or "DISCLAIMER" in filename or "DIS" in filename
+    
+    if not is_pan and not is_cod:
+        if "PERMANENT ACCOUNT NUMBER" in text_upper or "INCOME TAX DEPARTMENT" in text_upper:
+            is_pan = True
+        elif "CERTIFICATE OF DESTRUCTION" in text_upper or "CERTIFICATE OF DEPOSIT" in text_upper or "DISCLAIMER FOR" in text_upper:
+            is_cod = True
+            
+    result = {
+        "file_name": os.path.basename(file_path),
+        "file_type": "UNKNOWN",
+        "extracted_data": {},
+        "validations": {}
+    }
+    
+    if is_pan:
+        result["file_type"] = "PAN"
+        pan_match = re.search(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b', text, re.IGNORECASE)
+        pan_no = pan_match.group(0).upper() if pan_match else None
+        
+        dob_match = re.search(r'\b\d{2}[-/\.]\d{2}[-/\.]\d{4}\b', text)
+        dob = dob_match.group(0) if dob_match else None
+        
+        extracted_name, name_score = extract_best_name(text, claim_customer_name)
+        
+        result["extracted_data"] = {
+            "PAN Number": pan_no,
+            "DOB": dob,
+            "Name": extracted_name
+        }
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH",
+            "PAN Status": "FOUND" if pan_no else "NOT FOUND",
+            "DOB Status": "FOUND" if dob else "NOT FOUND"
+        }
+        
+    elif is_cod:
+        result["file_type"] = "COD"
+        cert_no_match = re.search(r'\b(COD[A-Z0-9]+)\b', text, re.IGNORECASE)
+        cert_no = cert_no_match.group(0) if cert_no_match else None
+        if not cert_no:
+            fallback_match = re.search(r'Deposit\s*\(?coD\)?,\s*with\s*number\s*-\s*([A-Z0-9]+)', text, re.IGNORECASE)
+            if fallback_match:
+                cert_no = fallback_match.group(1)
+                
+        extracted_name, name_score = extract_best_name(text, claim_customer_name)
+        
+        result["extracted_data"] = {
+            "Certificate No": cert_no,
+            "User Name": extracted_name
+        }
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH",
+            "Certificate Status": "FOUND" if cert_no else "NOT FOUND"
+        }
+        
+    return result
+
+def verify_documents(target_dir, customer_name):
+    logging.info(f"Starting verification of documents in: {target_dir} for customer: {customer_name}")
+    if not os.path.exists(target_dir):
+        logging.warning(f"Directory {target_dir} does not exist. Skipping validation.")
+        return
+        
+    import glob
+    pdf_files = glob.glob(os.path.join(target_dir, "*.pdf"))
+    if not pdf_files:
+        logging.info("No PDF documents found in target directory for validation.")
+        return
+        
+    # Enable ANSI escape codes for Windows formatting
+    if os.name == 'nt':
+        os.system('')
+    GREEN_TEXT = "\033[92m"
+    RED_TEXT = "\033[91m"
+    YELLOW_TEXT = "\033[93m"
+    RESET_TEXT = "\033[0m"
+    
+    print("\n" + "="*50)
+    print("         DOCUMENT VALIDATION RESULTS")
+    print("="*50)
+    
+    for pdf_path in pdf_files:
+        filename = os.path.basename(pdf_path)
+        try:
+            text, is_digital = extract_text_hybrid(pdf_path)
+            res = classify_and_extract(pdf_path, text, customer_name)
+            
+            file_type = res["file_type"]
+            data = res["extracted_data"]
+            validations = res["validations"]
+            
+            print(f"\nDocument: {filename} (Type: {file_type})")
+            print(f"  Read Mode: {'DIGITAL' if is_digital else 'OCR'}")
+            
+            if file_type == "PAN":
+                pan_no = data.get("PAN Number")
+                dob = data.get("DOB")
+                name = data.get("Name")
+                
+                print(f"  - Extracted PAN  : {pan_no or 'Not Found'}")
+                print(f"  - Extracted DOB  : {dob or 'Not Found'}")
+                print(f"  - Extracted Name : {name or 'Not Found'}")
+                
+                score = validations.get("Name Match Score", 0)
+                if validations.get("Name Match Status") == "MATCH":
+                    print(f"  - Name Validation: {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                else:
+                    print(f"  - Name Validation: {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    
+                if pan_no:
+                    print(f"  - PAN Status     : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
+                else:
+                    print(f"  - PAN Status     : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
+                if dob:
+                    print(f"  - DOB Status     : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
+                else:
+                    print(f"  - DOB Status     : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
+                    
+            elif file_type == "COD":
+                cert_no = data.get("Certificate No")
+                user_name = data.get("User Name")
+                
+                print(f"  - Certificate No : {cert_no or 'Not Found'}")
+                print(f"  - Extracted Name : {user_name or 'Not Found'}")
+                
+                score = validations.get("Name Match Score", 0)
+                if validations.get("Name Match Status") == "MATCH":
+                    print(f"  - Name Validation: {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                else:
+                    print(f"  - Name Validation: {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    
+                if cert_no:
+                    print(f"  - Cert Status    : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
+                else:
+                    print(f"  - Cert Status    : {YELLOW_TEXT}NOT FOUND (Optional for Welcome Scheme){RESET_TEXT}")
+            else:
+                print(f"  - Status         : {YELLOW_TEXT}SKIPPED (No validation rules defined for this type){RESET_TEXT}")
+                
+        except Exception as doc_err:
+            logging.error(f"Error validating document {filename}: {doc_err}")
+            
+    print("\n" + "="*50)
+
 def click_row_action_button(page):
     """Robustly clicks the Action / Eye button in the first row of the claims table."""
+    table_selector = "div.app_mainDataTable__4u2RN table"
+    try:
+        page.wait_for_selector(table_selector, state="visible", timeout=15000)
+        # 1. Target the first row of the table
+        first_row = page.locator(f"{table_selector} tbody tr").first
+        
+        # 2. Try to find the button/icon in the first row
+        eye_selectors = [
+            "svg[data-icon='eye']",
+            ".anticon-eye",
+            "i.anticon-eye",
+            "button:has(svg)",
+            "button",
+            "a"
+        ]
+        
+        for sel in eye_selectors:
+            locator = first_row.locator(sel)
+            if locator.count() > 0:
+                logging.info(f"Clicking action button matching selector: {sel}")
+                locator.first.click()
+                return
+    except Exception as row_err:
+        logging.warning(f"Could not click dynamically via first row: {row_err}. Using fallback...")
+
+    # Fallback to direct cell selector
     cell_selector = "#root > div > div > div > div > div > div > div > div > div > div > main > div:nth-child(4) > div > div > div.app_mainDataTable__4u2RN > div > div > div > div > div > div > table > tbody > tr:nth-child(1) > td:nth-child(9)"
     page.wait_for_selector(cell_selector, state="visible", timeout=20000)
     
@@ -540,7 +850,6 @@ def click_row_action_button(page):
         div_locator.first.click()
         return
         
-    # Fallback to direct cell click
     page.click(cell_selector)
 
 def execute_step_with_interaction(page, step_func, step_name):
@@ -946,20 +1255,24 @@ def main():
             input("\nPress Enter here to close the browser...")
             return
             
-        logging.info("First row available. Triggering 'View' action...")
-        
-        # Execute click on the action eye button
+        # Execute click on the action eye button and wait for drawer to open with retry
+        def click_and_open_drawer():
+            for attempt in range(3):
+                try:
+                    logging.info(f"Clicking view action button (Attempt {attempt+1}/3)...")
+                    click_row_action_button(page)
+                    page.wait_for_selector("div.ant-drawer-content-wrapper", state="visible", timeout=5000)
+                    return
+                except Exception as err:
+                    if attempt == 2:
+                        raise err
+                    logging.warning(f"Drawer did not open (Attempt {attempt+1}/3 failed): {err}. Retrying click...")
+                    page.wait_for_timeout(1000)
+                    
         execute_step_with_interaction(
             page,
-            lambda: click_row_action_button(page),
-            "Click view action (eye icon) on the first row"
-        )
-        
-        # Wait for Details Drawer to slide out
-        execute_step_with_interaction(
-            page,
-            lambda: page.wait_for_selector("div.ant-drawer-content-wrapper", state="visible", timeout=20000),
-            "Wait for Details Drawer to open"
+            click_and_open_drawer,
+            "Click view action (eye icon) on the first row and wait for drawer to open"
         )
         
         # Parse claim details table inside drawer
@@ -1052,15 +1365,24 @@ def main():
             logging.warning(f"Failed to fetch or parse Old Vehicle Details: {old_vehicle_err}")
 
         # --- NEW SECTION: Fetch Supporting Documents ---
+        customer_name = claim_details.get("Customer Name", "Unknown_Customer")
         try:
             logging.info("Switching to 'Supporting Documents' tab...")
             select_drawer_timeline_tab(page, "Supporting Document")
             
             logging.info("Downloading supporting documents...")
-            customer_name = claim_details.get("Customer Name", "Unknown_Customer")
             download_supporting_documents(page, context, customer_name)
         except Exception as docs_err:
             logging.warning(f"Failed to fetch or download Supporting Documents: {docs_err}")
+
+        # --- NEW SECTION: Verify & Extract Data from Downloaded Documents ---
+        try:
+            safe_customer_name = "".join(c for c in customer_name if c.isalnum() or c in (" ", "_", "-")).strip() or "Unknown_Customer"
+            target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documents", safe_customer_name)
+            logging.info("Starting document data extraction and verification...")
+            verify_documents(target_dir, customer_name)
+        except Exception as verify_err:
+            logging.warning(f"Failed to verify documents: {verify_err}")
 
         # Wait for user input to close details
         input("\nPress Enter to close details and close the browser...")
