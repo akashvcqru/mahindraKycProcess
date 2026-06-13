@@ -186,6 +186,166 @@ def fill_antd_date_robust(page, select_id, fallback_container_selector, date_str
             
     raise Exception(f"Failed to set date {date_str} for {select_id} using both typing and calendar selector.")
 
+def load_scheme_data():
+    """Loads and parses the scheme data from scheme_data.txt."""
+    schemes = {
+        "welcome": {},
+        "scrappage": {}
+    }
+    
+    scheme_file = "scheme_data.txt"
+    if not os.path.exists(scheme_file):
+        logging.warning(f"Scheme file '{scheme_file}' not found. Using empty data.")
+        return schemes
+        
+    try:
+        current_section = None
+        with open(scheme_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if "WELCOME BONUS" in line:
+                    current_section = "welcome"
+                    continue
+                elif "SCRAPPAGE SCHEME" in line:
+                    current_section = "scrappage"
+                    continue
+                    
+                if current_section == "welcome":
+                    if "Brand:" in line:
+                        brand = line.split("Brand:")[1].strip().upper()
+                    elif "Credit note" in line:
+                        val = line.split(":")[-1].strip()
+                        amount = float(''.join(c for c in val if c.isdigit() or c == '.'))
+                        schemes["welcome"][brand] = amount
+                elif current_section == "scrappage":
+                    if "|" in line and "Brand" not in line:
+                        parts = [p.strip() for p in line.split("|") if p.strip()]
+                        if len(parts) >= 5:
+                            # The last 4 columns are numeric: Contribution (A), Contribution (B), Total, Credit Note
+                            # All elements before those last 4 are brand strings
+                            brand_parts = parts[:-4]
+                            credit_note_str = parts[-1]
+                            try:
+                                amount = float(''.join(c for c in credit_note_str if c.isdigit() or c == '.'))
+                                for brand_part in brand_parts:
+                                    # Split brands by '/'
+                                    sub_brands = [b.strip().upper() for b in brand_part.split("/") if b.strip()]
+                                    for b in sub_brands:
+                                        schemes["scrappage"][b] = amount
+                            except Exception:
+                                pass
+    except Exception as e:
+        logging.error(f"Error reading/parsing scheme_data.txt: {e}")
+        
+    return schemes
+
+def find_matching_schemes(brand_name, schemes):
+    """Looks up all matching expected credit notes in both scrappage and welcome schemes."""
+    brand_name = brand_name.strip().upper()
+    matches = {}
+    
+    # 1. Check Welcome Scheme
+    welcome_match = None
+    if brand_name in schemes["welcome"]:
+        welcome_match = schemes["welcome"][brand_name]
+    else:
+        # Check substring match
+        for key, val in schemes["welcome"].items():
+            if key in brand_name or brand_name in key:
+                welcome_match = val
+                break
+    if welcome_match is not None:
+        matches["Welcome"] = welcome_match
+        
+    # 2. Check Scrappage Scheme
+    scrappage_match = None
+    if brand_name in schemes["scrappage"]:
+        scrappage_match = schemes["scrappage"][brand_name]
+    else:
+        # Check substring match
+        for key, val in schemes["scrappage"].items():
+            if key in brand_name or brand_name in key:
+                scrappage_match = val
+                break
+    if scrappage_match is not None:
+        matches["Scrappage"] = scrappage_match
+        
+    return matches
+
+def parse_drawer_details_table(page):
+    """Parses the Ant Design Drawer table mapping headers to values dynamically, waiting for data to populate."""
+    table_selector = "div.ant-drawer-body table"
+    page.wait_for_selector(table_selector, state="visible", timeout=20000)
+    
+    # Wait for the table data to be loaded (i.e. not containing only placeholder dashes)
+    # Poll up to 15 seconds
+    start_time = time.time()
+    temp_data = {}
+    while time.time() - start_time < 15:
+        rows = page.locator(f"{table_selector} > tbody > tr")
+        row_count = rows.count()
+        
+        temp_data = {}
+        i = 0
+        while i < row_count:
+            row_headers = rows.nth(i).locator("th")
+            header_count = row_headers.count()
+            
+            if header_count > 0:
+                if i + 1 < row_count:
+                    row_values = rows.nth(i + 1).locator("td")
+                    value_count = row_values.count()
+                    
+                    for col_idx in range(min(header_count, value_count)):
+                        hdr = row_headers.nth(col_idx).inner_text().strip()
+                        val = row_values.nth(col_idx).inner_text().strip()
+                        if hdr:
+                            temp_data[hdr] = val
+                i += 2
+            else:
+                i += 1
+                
+        # Check if the data is populated (i.e., at least some key values are not "-" or empty)
+        non_empty = sum(1 for k, v in temp_data.items() if v.strip() != "-" and v.strip() != "")
+        if non_empty >= 3:
+            # We want key fields like "Chassis No" or "Invoice No" to be filled
+            chassis = temp_data.get("Chassis No", "-").strip()
+            invoice = temp_data.get("Invoice No", "-").strip()
+            if chassis != "-" or invoice != "-":
+                logging.info(f"Drawer details loaded successfully ({non_empty} populated fields).")
+                return temp_data
+                
+        page.wait_for_timeout(500)
+        
+    logging.warning("Timeout waiting for drawer details to load completely. Returning current data.")
+    return temp_data
+
+def click_row_action_button(page):
+    """Robustly clicks the Action / Eye button in the first row of the claims table."""
+    cell_selector = "#root > div > div > div > div > div > div > div > div > div > div > main > div:nth-child(4) > div > div > div.app_mainDataTable__4u2RN > div > div > div > div > div > div > table > tbody > tr:nth-child(1) > td:nth-child(9)"
+    page.wait_for_selector(cell_selector, state="visible", timeout=20000)
+    
+    # Try finding and clicking the svg or button tag directly to trigger the click handler
+    svg_locator = page.locator(f"{cell_selector} button > svg, {cell_selector} svg")
+    if svg_locator.count() > 0:
+        svg_locator.first.click()
+        return
+        
+    button_locator = page.locator(f"{cell_selector} button")
+    if button_locator.count() > 0:
+        button_locator.first.click()
+        return
+        
+    div_locator = page.locator(f"{cell_selector} div > div")
+    if div_locator.count() > 0:
+        div_locator.first.click()
+        return
+        
+    # Fallback to direct cell click
+    page.click(cell_selector)
+
 def execute_step_with_interaction(page, step_func, step_name):
     """Executes a step function in Playwright. If it fails, prompts the user to terminate, keep open, or retry."""
     while True:
@@ -300,7 +460,6 @@ def main():
                 if "/dashboard" in page.url:
                     return True
                 
-                # Check for M&M User Login button visibility and click it
                 btn_selector = "#login_from > div:nth-child(5) > div:nth-child(1) > div > a"
                 try:
                     page.wait_for_selector(btn_selector, state="visible", timeout=5000)
@@ -317,7 +476,6 @@ def main():
                 "Click M&M User Login button"
             )
             
-            # If we clicked the button and didn't auto-bypass:
             if not is_redirected_to_dashboard:
                 if use_existing:
                     logging.info("Using existing logged-in session. Bypassing credentials input. Waiting for dashboard redirect...")
@@ -328,8 +486,6 @@ def main():
                     )
                 else:
                     # --- Fresh Login Flow (New Login) ---
-                    
-                    # Get credentials securely
                     email = input("Enter your User ID (e.g. 50016105@mahindra.com): ").strip()
                     if not email:
                         email = "50016105@mahindra.com"
@@ -412,7 +568,6 @@ def main():
             claim_choice = input("Select option (1/2): ").strip()
             
         # 2. Navigate Left Side Menu
-        # Click Sales
         execute_step_with_interaction(
             page,
             lambda: wait_and_click(page, "#root > div > div > div > div > div > div > div > div > div > aside > div > ul > li:nth-child(4) > div > span > a"),
@@ -437,7 +592,7 @@ def main():
             page.wait_for_timeout(500)
         execute_step_with_interaction(page, hover_exchange_claim, "Hover and click Exchange Claim sub-menu")
         
-        # Select sub-menu item based on choice (using text-based search for robustness)
+        # Select sub-menu item based on choice
         if claim_choice == "1":
             execute_step_with_interaction(
                 page,
@@ -467,7 +622,7 @@ def main():
         
         MODAL_CONTENT = "div.ant-modal-content"
         
-        # Select Zone (Always select first/single option)
+        # Select Zone
         zone_container = f"{MODAL_CONTENT} form > div:nth-child(1) > div:nth-child(1) > div > div"
         execute_step_with_interaction(
             page,
@@ -475,7 +630,7 @@ def main():
             "Select Zone (Single option)"
         )
         
-        # Select Area Office (Show options and ask user)
+        # Select Area Office
         office_container = f"{MODAL_CONTENT} form > div:nth-child(1) > div:nth-child(2) > div > div"
         execute_step_with_interaction(
             page,
@@ -483,7 +638,7 @@ def main():
             "Select Area Office"
         )
         
-        # Select Dealer Name (Always select All)
+        # Select Dealer Name
         dealer_container = f"{MODAL_CONTENT} form > div:nth-child(1) > div:nth-child(3) > div > div"
         execute_step_with_interaction(
             page,
@@ -491,7 +646,7 @@ def main():
             "Select Dealer Name (All)"
         )
         
-        # Select Location Name (Always select All)
+        # Select Location Name
         location_container = f"{MODAL_CONTENT} form > div:nth-child(1) > div:nth-child(4) > div > div"
         execute_step_with_interaction(
             page,
@@ -505,11 +660,9 @@ def main():
         today_str = now.strftime("%d/%m/%Y")
         
         if claim_choice == "1":
-            # Loyalty claims: Current month (1st day of month to today)
             calculated_from = first_of_month
             calculated_to = today_str
         else:
-            # Exchange claims: 3 months back
             three_months_ago = now - timedelta(days=90)
             calculated_from = three_months_ago.replace(day=1).strftime("%d/%m/%Y")
             calculated_to = today_str
@@ -527,7 +680,6 @@ def main():
             if user_to:
                 calculated_to = user_to
                 
-        # Parse day numbers to feed into calendar click fallbacks
         try:
             day_from = int(calculated_from.split('/')[0])
             day_to = int(calculated_to.split('/')[0])
@@ -535,7 +687,7 @@ def main():
             day_from = 1
             day_to = now.day
 
-        # Fill From Date (Try ID typing first, then click calendar selector wrapper fallback)
+        # Fill From Date (Using precise ID: #fromDate)
         from_container = f"{MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(1) > div > div"
         execute_step_with_interaction(
             page,
@@ -543,7 +695,7 @@ def main():
             "Fill Claim From Date"
         )
         
-        # Fill To Date (Try ID typing first, then click calendar selector wrapper fallback)
+        # Fill To Date (Using precise ID: #toDate)
         to_container = f"{MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(2) > div > div"
         execute_step_with_interaction(
             page,
@@ -569,10 +721,133 @@ def main():
                 "Click Apply button"
             )
             logging.info("Filters applied successfully!")
+            
+            # Wait for search API/table loading to start and fully complete
+            logging.info("Waiting for data table loading/refresh to complete...")
+            page.wait_for_timeout(3000)  # Wait 3 seconds for load states
+            try:
+                # Wait for any Ant Design load indicators to hide
+                page.wait_for_selector(".ant-spin-spinning", state="hidden", timeout=15000)
+            except Exception:
+                pass
+            page.wait_for_timeout(1000)  # General stability delay
         else:
             logging.info("Filter application cancelled by user.")
+            input("\nPress Enter here to close the browser...")
+            return
 
-        input("\nPress Enter here to close the browser...")
+        # --- PROCESS FIRST ROW CLAIM DETAILS ---
+        logging.info("Locating data table...")
+        table_container_selector = "div.app_mainDataTable__4u2RN"
+        page.wait_for_selector(table_container_selector, state="visible", timeout=20000)
+        
+        # Load schemes from local text file
+        schemes = load_scheme_data()
+        
+        # Check if table has rows
+        rows = page.locator(f"{table_container_selector} table tbody tr")
+        row_count = rows.count()
+        if row_count == 0:
+            logging.info("No claims found in the results table.")
+            input("\nPress Enter here to close the browser...")
+            return
+            
+        logging.info("First row available. Triggering 'View' action...")
+        
+        # Execute click on the action eye button
+        execute_step_with_interaction(
+            page,
+            lambda: click_row_action_button(page),
+            "Click view action (eye icon) on the first row"
+        )
+        
+        # Wait for Details Drawer to slide out
+        execute_step_with_interaction(
+            page,
+            lambda: page.wait_for_selector("div.ant-drawer-content-wrapper", state="visible", timeout=20000),
+            "Wait for Details Drawer to open"
+        )
+        
+        # Parse claim details table inside drawer
+        logging.info("Parsing claim details metadata table...")
+        claim_details = parse_drawer_details_table(page)
+        
+        # Print parsed data in console
+        print("\n=== Extracted Claim Details ===")
+        for key, val in claim_details.items():
+            print(f"  {key} : {val}")
+            
+        # Validate: extract "New Vehicle Model Group" and "Approved Total Amount"
+        model_group = None
+        approval_amount = None
+        
+        for k, v in claim_details.items():
+            norm_k = k.lower()
+            if "new vehicle model group" in norm_k or "new vehical model group" in norm_k:
+                model_group = v
+            elif "approved total amount" in norm_k or "approval total amount" in norm_k or "approved amount" in norm_k:
+                # Prioritize approved total amount over approved dealer amount
+                if "dealer" not in norm_k:
+                    approval_amount = v
+                
+        # Enable ANSI escape code processing on Windows
+        if os.name == 'nt':
+            os.system('')
+
+        GREEN_TEXT = "\033[92m"
+        RED_TEXT = "\033[91m"
+        RESET_TEXT = "\033[0m"
+
+        print("\n=== Scheme Validation Status ===")
+        if model_group and approval_amount:
+            print(f"  Model Group from Claim: {model_group}")
+            print(f"  Approval Amount from Claim: {approval_amount}")
+            
+            # Find matching values in scheme_data.txt (could be in Welcome, Scrappage, or both)
+            matched_schemes = find_matching_schemes(model_group, schemes)
+            if matched_schemes:
+                print("  Expected Credit Note Amounts (excluding GST) from scheme_data.txt:")
+                for s_type, s_amount in matched_schemes.items():
+                    print(f"    - {s_type} Scheme: {s_amount}")
+                
+                try:
+                    # Parse claim's approval amount as float
+                    clean_val_str = ''.join(c for c in approval_amount if c.isdigit() or c == '.')
+                    actual_val = float(clean_val_str)
+                    
+                    # Check if actual_val matches any of the matched schemes
+                    matched_any = False
+                    for s_type, s_amount in matched_schemes.items():
+                        diff = abs(actual_val - s_amount)
+                        if diff < 1.0:
+                            print(f"{GREEN_TEXT}  --> Result: MATCH (Approval amount {actual_val} matches {model_group} {s_type} Scheme {s_amount} within rounding tolerance of 1.0; difference is {diff:.2f}) [FINE]{RESET_TEXT}")
+                            matched_any = True
+                            break
+                            
+                    if not matched_any:
+                        expected_desc = " or ".join(f"{v} ({k})" for k, v in matched_schemes.items())
+                        print(f"{RED_TEXT}  --> Result: MISMATCH (Expected {expected_desc}, got {actual_val}) [FAILED]{RESET_TEXT}")
+                except Exception as parse_err:
+                    print(f"{RED_TEXT}  --> Result: UNABLE TO COMPARE (Error parsing approval amount '{approval_amount}': {parse_err}) [FAILED]{RESET_TEXT}")
+            else:
+                print(f"{RED_TEXT}  --> Result: Brand '{model_group}' not found in scheme_data.txt mappings. [FAILED]{RESET_TEXT}")
+        else:
+            reasons = []
+            if not model_group:
+                reasons.append("Missing 'New vehicle Model Group' key/value")
+            if not approval_amount:
+                reasons.append("Missing 'Approved Total Amount' key/value")
+            print(f"{RED_TEXT}  --> Result: Missing required validation keys in claim details table. ({', '.join(reasons)}) [FAILED]{RESET_TEXT}")
+            print(f"      (Keys found: {list(claim_details.keys())})")
+            
+        # Wait for user input to close details
+        input("\nPress Enter to close details and close the browser...")
+        
+        # Close Drawer
+        close_btn = page.locator("button.ant-drawer-close, .ant-drawer-close-x, .ant-drawer-header button").first
+        close_btn.click()
+        page.wait_for_selector("div.ant-drawer-content-wrapper", state="hidden", timeout=10000)
+        logging.info("Drawer closed.")
 
     except KeepBrowserOpenException:
         logging.info("Exiting script. Browser remains open as requested.")
