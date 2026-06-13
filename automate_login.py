@@ -274,16 +274,14 @@ def find_matching_schemes(brand_name, schemes):
         
     return matches
 
-def parse_drawer_details_table(page):
-    """Parses the Ant Design Drawer table mapping headers to values dynamically, waiting for data to populate."""
+def parse_drawer_table_general(page, required_keys=None, exclude_keys=None, min_non_empty=1, timeout=15000):
+    """Parses a table inside the Ant Design Drawer dynamically, waiting for elements to load."""
     table_selector = "div.ant-drawer-body table"
-    page.wait_for_selector(table_selector, state="visible", timeout=20000)
+    page.wait_for_selector(table_selector, state="visible", timeout=timeout)
     
-    # Wait for the table data to be loaded (i.e. not containing only placeholder dashes)
-    # Poll up to 15 seconds
     start_time = time.time()
     temp_data = {}
-    while time.time() - start_time < 15:
+    while time.time() - start_time < timeout:
         rows = page.locator(f"{table_selector} > tbody > tr")
         row_count = rows.count()
         
@@ -307,20 +305,219 @@ def parse_drawer_details_table(page):
             else:
                 i += 1
                 
-        # Check if the data is populated (i.e., at least some key values are not "-" or empty)
+        # Wait until we have enough non-empty values
         non_empty = sum(1 for k, v in temp_data.items() if v.strip() != "-" and v.strip() != "")
-        if non_empty >= 3:
-            # We want key fields like "Chassis No" or "Invoice No" to be filled
-            chassis = temp_data.get("Chassis No", "-").strip()
-            invoice = temp_data.get("Invoice No", "-").strip()
-            if chassis != "-" or invoice != "-":
-                logging.info(f"Drawer details loaded successfully ({non_empty} populated fields).")
-                return temp_data
-                
+        
+        # Check required keys if provided
+        keys_satisfied = True
+        if required_keys:
+            keys_satisfied = any(temp_data.get(k, "-").strip() != "-" for k in required_keys)
+            
+        # Check exclude keys if provided (if any exclude key has a non-dash value, we are still showing old tab data)
+        exclude_satisfied = True
+        if exclude_keys:
+            exclude_satisfied = all(temp_data.get(k, "-").strip() == "-" for k in exclude_keys)
+            
+        if non_empty >= min_non_empty and keys_satisfied and exclude_satisfied:
+            return temp_data
+            
         page.wait_for_timeout(500)
         
-    logging.warning("Timeout waiting for drawer details to load completely. Returning current data.")
     return temp_data
+
+def parse_drawer_details_table(page):
+    """Parses the Ant Design Drawer table mapping headers to values dynamically, waiting for data to populate."""
+    return parse_drawer_table_general(page, required_keys=["Chassis No", "Invoice No"], min_non_empty=3)
+
+def select_drawer_timeline_tab(page, tab_name):
+    """Clicks on a specific timeline item tab in the details drawer sidebar."""
+    tab_locator = page.locator("div.ant-drawer-body").get_by_text(tab_name).first
+    tab_locator.wait_for(state="visible", timeout=20000)
+    
+    logging.info(f"Clicking on details drawer tab: '{tab_name}'")
+    tab_locator.scroll_into_view_if_needed()
+    tab_locator.click()
+    
+    # Give the page 1.5 seconds to finish rendering/updating the pane content
+    page.wait_for_timeout(1500)
+
+def download_supporting_documents(page, context, customer_name):
+    """Downloads all supporting documents in the current pane to documents/<customer_name>/."""
+    def get_extension_from_headers(headers, default=".pdf"):
+        content_type = headers.get("content-type", "").lower()
+        if "pdf" in content_type:
+            return ".pdf"
+        elif "png" in content_type:
+            return ".png"
+        elif "jpeg" in content_type or "jpg" in content_type:
+            return ".jpg"
+        elif "gif" in content_type:
+            return ".gif"
+        elif "webp" in content_type:
+            return ".webp"
+        return default
+
+    # Sanitize customer name for folder path
+    safe_customer_name = "".join(c for c in customer_name if c.isalnum() or c in (" ", "_", "-")).strip()
+    if not safe_customer_name:
+        safe_customer_name = "Unknown_Customer"
+        
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    target_dir = os.path.join(script_dir, "documents", safe_customer_name)
+    os.makedirs(target_dir, exist_ok=True)
+    logging.info(f"Target directory for documents: {target_dir}")
+    
+    # Target data-testid="downloadBtn" directly inside the supporting documents view
+    button_selector = '[data-testid="downloadBtn"], svg[data-testid="downloadBtn"]'
+    try:
+        page.wait_for_selector(button_selector, state="visible", timeout=15000)
+    except Exception:
+        logging.warning("No download buttons (data-testid='downloadBtn') found/loaded within 15 seconds. Skipping.")
+        return
+        
+    buttons = page.locator(button_selector)
+    button_count = buttons.count()
+    logging.info(f"Found {button_count} document download buttons in Supporting Documents.")
+    
+    for i in range(button_count):
+        btn = buttons.nth(i)
+        
+        # Get the closest parent card ancestor to correctly extract the header title
+        card = btn.locator("xpath=./ancestor::div[contains(@class, 'ant-card') or contains(@class, 'app_viewDocumentStrip')][1]").first
+        
+        title = f"document_{i+1}"
+        try:
+            title_el = card.locator(".ant-card-head-title, .ant-card-head")
+            if title_el.count() > 0:
+                title_text = title_el.first.inner_text().split("\n")[0].strip()
+                if title_text:
+                    title = "".join(c for c in title_text if c.isalnum() or c in (" ", "_", "-")).strip()
+        except Exception as title_err:
+            logging.debug(f"Failed to get card title: {title_err}")
+            
+        logging.info(f"Downloading supporting document {i+1}/{button_count}: {title}...")
+        
+        # We register event listeners for both page (new tab) and download (direct file stream) events
+        event_result = {
+            "download": None,
+            "new_page": None,
+            "response": None
+        }
+        
+        def on_page(p):
+            event_result["new_page"] = p
+            
+            # Watch for responses inside this new tab
+            def on_response(res):
+                try:
+                    if res.request.resource_type in ["document", "image"] or res.url == p.url:
+                        if event_result["response"] is None:
+                            event_result["response"] = res
+                except Exception:
+                    pass
+            p.on("response", on_response)
+            
+            # Watch for downloads inside this new tab
+            p.on("download", lambda d: on_download(d))
+            
+        def on_download(d):
+            event_result["download"] = d
+            
+        context.on("page", on_page)
+        page.on("download", on_download)
+        
+        success = False
+        try:
+            # Click the button (try normal click, fall back to dispatching raw click event if obstructed)
+            try:
+                btn.click(timeout=3000)
+            except Exception:
+                btn.dispatch_event("click")
+                
+            # Poll up to 10 seconds for either event to fire
+            start_time = time.time()
+            page_open_time = None
+            while time.time() - start_time < 10.0:
+                if event_result["download"] is not None:
+                    break
+                if event_result["new_page"] is not None:
+                    if page_open_time is None:
+                        page_open_time = time.time()
+                    # Wait up to 3 seconds after page opens to see if a download event starts
+                    if time.time() - page_open_time > 3.0:
+                        break
+                page.wait_for_timeout(200)
+                
+            if event_result["download"] is not None:
+                download = event_result["download"]
+                suggested = download.suggested_filename
+                ext = ".pdf"
+                if "." in suggested:
+                    ext = "." + suggested.split(".")[-1]
+                target_path = os.path.join(target_dir, f"{title}{ext}")
+                download.save_as(target_path)
+                logging.info(f"Downloaded: {target_path}")
+                success = True
+            elif event_result["response"] is not None:
+                response = event_result["response"]
+                body = response.body()
+                ext = get_extension_from_headers(response.headers)
+                target_path = os.path.join(target_dir, f"{title}{ext}")
+                with open(target_path, "wb") as f:
+                    f.write(body)
+                logging.info(f"Downloaded from response: {target_path}")
+                success = True
+            elif event_result["new_page"] is not None:
+                new_page = event_result["new_page"]
+                new_page.wait_for_load_state("load", timeout=5000)
+                url = new_page.url
+                
+                # Check for images or fallback
+                ext = ".pdf"
+                if any(img_ext in url.lower() for img_ext in [".png", ".jpg", ".jpeg", ".gif"]):
+                    for img_ext in [".png", ".jpg", ".jpeg", ".gif"]:
+                        if img_ext in url.lower():
+                            ext = img_ext
+                            break
+                            
+                target_path = os.path.join(target_dir, f"{title}{ext}")
+                
+                # Try fallback fetch
+                pdf_bytes = new_page.evaluate("""
+                    async (url) => {
+                        const response = await fetch(url);
+                        const buffer = await response.arrayBuffer();
+                        return Array.from(new Uint8Array(buffer));
+                    }
+                """, url)
+                
+                with open(target_path, "wb") as f:
+                    f.write(bytes(pdf_bytes))
+                logging.info(f"Downloaded via fallback fetch: {target_path}")
+                success = True
+            else:
+                logging.warning(f"Timeout waiting for download/page events for card '{title}'")
+        except Exception as err:
+            logging.error(f"Error handling download for card '{title}': {err}")
+        finally:
+            # Clean up the new page if it was opened
+            if event_result["new_page"] is not None:
+                try:
+                    event_result["new_page"].close()
+                except Exception:
+                    pass
+            # Unregister listeners to prevent double-triggering or memory leaks
+            try:
+                context.remove_listener("page", on_page)
+            except Exception:
+                pass
+            try:
+                page.remove_listener("download", on_download)
+            except Exception:
+                pass
+                
+        if not success:
+            logging.error(f"Could not download supporting document: {title}")
 
 def click_row_action_button(page):
     """Robustly clicks the Action / Eye button in the first row of the claims table."""
@@ -409,6 +606,8 @@ def main():
     try:
         # Both modes launch in your persistent Default profile directory
         logging.info(f"Launching Edge with profile path: {user_data_path}")
+        base_docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documents")
+        os.makedirs(base_docs_dir, exist_ok=True)
         context = p.chromium.launch_persistent_context(
             user_data_dir=user_data_path,
             channel="msedge",
@@ -662,23 +861,24 @@ def main():
         if claim_choice == "1":
             calculated_from = first_of_month
             calculated_to = today_str
+            logging.info(f"Loyalty Claims selected. Automatically using date range: {calculated_from} to {calculated_to}")
         else:
             three_months_ago = now - timedelta(days=90)
             calculated_from = three_months_ago.replace(day=1).strftime("%d/%m/%Y")
             calculated_to = today_str
             
-        print(f"\nCalculated Date Range:")
-        print(f"  Claim From Date: {calculated_from}")
-        print(f"  Claim To Date  : {calculated_to}")
-        
-        custom_confirm = input("Press Enter to use these dates, or type 'c' to enter custom dates: ").strip().lower()
-        if custom_confirm == 'c':
-            user_from = input(f"Enter Claim From Date (DD/MM/YYYY) [{calculated_from}]: ").strip()
-            user_to = input(f"Enter Claim To Date (DD/MM/YYYY) [{calculated_to}]: ").strip()
-            if user_from:
-                calculated_from = user_from
-            if user_to:
-                calculated_to = user_to
+            print(f"\nCalculated Date Range:")
+            print(f"  Claim From Date: {calculated_from}")
+            print(f"  Claim To Date  : {calculated_to}")
+            
+            custom_confirm = input("Press Enter to use these dates, or type 'c' to enter custom dates: ").strip().lower()
+            if custom_confirm == 'c':
+                user_from = input(f"Enter Claim From Date (DD/MM/YYYY) [{calculated_from}]: ").strip()
+                user_to = input(f"Enter Claim To Date (DD/MM/YYYY) [{calculated_to}]: ").strip()
+                if user_from:
+                    calculated_from = user_from
+                if user_to:
+                    calculated_to = user_to
                 
         try:
             day_from = int(calculated_from.split('/')[0])
@@ -711,30 +911,24 @@ def main():
             "Select Claim Status (Pending with SSKM)"
         )
         
-        # Confirm Apply
-        confirm_apply = input("\nConfirm applying these filter settings? (y/n): ").strip().lower()
-        if confirm_apply == 'y':
-            apply_button = f"{MODAL_CONTENT} form > div:nth-child(3) > div > div > span:nth-child(2) > button"
-            execute_step_with_interaction(
-                page,
-                lambda: wait_and_click(page, apply_button),
-                "Click Apply button"
-            )
-            logging.info("Filters applied successfully!")
-            
-            # Wait for search API/table loading to start and fully complete
-            logging.info("Waiting for data table loading/refresh to complete...")
-            page.wait_for_timeout(3000)  # Wait 3 seconds for load states
-            try:
-                # Wait for any Ant Design load indicators to hide
-                page.wait_for_selector(".ant-spin-spinning", state="hidden", timeout=15000)
-            except Exception:
-                pass
-            page.wait_for_timeout(1000)  # General stability delay
-        else:
-            logging.info("Filter application cancelled by user.")
-            input("\nPress Enter here to close the browser...")
-            return
+        # Apply filters automatically
+        apply_button = f"{MODAL_CONTENT} form > div:nth-child(3) > div > div > span:nth-child(2) > button"
+        execute_step_with_interaction(
+            page,
+            lambda: wait_and_click(page, apply_button),
+            "Click Apply button"
+        )
+        logging.info("Filters applied successfully!")
+        
+        # Wait for search API/table loading to start and fully complete
+        logging.info("Waiting for data table loading/refresh to complete...")
+        page.wait_for_timeout(3000)  # Wait 3 seconds for load states
+        try:
+            # Wait for any Ant Design load indicators to hide
+            page.wait_for_selector(".ant-spin-spinning", state="hidden", timeout=15000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1000)  # General stability delay
 
         # --- PROCESS FIRST ROW CLAIM DETAILS ---
         logging.info("Locating data table...")
@@ -840,6 +1034,34 @@ def main():
             print(f"{RED_TEXT}  --> Result: Missing required validation keys in claim details table. ({', '.join(reasons)}) [FAILED]{RESET_TEXT}")
             print(f"      (Keys found: {list(claim_details.keys())})")
             
+        # --- NEW SECTION: Fetch Old Vehicle Details ---
+        try:
+            logging.info("Switching to 'Old Vehicle Details' tab...")
+            select_drawer_timeline_tab(page, "Old Vehicle Details")
+            
+            logging.info("Parsing old vehicle details table...")
+            old_vehicle_details = parse_drawer_table_general(page, exclude_keys=["Invoice No", "New vehicle Model Group"], min_non_empty=1)
+            
+            print("\n=== Extracted Old Vehicle Details ===")
+            if old_vehicle_details:
+                for key, val in old_vehicle_details.items():
+                    print(f"  {key} : {val}")
+            else:
+                print("  No details found or table was empty.")
+        except Exception as old_vehicle_err:
+            logging.warning(f"Failed to fetch or parse Old Vehicle Details: {old_vehicle_err}")
+
+        # --- NEW SECTION: Fetch Supporting Documents ---
+        try:
+            logging.info("Switching to 'Supporting Documents' tab...")
+            select_drawer_timeline_tab(page, "Supporting Document")
+            
+            logging.info("Downloading supporting documents...")
+            customer_name = claim_details.get("Customer Name", "Unknown_Customer")
+            download_supporting_documents(page, context, customer_name)
+        except Exception as docs_err:
+            logging.warning(f"Failed to fetch or download Supporting Documents: {docs_err}")
+
         # Wait for user input to close details
         input("\nPress Enter to close details and close the browser...")
         
