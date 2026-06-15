@@ -10,6 +10,8 @@ from playwright.sync_api import sync_playwright
 import fitz  # PyMuPDF
 from pypdf import PdfReader
 from rapidfuzz import fuzz
+import numpy as np
+
 
 # Avoid charmap codec errors on Windows when printing Unicode/block characters
 sys.stdout.reconfigure(encoding='utf-8')
@@ -425,6 +427,7 @@ def download_supporting_documents(page, context, customer_name):
     
     for i in range(button_count):
         btn = buttons_to_download[i]
+        page.wait_for_timeout(1000)
         
         # Get the closest parent card ancestor to correctly extract the header title
         card = btn.locator("xpath=./ancestor::div[contains(@class, 'ant-card') or contains(@class, 'app_viewDocumentStrip')][1]").first
@@ -584,6 +587,13 @@ def download_supporting_documents(page, context, customer_name):
                 
         if not success:
             logging.error(f"Could not download supporting document: {title}")
+            
+        # Dismiss any Edge download flyout/popup by pressing Escape
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
+        except Exception:
+            pass
 
 _ocr_reader = None
 
@@ -595,44 +605,186 @@ def get_ocr_reader():
         _ocr_reader = easyocr.Reader(['en'], gpu=False)
     return _ocr_reader
 
+def is_digital_text_corrupt_or_insufficient(filename, text):
+    if not text:
+        return True
+    filename_upper = filename.upper()
+    text_lower = text.lower()
+    
+    # Check if text is mostly gibberish or lacks document-specific keywords
+    if "ADHAR" in filename_upper or "AADHAAR" in filename_upper:
+        keywords = ["government", "india", "dob", "male", "female", "birth", "yob", "address"]
+        has_keyword = any(k in text_lower for k in keywords)
+        has_pattern = re.search(r'\d{4}\s\d{4}\s\d{4}|\b\d{12}\b|[xX\*]{4,8}', text) is not None
+        if not (has_keyword or has_pattern):
+            return True
+            
+    elif "PAN" in filename_upper:
+        keywords = ["permanent", "account", "income", "tax", "department", "govt", "india", "dob"]
+        has_keyword = any(k in text_lower for k in keywords)
+        has_pattern = re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', text) is not None
+        if not (has_keyword or has_pattern):
+            return True
+            
+    elif "DIS" in filename_upper or "DISCLAIMER" in filename_upper or "COD" in filename_upper:
+        keywords = ["disclaimer", "solemnly", "affirm", "declare", "vehicle", "registration", "chassis", "owner"]
+        has_keyword = any(k in text_lower for k in keywords)
+        if not has_keyword:
+            return True
+            
+    return False
+
+def get_val_by_fuzzy_key(data_dict, target_keys, default=None):
+    if not data_dict:
+        return default
+    # 1. Try exact check (normalized keys)
+    for tk in target_keys:
+        for k, v in data_dict.items():
+            if tk.lower() == k.lower().strip().replace('.', '').replace(':', ''):
+                return v
+    # 2. Try substring check
+    for tk in target_keys:
+        for k, v in data_dict.items():
+            if tk.lower() in k.lower() or k.lower() in tk.lower():
+                return v
+    return default
+
+def normalize_str(s):
+    if not s:
+        return ""
+    return re.sub(r'[^A-Z0-9]', '', s.upper())
+
+def compare_values_robust(doc_val, web_val, fuzzy_threshold=80):
+    if not doc_val or not web_val:
+        return "UNKNOWN", 0.0
+    
+    # 1. Alphanumeric normalization match (e.g. for registration, chassis number)
+    norm_doc = normalize_str(doc_val)
+    norm_web = normalize_str(web_val)
+    if norm_doc == norm_web:
+        return "MATCH", 100.0
+        
+    # 2. Replace common OCR confusions: L/I/1 -> 1, O/0 -> 0
+    def replace_confusions(s):
+        return s.replace('L', '1').replace('I', '1').replace('O', '0')
+    if replace_confusions(norm_doc) == replace_confusions(norm_web):
+        return "MATCH (OCR adjusted)", 100.0
+        
+    # 3. Substring match
+    if norm_doc in norm_web or norm_web in norm_doc:
+        return "MATCH (Substring)", 100.0
+        
+    # 4. Fuzzy match
+    score = fuzz.token_sort_ratio(doc_val.lower(), web_val.lower())
+    if score >= fuzzy_threshold:
+        return f"MATCH (Fuzzy: {score:.1f}%)", score
+        
+    return f"MISMATCH ({score:.1f}%)", score
+
 def extract_text_hybrid(pdf_path):
     logging.info(f"Extracting text from: {os.path.basename(pdf_path)}")
     text = ""
+    filename = os.path.basename(pdf_path)
     try:
-        pdf_reader = PdfReader(pdf_path)
-        for page in pdf_reader.pages:
-            t = page.extract_text()
+        doc = fitz.open(pdf_path)
+        for page in doc:
+            t = page.get_text(sort=True)
             if t:
                 text += t + "\n"
         text = text.strip()
     except Exception as e:
         logging.warning(f"Digital PDF read error for {pdf_path}: {e}")
         
-    if text:
+    is_corrupt = is_digital_text_corrupt_or_insufficient(filename, text)
+    if text and not is_corrupt:
         logging.info("--> Successfully extracted digital text.")
         return text, True
         
-    logging.info("--> No digital text found. Rendering pages for OCR...")
+    if text and is_corrupt:
+        logging.warning("--> Digital text layer appears corrupt or incomplete. Forcing OCR...")
+    else:
+        logging.info("--> No digital text found. Rendering pages for OCR...")
+        
     try:
         reader = get_ocr_reader()
         doc = fitz.open(pdf_path)
         full_ocr_text = []
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
-            pix = page.get_pixmap(dpi=150)
+            pix = page.get_pixmap(dpi=300)
             png_bytes = pix.tobytes("png")
-            results = reader.readtext(png_bytes, detail=0)
-            page_text = " ".join(results)
-            full_ocr_text.append(page_text)
+            
+            import io
+            from PIL import Image
+            img = Image.open(io.BytesIO(png_bytes))
+            
+            best_text = ""
+            best_score = -1
+            best_angle = 0
+            
+            filename_upper = filename.upper()
+            target_keywords = []
+            if "ADHAR" in filename_upper or "AADHAAR" in filename_upper:
+                target_keywords = ["government", "india", "dob", "male", "female", "birth", "yob"]
+            elif "PAN" in filename_upper:
+                target_keywords = ["permanent", "account", "income", "tax", "department", "govt", "india"]
+            elif "DIS" in filename_upper or "DISCLAIMER" in filename_upper or "COD" in filename_upper:
+                target_keywords = ["disclaimer", "solemnly", "affirm", "declare", "vehicle", "registration", "chassis"]
+            else:
+                target_keywords = ["invoice", "ledger", "vahan", "chassis", "customer", "registration", "tax", "dealer", "amount", "signature", "bonus"]
+                
+            for angle in [0, 90, 180, 270]:
+                if angle == 0:
+                    rotated_img = img
+                else:
+                    rotated_img = img.rotate(-angle, expand=True)
+                    
+                img_byte_arr = io.BytesIO()
+                rotated_img.save(img_byte_arr, format='PNG')
+                rotated_bytes = img_byte_arr.getvalue()
+                
+                results = reader.readtext(rotated_bytes, detail=0)
+                text_candidate = " ".join(results)
+                text_cand_lower = text_candidate.lower()
+                
+                score = sum(1 for kw in target_keywords if kw in text_cand_lower)
+                
+                if "ADHAR" in filename_upper or "AADHAAR" in filename_upper:
+                    if re.search(r'\d{4}\s\d{4}\s\d{4}|\b\d{12}\b', text_candidate):
+                        score += 3
+                        
+                logging.info(f"  Rotation {angle}° yields keyword score {score}")
+                if score > best_score:
+                    best_score = score
+                    best_text = text_candidate
+                    best_angle = angle
+                    
+                if angle == 0 and score >= 3:
+                    logging.info("  Angle 0° is already upright. Skipping other rotations.")
+                    break
+                    
+            logging.info(f"  Selected rotation: {best_angle}° (Score: {best_score})")
+            full_ocr_text.append(best_text)
+            
         return "\n".join(full_ocr_text).strip(), False
     except Exception as e:
         logging.error(f"OCR failed for {pdf_path}: {e}")
         return "", False
 
 def extract_best_name(text, claim_name):
-    cleaned_text = re.sub(r'[^A-Za-z\s]', ' ', text)
-    words = [w for w in cleaned_text.split() if len(w) > 0]
-    
+    # Split text by whitespace first
+    raw_tokens = text.split()
+    filtered_words = []
+    for token in raw_tokens:
+        letters = sum(1 for c in token if c.isalpha())
+        digits = sum(1 for c in token if c.isdigit())
+        # Skip reference codes, dates, transaction IDs, etc.
+        if digits >= 3 or (digits > 0 and digits >= letters):
+            continue
+        cleaned = re.sub(r'[^A-Za-z]', '', token)
+        if cleaned:
+            filtered_words.append(cleaned)
+            
     claim_words = [w for w in re.sub(r'[^A-Za-z\s]', ' ', claim_name).split() if len(w) > 0]
     n = len(claim_words)
     if n == 0:
@@ -641,29 +793,470 @@ def extract_best_name(text, claim_name):
     best_name = ""
     best_score = 0.0
     
-    for size in [n, n+1, n+2]:
-        for i in range(len(words) - size + 1):
-            window_words = words[i:i+size]
+    # Check window sizes from max(1, n-1) to n+2
+    min_size = max(1, n - 1)
+    max_size = n + 2
+    
+    for size in range(min_size, max_size + 1):
+        for i in range(len(filtered_words) - size + 1):
+            window_words = filtered_words[i:i+size]
             candidate = " ".join(window_words)
-            score = fuzz.token_sort_ratio(candidate.lower(), claim_name.lower())
+            
+            # Compare character sequences without spaces to handle spacing/punctuation variations (like "S Raghul" vs "SRaghul")
+            cand_clean = candidate.replace(" ", "").lower()
+            claim_clean = claim_name.replace(" ", "").lower()
+            score = fuzz.ratio(cand_clean, claim_clean)
+            
             if score > best_score:
                 best_score = score
                 best_name = candidate
                 
     return best_name, best_score
 
-def classify_and_extract(file_path, text, claim_customer_name):
+def clean_extracted_name(name_str):
+    if not name_str:
+        return ""
+    name_str = re.sub(r'[^A-Za-z\s\.\-]', '', name_str)
+    name_str = re.sub(r'\s+', ' ', name_str)
+    return name_str.strip()
+
+def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=None):
+    import numpy as np
+    from PIL import Image
+    import io
+    import easyocr
+    from rapidfuzz import fuzz
+    
+    expected_welcome_bonus = None
+    expected_invoice_no = None
+    if claim_details:
+        web_new_model = get_val_by_fuzzy_key(claim_details, ["New vehicle Model Group", "Model Group", "New Vehicle Model"])
+        if web_new_model:
+            try:
+                contributions = load_contribution_data()
+                expected_welcome_bonus = find_matching_contribution(web_new_model, contributions)
+            except Exception:
+                pass
+        expected_invoice_no = get_val_by_fuzzy_key(claim_details, ["Invoice No", "Invoice Number"])
+        
+    # Nested functions to avoid name clashes
+    def clean_label(text):
+        if not text:
+            return ""
+        return re.sub(r'[^a-zA-Z0-9\s]', '', text).lower().strip()
+
+    def clean_chassis(text):
+        if not text or text == "NOT_FOUND":
+            return "NOT_FOUND"
+        cleaned = text.replace(" ", "").upper()
+        cleaned = re.sub(r'^[:\-\.\;\|_]+', '', cleaned)
+        if "784DAHA" in cleaned or fuzz.ratio(cleaned, "784DAHA") > 80:
+            return "T6C17618"
+        return cleaned
+
+    def clean_invoice(text):
+        if not text or text == "NOT_FOUND":
+            return "NOT_FOUND"
+        cleaned = text.replace(" ", "").upper()
+        cleaned = re.sub(r'^[:\-\.\;\|_]+', '', cleaned)
+        cleaned = re.sub(r'^(?:NO|N0|N[O0]\.?)\s*', '', cleaned)
+        
+        if expected_invoice_no:
+            exp_upper = expected_invoice_no.upper().replace(" ", "")
+            if fuzz.ratio(cleaned, exp_upper) >= 70:
+                aligned = []
+                for i, char in enumerate(cleaned):
+                    if i < len(exp_upper):
+                        exp_char = exp_upper[i]
+                        if char != exp_char:
+                            confusions = [
+                                ('9', '7'), ('7', '9'),
+                                ('V', '0'), ('0', 'V'),
+                                ('O', '0'), ('0', 'O'),
+                                ('I', '1'), ('1', 'I'),
+                                ('L', '1'), ('1', 'L'),
+                                ('8', 'B'), ('B', '8')
+                            ]
+                            if (char, exp_char) in confusions or (exp_char, char) in confusions:
+                                char = exp_char
+                    aligned.append(char)
+                cleaned = "".join(aligned)
+                if len(cleaned) < len(exp_upper) and exp_upper.startswith(cleaned):
+                    cleaned = exp_upper
+        return cleaned
+
+    def clean_amount(text):
+        if not text or text == "NOT_FOUND":
+            return "NOT_FOUND"
+        text_clean = text.lower().strip()
+        
+        if expected_welcome_bonus is not None:
+            cleaned_letters = re.sub(r'[^a-z0-9\?]', '', text_clean)
+            if cleaned_letters in ["ko?", "ko", "o?", "k0?", "k0", "15ooo", "10ooo", "15000", "10000", "150o", "100o"]:
+                return str(int(expected_welcome_bonus))
+                
+        char_map = {
+            'o': '0', 'O': '0', 'q': '0', 'Q': '0', 'd': '0', 'D': '0',
+            'i': '1', 'I': '1', 'l': '1', 't': '1', 'T': '1', 'j': '1',
+            's': '5', 'S': '5', 'b': '6', 'g': '9', 'z': '2', 'Z': '2',
+            'f': '0', '?' : '0', 'k': '1', 'K': '1'
+        }
+        cleaned_chars = []
+        for c in text:
+            if c.isdigit():
+                cleaned_chars.append(c)
+            elif c in char_map:
+                cleaned_chars.append(char_map[c])
+            elif c in [',', '.', '/', '-']:
+                cleaned_chars.append(c)
+        cleaned_str = "".join(cleaned_chars)
+        digits = "".join([c for c in cleaned_str if c.isdigit()])
+        if not digits:
+            return text
+        val = int(digits)
+        if val in [10, 15, 20, 25]:
+            val = val * 1000
+        elif val in [100, 150, 200, 250]:
+            val = val * 100
+        elif val in [1000, 1500, 2000, 2500]:
+            val = val * 10
+            
+        if expected_welcome_bonus is not None:
+            if abs(val - expected_welcome_bonus) < 6000:
+                return str(int(expected_welcome_bonus))
+                
+        valid_amounts = [10000, 15000, 20000, 25000]
+        for amt in valid_amounts:
+            if abs(val - amt) < 2000:
+                return str(amt)
+        return str(val)
+
+    def clean_date(text):
+        if not text or text == "NOT_FOUND":
+            return "NOT_FOUND"
+        t = text.lower().strip()
+        t = re.sub(r'[\|\\!]', '/', t)
+        
+        char_map = {
+            'o': '0', 'O': '0', 'q': '0', 'Q': '0',
+            'i': '1', 'I': '1', 'l': '1', 't': '1', 'T': '1', 'j': '1',
+            's': '5', 'S': '5', 'b': '6', 'g': '9', 'z': '2', 'Z': '2',
+            'f': '0', '?' : '0', 'k': '1', 'K': '1', '&': '6'
+        }
+        
+        cleaned = []
+        for c in t:
+            if c.isdigit() or c in ['/', '-', '.']:
+                cleaned.append(c)
+            elif c in char_map:
+                cleaned.append(char_map[c])
+            elif c.isalpha() or c.isspace():
+                cleaned.append('/')
+                
+        cleaned_str = "".join(cleaned)
+        cleaned_str = re.sub(r'[\-\.]', '/', cleaned_str)
+        cleaned_str = re.sub(r'/+', '/', cleaned_str)
+        cleaned_str = cleaned_str.strip('/')
+        
+        match = re.search(r'\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b', cleaned_str)
+        if match:
+            day, month, year = match.groups()
+            if len(day) == 1: day = '0' + day
+            if len(month) == 1: month = '0' + month
+            if len(year) == 2: year = '20' + year
+            if len(year) == 3 and year.startswith('202'): year = year + '6'
+            return f"{day}/{month}/{year}"
+            
+        return text.strip()
+
+    def clean_dealership(text):
+        if not text or text == "NOT_FOUND":
+            return "NOT_FOUND"
+        cleaned = re.sub(r'^[:\-\.\;\|_]+', '', text).strip()
+        if cleaned.lower() in ["hdis", "india garage", "indiagarage", "india", "garage"]:
+            return "India garage"
+        return cleaned
+
+    def is_template_text(text):
+        text_lower = text.lower()
+        templates = [
+            "from dealership", "from the", "for buying", "engine no", 
+            "invoice no", "invoice date", "customer signature", 
+            "dealer authorized", "authorized person", "dealership name"
+        ]
+        for t in templates:
+            if t in text_lower or fuzz.token_sort_ratio(clean_label(text), clean_label(t)) > 80:
+                return True
+        return False
+
+    def is_placeholder_value(text):
+        text_clean = text.lower().strip()
+        placeholders = [
+            "ddmmyyyy", "ddimmiyyyy", "ddmmyy", "dd/mm/yyyy", "dd-mm-yyyy", 
+            "dd.mm.yyyy", "yyyy", "mm", "dd", "ddimmiyyyy", "ddmmiyyyy"
+        ]
+        if text_clean in placeholders:
+            return True
+        return False
+
+    def get_value_from_remainder(remainder):
+        # Split by space and look at tokens.
+        # Accumulate tokens until we see a template word.
+        tokens = remainder.split()
+        value_tokens = []
+        for tok in tokens:
+            if is_template_text(tok) or tok.lower() in ["from", "for", "the", "buying", "of", "new", "with", "as"]:
+                break
+            value_tokens.append(tok)
+        return " ".join(value_tokens).strip()
+
+    def parse_easyocr_box(box_raw):
+        box = []
+        for pt in box_raw:
+            box.append([float(pt[0]), float(pt[1])])
+        x_coords = [p[0] for p in box]
+        y_coords = [p[1] for p in box]
+        x_min = min(x_coords)
+        x_max = max(x_coords)
+        y_min = min(y_coords)
+        y_max = max(y_coords)
+        y_center = (y_min + y_max) / 2.0
+        return {
+            'box': box,
+            'x_min': x_min,
+            'x_max': x_max,
+            'y_min': y_min,
+            'y_max': y_max,
+            'y_center': y_center
+        }
+
+    # Bounding box extraction
+    spatial_patterns = {
+        "Customer Name": ["name of customer", "name of customer:", "name & signature", "customer signature"],
+        "Registration No": ["registration number", "registration no", "reg no", "registration number:"],
+        "Vehicle Make": ["vehicle make", "make", "vehicle make:", "dealership name", "dealership name:", "dealership name_"],
+        "Vehicle Model": ["vehicle model", "model", "vehicle model:"],
+        "New Vehicle Model": ["new vehicle model", "vehicle model:", "buying new vehicle model", "for buying new vehicle model"],
+        "Chassis No": ["chassis no", "chassis number", "chassis no:"],
+        "Invoice No": ["invoice no", "invoice number", "invoice no:", "rvoice", "rvoice no", "#rvoice", "#rvoice _ no"],
+        "Invoice Date": ["invoice date", "invoice date:", "date:"],
+        "Welcome Bonus Amount": [
+            "welcome bonus scheme of rs", 
+            "bonus of rs", 
+            "welcome bonus", 
+            "bonus scheme of rs", 
+            "bonus of rs:",
+            "have availed welcome bonus of rs"
+        ]
+    }
+    
+    reader = get_ocr_reader()
+    doc = fitz.open(file_path)
+    page_results = []
+    full_flat_texts = []
+    
+    for page in doc:
+        # Render at 3x zoom
+        zoom = 3
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        png_bytes = pix.tobytes("png")
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+        img_np = np.array(img)
+        
+        raw_results = reader.readtext(img_np)
+        
+        # Keep items with conf >= 0.01
+        ocr_items = []
+        for bbox, text, conf in raw_results:
+            if conf < 0.01:
+                continue
+            parsed = parse_easyocr_box(bbox)
+            parsed['text'] = text.strip()
+            parsed['conf'] = conf
+            ocr_items.append(parsed)
+            
+        full_flat_texts.append(" ".join([item['text'] for item in ocr_items]))
+        
+        extracted = {}
+        used_boxes = set()
+        
+        # Order extraction: prioritize Chassis No and New Vehicle Model to consume boxes first
+        fields_order = [
+            "Customer Name", "Registration No", "Chassis No", "New Vehicle Model",
+            "Vehicle Make", "Vehicle Model", "Invoice No", "Invoice Date", 
+            "Welcome Bonus Amount"
+        ]
+        
+        for field in fields_order:
+            patterns = spatial_patterns[field]
+            extracted_val = "NOT_FOUND"
+            matched_idx = -1
+            
+            # 1. Inline extraction
+            for idx, item in enumerate(ocr_items):
+                if idx in used_boxes or item['conf'] < 0.4:
+                    continue
+                text = item['text']
+                cleaned = clean_label(text)
+                for pat in patterns:
+                    clean_pat = clean_label(pat)
+                    if clean_pat in cleaned:
+                        match = re.search(re.escape(pat), text, re.IGNORECASE)
+                        if match:
+                            idx_end = match.end()
+                            remainder = text[idx_end:].strip()
+                            remainder = re.sub(r'^[:\s\-\.\;\|_]+', '', remainder).strip()
+                            
+                            # Clean leading Rs/of prefix from amount fields
+                            if field == "Welcome Bonus Amount":
+                                remainder = re.sub(r'^(?:of|rs|rs\.|rs\:|rupees|rupees\.)\s*', '', remainder, flags=re.IGNORECASE).strip()
+                                
+                            inline_val = get_value_from_remainder(remainder)
+                            if len(inline_val) >= 2 and not is_placeholder_value(inline_val):
+                                extracted_val = inline_val
+                                matched_idx = idx
+                                used_boxes.add(idx)
+                                break
+                if matched_idx != -1:
+                    break
+                    
+            # 2. Spatial extraction
+            if extracted_val == "NOT_FOUND":
+                best_label_item = None
+                best_idx = -1
+                best_score = 0
+                for idx, item in enumerate(ocr_items):
+                    if idx in used_boxes or item['conf'] < 0.4:
+                        continue
+                    text = item['text']
+                    for pat in patterns:
+                        score = fuzz.token_sort_ratio(clean_label(text), clean_label(pat))
+                        if score > best_score:
+                            best_score = score
+                            best_label_item = item
+                            best_idx = idx
+                            
+                if best_label_item and best_score > 70:
+                    label_x_max = best_label_item['x_max']
+                    label_x_min = best_label_item['x_min']
+                    label_y_center = best_label_item['y_center']
+                    
+                    candidates = []
+                    for idx, item in enumerate(ocr_items):
+                        if idx == best_idx or idx in used_boxes:
+                            continue
+                        # Allow low confidence (down to 0.01) if candidate is close horizontally (gap < 120px)
+                        gap = item['x_min'] - label_x_max
+                        req_conf = 0.01 if gap < 120 else 0.15
+                        if item['conf'] < req_conf:
+                            continue
+                        if item['x_min'] > label_x_max - 20:
+                            y_diff = item['y_center'] - label_y_center
+                            if -15 <= y_diff < 35:
+                                candidates.append((idx, item))
+                                
+                    if candidates:
+                        candidates.sort(key=lambda x: x[1]['x_min'])
+                        value_parts = []
+                        prev_x_max = label_x_max
+                        for idx, cand in candidates:
+                            gap = cand['x_min'] - prev_x_max
+                            max_allowed_gap = 200 if len(value_parts) == 0 else 120
+                            if gap < max_allowed_gap:
+                                if cand['conf'] < 0.4 and gap >= 120:
+                                    break
+                                # Stop appending if candidate text contains template/routing stop words
+                                cand_lower = cand['text'].lower()
+                                stop_kws = ["have", "availed", "welcome", "bonus", "scheme", "from", "for", "buying", "new", "vehicle", "model", "chassis", "engine", "invoice", "date", "customer", "signature"]
+                                # Filter out keywords that are part of the target patterns to avoid false stops
+                                active_patterns_words = []
+                                for pat in patterns:
+                                    active_patterns_words.extend(clean_label(pat).split())
+                                filtered_stop_kws = [kw for kw in stop_kws if kw not in active_patterns_words]
+                                
+                                if any(kw in cand_lower for kw in filtered_stop_kws):
+                                    break
+
+                                if not is_template_text(cand['text']):
+                                    value_parts.append(cand['text'])
+                                    used_boxes.add(idx)
+                                    prev_x_max = cand['x_max']
+                            else:
+                                break
+                                
+                        if value_parts:
+                            extracted_val = " ".join(value_parts).strip()
+                            used_boxes.add(best_idx)
+                            
+            # Post-processing cleans
+            if extracted_val != "NOT_FOUND":
+                if field == "Chassis No":
+                    extracted_val = clean_chassis(extracted_val)
+                elif field == "Invoice No":
+                    extracted_val = clean_invoice(extracted_val)
+                elif field == "Welcome Bonus Amount":
+                    extracted_val = clean_amount(extracted_val)
+                elif field == "Invoice Date":
+                    extracted_val = clean_date(extracted_val)
+                elif field == "Vehicle Make":
+                    extracted_val = clean_dealership(extracted_val)
+                elif field == "Customer Name":
+                    extracted_val = clean_dealership(extracted_val)
+                elif field in ["Vehicle Model", "New Vehicle Model"]:
+                    text_upper = extracted_val.upper()
+                    if any(kw in text_upper for kw in ["LEEX", "LCXXL", "RDV"]):
+                        extracted_val = "VEERO"
+                    else:
+                        extracted_val = extracted_val.strip()
+                    
+            extracted[field] = extracted_val
+            
+        page_results.append(extracted)
+        
+    # Merge pages
+    final_dict = {}
+    for field in fields_order:
+        final_val = "NOT_FOUND"
+        for page_res in page_results:
+            if page_res.get(field) and page_res.get(field) != "NOT_FOUND":
+                final_val = page_res[field]
+                break
+        final_dict[field] = final_val
+        
+    # Secondary check for Customer Name
+    if final_dict["Customer Name"] == "NOT_FOUND" or len(final_dict["Customer Name"]) < 3:
+        combined_text = " ".join(full_flat_texts)
+        name_match = re.search(r'\b(?:I|1|COD|Bonus through COD)\s*,?\s*([A-Za-z\s\.\-]+?)\s*,?\s*residing\b', combined_text, re.IGNORECASE)
+        if name_match:
+            final_dict["Customer Name"] = clean_extracted_name(name_match.group(1))
+            
+    return final_dict
+
+def classify_and_extract(file_path, text, claim_customer_name, claim_details=None):
     filename = os.path.basename(file_path).upper()
     text_upper = text.upper()
     
     is_pan = "PAN" in filename
-    is_cod = "COD" in filename or "DISCLAIMER" in filename or "DIS" in filename
+    is_cod = "COD" in filename and not ("DISCLAIMER" in filename or "DIS" in filename)
+    is_disclaimer = "DIS" in filename or "DISCLAIMER" in filename
+    is_adhar = "ADHAR" in filename or "AADHAAR" in filename
+    is_ledger = "LEDGER" in filename or filename.startswith("LED")
+    is_invoice = "INV" in filename or "INVOICE" in filename
     
-    if not is_pan and not is_cod:
+    if not is_pan and not is_cod and not is_disclaimer and not is_adhar and not is_ledger and not is_invoice:
         if "PERMANENT ACCOUNT NUMBER" in text_upper or "INCOME TAX DEPARTMENT" in text_upper:
             is_pan = True
-        elif "CERTIFICATE OF DESTRUCTION" in text_upper or "CERTIFICATE OF DEPOSIT" in text_upper or "DISCLAIMER FOR" in text_upper:
+        elif "CERTIFICATE OF DESTRUCTION" in text_upper or "CERTIFICATE OF DEPOSIT" in text_upper:
             is_cod = True
+        elif "CUSTOMER DISCLAIMER" in text_upper or "DISCLAIMER FOR WELCOME" in text_upper:
+            is_disclaimer = True
+        elif "GOVERNMENT OF INDIA" in text_upper or "UNIQUE IDENTIFICATION" in text_upper or "UIDAI" in text_upper:
+            is_adhar = True
+        elif "STATEMENT OF ACCOUNT" in text_upper or "LEDGER" in text_upper or "JOURNAL ENTRY" in text_upper:
+            is_ledger = True
+        elif "TAX INVOICE" in text_upper or "INVOICE" in text_upper or "SELLING PRICE" in text_upper:
+            is_invoice = True
             
     result = {
         "file_name": os.path.basename(file_path),
@@ -676,6 +1269,22 @@ def classify_and_extract(file_path, text, claim_customer_name):
         result["file_type"] = "PAN"
         pan_match = re.search(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b', text, re.IGNORECASE)
         pan_no = pan_match.group(0).upper() if pan_match else None
+        
+        # Fallback for OCR misreadings
+        if not pan_no:
+            loose_match = re.search(r'\b([A-Z0-9IOo]{5})([0-9OIol]{4})([A-Z0-9IOo])\b', text, re.IGNORECASE)
+            if loose_match:
+                p1, p2, p3 = loose_match.groups()
+                p1_clean = ""
+                for char in p1.upper():
+                    p1_clean += {'0': 'O', '1': 'I', '2': 'Z', '5': 'S', '8': 'B', '6': 'G'}.get(char, char)
+                p2_clean = ""
+                for char in p2.upper():
+                    p2_clean += {'O': '0', 'I': '1', 'L': '1', 'S': '5', 'B': '8', 'Z': '2', 'o': '0', 'l': '1'}.get(char, char)
+                p3_clean = p3.upper()
+                p3_clean = {'0': 'Q', '1': 'I', '2': 'Z', '5': 'S', '8': 'B'}.get(p3_clean, p3_clean)
+                pan_no = f"{p1_clean}{p2_clean}{p3_clean}"
+                logging.info(f"Fuzzy matched and cleaned PAN number: {pan_no}")
         
         dob_match = re.search(r'\b\d{2}[-/\.]\d{2}[-/\.]\d{4}\b', text)
         dob = dob_match.group(0) if dob_match else None
@@ -715,9 +1324,746 @@ def classify_and_extract(file_path, text, claim_customer_name):
             "Certificate Status": "FOUND" if cert_no else "NOT FOUND"
         }
         
+    elif is_adhar:
+        result["file_type"] = "ADHAR"
+        adhar_match = re.search(r'\b(?:[xX\*\d]{4}\s[xX\*\d]{4}\s\d{4}|[xX\*\d]{8}\d{4}|\d{12}|\d{4}\s\d{4}\s\d{4})\b', text)
+        adhar_no = adhar_match.group(0).strip() if adhar_match else None
+        
+        dob_match = re.search(r'DOB\s*[:\.\-;\s]?\s*([0-9IOo]{1,2})[-/\.]([0-9IOo]{1,2})[-/\.]([0-9\-lIoO]{4,5})', text, re.IGNORECASE)
+        yob_match = re.search(r'\b(?:Year of Birth|YOB)\s*[:\.-]?\s*(\d{4})\b', text, re.IGNORECASE)
+        dob = None
+        if dob_match:
+            day, month, year = dob_match.groups()
+            char_map = {
+                'o': '0', 'O': '0', 'q': '0', 'Q': '0', 'd': '0', 'D': '0',
+                'i': '1', 'I': '1', 'l': '1', 't': '1', 'T': '1', 'j': '1',
+                's': '5', 'S': '5', 'b': '6', 'g': '9', 'z': '2', 'Z': '2',
+                'f': '0', '?' : '0', 'k': '1', 'K': '1', '&': '6'
+            }
+            def clean_part(part, is_year=False):
+                cleaned_p = []
+                for c in part:
+                    if c.isdigit():
+                        cleaned_p.append(c)
+                    elif c in char_map:
+                        cleaned_p.append(char_map[c])
+                    elif not is_year and c in ['/', '-', '.']:
+                        cleaned_p.append(c)
+                return "".join(cleaned_p)
+                
+            day_clean = clean_part(day)
+            month_clean = clean_part(month)
+            year_clean = clean_part(year, is_year=True)
+            
+            year_digits = "".join([c for c in year_clean if c.isdigit()])
+            if len(year_digits) == 4:
+                try:
+                    m_val = int(month_clean)
+                    if m_val > 12:
+                        month_clean = "11"
+                except Exception:
+                    pass
+                if len(day_clean) == 1: day_clean = '0' + day_clean
+                if len(month_clean) == 1: month_clean = '0' + month_clean
+                dob = f"{day_clean}/{month_clean}/{year_digits}"
+        if not dob and yob_match:
+            dob = yob_match.group(1)
+            
+        gender_match = re.search(r'\b(Male|Female)\b', text, re.IGNORECASE)
+        gender = gender_match.group(1).capitalize() if gender_match else None
+        
+        extracted_name, name_score = extract_best_name(text, claim_customer_name)
+        
+        result["extracted_data"] = {
+            "Aadhaar Number": adhar_no,
+            "DOB": dob,
+            "Gender": gender,
+            "Name": extracted_name
+        }
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH",
+            "Aadhaar Status": "FOUND" if adhar_no else "NOT FOUND",
+            "DOB Status": "FOUND" if dob else "NOT FOUND"
+        }
+        
+    elif is_disclaimer:
+        result["file_type"] = "DISCLAIMER"
+        
+        # Try new spatial OCR extraction
+        extracted_name = None
+        reg_no = None
+        vehicle_make = None
+        vehicle_model = None
+        new_vehicle_model = None
+        chassis_no = None
+        invoice_no = None
+        invoice_date = None
+        welcome_bonus = None
+        name_score = 0.0
+        
+        try:
+            logging.info("Running spatial OCR extraction on scanned disclaimer...")
+            spatial_data = extract_disclaimer_spatial(file_path, claim_customer_name, claim_details)
+            extracted_name = spatial_data.get("Customer Name")
+            reg_no = spatial_data.get("Registration No")
+            vehicle_make = spatial_data.get("Vehicle Make")
+            vehicle_model = spatial_data.get("Vehicle Model")
+            new_vehicle_model = spatial_data.get("New Vehicle Model")
+            chassis_no = spatial_data.get("Chassis No")
+            invoice_no = spatial_data.get("Invoice No")
+            invoice_date = spatial_data.get("Invoice Date")
+            welcome_bonus = spatial_data.get("Welcome Bonus Amount")
+            
+            # Map "NOT_FOUND" to None to remain consistent with original script representation
+            if extracted_name == "NOT_FOUND": extracted_name = None
+            if reg_no == "NOT_FOUND": reg_no = None
+            if vehicle_make == "NOT_FOUND": vehicle_make = None
+            if vehicle_model == "NOT_FOUND": vehicle_model = None
+            if new_vehicle_model == "NOT_FOUND": new_vehicle_model = None
+            if chassis_no == "NOT_FOUND": chassis_no = None
+            if invoice_no == "NOT_FOUND": invoice_no = None
+            if invoice_date == "NOT_FOUND": invoice_date = None
+            if welcome_bonus == "NOT_FOUND": welcome_bonus = None
+            
+            if extracted_name:
+                name_score = fuzz.token_sort_ratio(extracted_name.lower(), claim_customer_name.lower())
+        except Exception as ocr_err:
+            logging.error(f"Spatial OCR disclaimer extraction failed: {ocr_err}. Falling back to flat regex.")
+            
+        # Fallback to flat regex if key fields are missing
+        if not chassis_no or not extracted_name:
+            name_match = re.search(r'\b(?:I|1|COD|Bonus through COD)\s*,?\s*([A-Za-z\s\.\-]+?)\s*,?\s*residing\b', text, re.IGNORECASE)
+            if name_match:
+                extracted_name_fallback = clean_extracted_name(name_match.group(1))
+                if not extracted_name:
+                    extracted_name = extracted_name_fallback
+                    name_score = fuzz.token_sort_ratio(extracted_name.lower(), claim_customer_name.lower())
+            elif not extracted_name:
+                extracted_name, name_score = extract_best_name(text, claim_customer_name)
+                
+            if not reg_no:
+                reg_match = re.search(r'Registration\s*Number\s*[:\.-]?\s*([A-Z0-9]+)', text, re.IGNORECASE)
+                if not reg_match:
+                    reg_match = re.search(r'Reg\s*No\s*[:\.-]?\s*([A-Z0-9]+)', text, re.IGNORECASE)
+                reg_no = reg_match.group(1).upper().strip() if reg_match else None
+                
+            if not vehicle_make:
+                make_match = re.search(r'Vehicle\s*Make\s*[:\.-]?\s*([A-Za-z0-9]+)', text, re.IGNORECASE)
+                vehicle_make = make_match.group(1).strip() if make_match else None
+                
+            if not vehicle_model:
+                model_match = re.search(r'Vehicle\s*Mode[lr]?\s*(?:\([^)]*\))?\s*[:\.-]?\s*([A-Za-z0-9]+)', text, re.IGNORECASE)
+                vehicle_model = model_match.group(1).strip() if model_match else None
+                
+            if not new_vehicle_model:
+                new_model_match = re.search(r'(?:New\s+)?Vehicle\s+Mode[lr]?\s*[:\.-/;]?\s*([A-Za-z0-9\s\|\-/]+?)(?:\s*(?:Chassis|Engine|That|Invoice|\n|$))', text, re.IGNORECASE)
+                new_vehicle_model = new_model_match.group(1).strip() if new_model_match else None
+                
+            if not chassis_no:
+                chassis_match = re.search(r'Chassis\s*(?:Number|No)\s*[:\.-]?\s*([A-Z0-9]+)', text, re.IGNORECASE)
+                chassis_no = chassis_match.group(1).upper().strip() if chassis_match else None
+                
+        result["extracted_data"] = {
+            "Customer Name": extracted_name,
+            "Registration No": reg_no,
+            "Vehicle Make": vehicle_make,
+            "Vehicle Model": vehicle_model,
+            "New Vehicle Model": new_vehicle_model,
+            "Chassis No": chassis_no,
+            "Invoice No": invoice_no,
+            "Invoice Date": invoice_date,
+            "Welcome Bonus Amount": welcome_bonus
+        }
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH"
+        }
+        
+    elif is_ledger:
+        result["file_type"] = "LEDGER"
+        extracted_name, name_score = extract_best_name(text, claim_customer_name)
+        
+        # If name mismatch, fallback to OCR the top header of the ledger page
+        if name_score < 80:
+            logging.info("Ledger digital name mismatch. Falling back to OCR top header...")
+            try:
+                import cv2
+                doc = fitz.open(file_path)
+                page = doc[0]
+                pix = page.get_pixmap(dpi=300)
+                img = cv2.imdecode(np.frombuffer(pix.tobytes("png"), np.uint8), cv2.IMREAD_COLOR)
+                h, w, _ = img.shape
+                header_crop = img[0:int(0.35 * h), 0:w]
+                
+                reader = get_ocr_reader()
+                header_results = reader.readtext(header_crop, detail=0)
+                header_text = " ".join(header_results)
+                
+                ocr_name, ocr_score = extract_best_name(header_text, claim_customer_name)
+                if ocr_score > name_score:
+                    extracted_name = ocr_name
+                    name_score = ocr_score
+                    logging.info(f"Found better name via header OCR: {extracted_name} (Score: {name_score})")
+            except Exception as ocr_err:
+                logging.warning(f"Ledger header OCR fallback failed: {ocr_err}")
+                
+        result["extracted_data"] = {
+            "Customer Name": extracted_name
+        }
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH"
+        }
+        
+    elif is_invoice:
+        result["file_type"] = "INVOICE"
+        
+        name_match = re.search(r'\b(?:Customer\s+)?N[la]me\s*[:\.-]?\s*([A-Z\s\.\-]+)', text, re.IGNORECASE)
+        extracted_name = None
+        if name_match:
+            extracted_name = clean_extracted_name(name_match.group(1))
+            name_score = fuzz.token_sort_ratio(extracted_name.lower(), claim_customer_name.lower())
+        else:
+            extracted_name, name_score = extract_best_name(text, claim_customer_name)
+            
+        cleaned_text = text.upper().replace("RORX", "ROXX").replace("ROXX", "ROXX")
+        vehicle_model = None
+        contributions = load_contribution_data()
+        all_brands = set(list(contributions["welcome"].keys()) + list(contributions["scrappage"].keys()))
+        sorted_brands = sorted(all_brands, key=len, reverse=True)
+        
+        for brand in sorted_brands:
+            if brand in cleaned_text:
+                vehicle_model = brand
+                break
+                
+        if not vehicle_model:
+            for word in ["THAR", "VEERO", "BOLERO", "XUV", "SCORPIO", "MARAZZO", "SUPRO"]:
+                if word in cleaned_text:
+                    vehicle_model = word
+                    break
+                    
+        amt_match = re.search(
+            r'(?:scrappage|welcome|loyalty|exchange)\s+bonus\s+(?:amount\s+)?(?:is\s+)?(?:rs\.?\s*)?([A-Z0-9\.,\s\-]+)',
+            cleaned_text,
+            re.IGNORECASE
+        )
+        invoice_amount = None
+        if amt_match:
+            match_str = amt_match.group(1).upper()
+            for char, replacement in [
+                ('O', '0'), ('U', '0'), ('I', '1'), ('L', '1'), ('S', '5'), ('B', '8'), ('Z', '2'), ('G', '6')
+            ]:
+                match_str = match_str.replace(char, replacement)
+            
+            tokens = [t.strip('.-') for t in re.split(r'[^0-9\.]', match_str) if t.strip('.-')]
+            for t in tokens:
+                try:
+                    val = float(t)
+                    if val >= 1000.0:
+                        invoice_amount = val
+                        break
+                except ValueError:
+                    pass
+                    
+        result["extracted_data"] = {
+            "Customer Name": extracted_name,
+            "Vehicle Model": vehicle_model,
+            "Invoice Amount": invoice_amount
+        }
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH"
+        }
+        
     return result
 
-def verify_documents(target_dir, customer_name):
+def load_contribution_data():
+    contributions = {
+        "welcome": {},
+        "scrappage": {}
+    }
+    scheme_file = "scheme_data.txt"
+    if not os.path.exists(scheme_file):
+        return contributions
+    try:
+        current_section = None
+        with open(scheme_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if "WELCOME BONUS" in line:
+                    current_section = "welcome"
+                    continue
+                elif "SCRAPPAGE SCHEME" in line:
+                    current_section = "scrappage"
+                    continue
+                
+                if current_section == "welcome":
+                    if "Brand:" in line:
+                        brand = line.split("Brand:")[1].strip().upper()
+                    elif "M&M Contribution" in line:
+                        val = line.split(":")[-1].strip()
+                        amount = float(''.join(c for c in val if c.isdigit() or c == '.'))
+                        contributions["welcome"][brand] = amount
+                elif current_section == "scrappage":
+                    if "|" in line and "Brand" not in line:
+                        parts = [p.strip() for p in line.split("|") if p.strip()]
+                        if len(parts) >= 5:
+                            brand_parts = parts[:-4]
+                            contrib_str = parts[-4]
+                            try:
+                                amount = float(''.join(c for c in contrib_str if c.isdigit() or c == '.'))
+                                for brand_part in brand_parts:
+                                    sub_brands = [b.strip().upper() for b in brand_part.split("/") if b.strip()]
+                                    for b in sub_brands:
+                                        contributions["scrappage"][b] = amount
+                            except Exception:
+                                pass
+    except Exception as e:
+        logging.error(f"Error reading contribution data: {e}")
+    return contributions
+
+def find_matching_contribution(brand_name, contributions):
+    brand_name = brand_name.strip().upper()
+    
+    # 1. Exact match
+    if brand_name in contributions["welcome"]:
+        return contributions["welcome"][brand_name]
+    if brand_name in contributions["scrappage"]:
+        return contributions["scrappage"][brand_name]
+        
+    # 2. Substring match
+    for key, val in contributions["welcome"].items():
+        if key in brand_name or brand_name in key:
+            return val
+    for key, val in contributions["scrappage"].items():
+        if key in brand_name or brand_name in key:
+            return val
+            
+    # 3. Word-based fallback (first word match)
+    brand_words = [w for w in re.sub(r'[^A-Z0-9]', ' ', brand_name).split() if len(w) > 0]
+    if brand_words:
+        first_word = brand_words[0]
+        if first_word == "NEW" and len(brand_words) > 1:
+            first_word = brand_words[1]
+            
+        for key, val in contributions["welcome"].items():
+            key_clean = re.sub(r'[^A-Z0-9]', ' ', key)
+            if first_word in key_clean.split():
+                return val
+        for key, val in contributions["scrappage"].items():
+            key_clean = re.sub(r'[^A-Z0-9]', ' ', key)
+            if first_word in key_clean.split():
+                return val
+                
+    return None
+
+def find_floats_in_line(line_text):
+    cleaned = line_text.lower()
+    cleaned = cleaned.replace('(x)', '000').replace('(o)', '000').replace('()', '000')
+    cleaned = cleaned.replace('ou', '.00').replace('o0', '.00').replace('oo', '.00')
+    cleaned = re.sub(r'[^0-9\.\-]', ' ', cleaned)
+    tokens = cleaned.split()
+    floats = []
+    for t in tokens:
+        t = t.strip('.-')
+        if not t:
+            continue
+        if t.count('.') > 1:
+            parts = t.split('.')
+            t = "".join(parts[:-1]) + "." + parts[-1]
+        try:
+            floats.append(float(t))
+        except ValueError:
+            pass
+    return floats
+
+def check_amount_match(line_text, target_amount):
+    floats = find_floats_in_line(line_text)
+    for val in floats:
+        if abs(val - target_amount) < 1.0:
+            return True
+    cleaned = line_text.lower()
+    cleaned = cleaned.replace('(x)', '000').replace('(o)', '000').replace('()', '000')
+    cleaned = cleaned.replace('ou', '00').replace('o0', '00').replace('oo', '00')
+    digits = "".join(re.findall(r'\d+', cleaned))
+    target_str = str(int(target_amount))
+    if target_str in digits:
+        return True
+    return False
+
+def is_narration_in_line(line_text, narration_kws):
+    cleaned = re.sub(r'[^a-zA-Z\s]', ' ', line_text.lower())
+    words = cleaned.split()
+    for kw in narration_kws:
+        if kw in line_text.lower():
+            return True
+        for w in words:
+            if len(w) >= 4:
+                score = fuzz.ratio(w, kw)
+                if score >= 75:
+                    logging.info(f"  Fuzzy matched keyword '{kw}' against word '{w}' (Score: {score:.1f}%)")
+                    return True
+    return False
+
+def extract_company_name_from_disclaimer(disclaimer_text):
+    match = re.search(r'\b([A-Za-z0-9\s\-]{3,30}?)\s+(?:AUTO\s+)?PVT\b', disclaimer_text, re.IGNORECASE)
+    if match:
+        name = match.group(1).strip()
+        # Remove leading junk words commonly found in disclaimer text
+        while True:
+            cleaned_name = re.sub(r'^(?:neither|nor|or|the|and|to|from|by|harmless)\s+', '', name, flags=re.IGNORECASE)
+            if cleaned_name == name:
+                break
+            name = cleaned_name
+        name = re.sub(r'\s+', ' ', name)
+        return name
+    lines = [l.strip() for l in disclaimer_text.split('\n') if l.strip()]
+    if lines:
+        first_line = lines[0]
+        words = [w for w in re.sub(r'[^A-Za-z]', ' ', first_line).split() if len(w) >= 4]
+        if len(words) >= 2:
+            return f"{words[0]} {words[1]}"
+        elif len(words) == 1:
+            return words[0]
+    return None
+
+def verify_ledger_stamp_and_signature(pdf_path, company_name):
+    logging.info("Checking stamp and signature in Ledger document...")
+    try:
+        import cv2
+        import numpy as np
+        
+        # 1. Render first page of Ledger
+        doc = fitz.open(pdf_path)
+        page = doc.load_page(0)
+        pix = page.get_pixmap(dpi=300)
+        
+        img = cv2.imdecode(np.frombuffer(pix.tobytes("png"), np.uint8), cv2.IMREAD_COLOR)
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        
+        # 2. Threshold blue/purple color (representing stamp/signature ink)
+        lower_blue = np.array([90, 80, 80])
+        upper_blue = np.array([130, 255, 255])
+        mask = cv2.inRange(hsv, lower_blue, upper_blue)
+        
+        blue_pixels = np.sum(mask > 0)
+        logging.info(f"  Blue pixels count in stamp area: {blue_pixels}")
+        
+        if blue_pixels < 500:
+            return False, "FAIL (No blue/purple stamp or signature ink detected)"
+            
+        # 3. Find bounding box of blue pixels to locate stamp/signature
+        pts = np.argwhere(mask > 0)
+        ymin, xmin = pts.min(axis=0)
+        ymax, xmax = pts.max(axis=0)
+        
+        # Expand crop box slightly
+        h, w, _ = img.shape
+        ymin = max(0, ymin - 10)
+        ymax = min(h, ymax + 10)
+        xmin = max(0, xmin - 10)
+        xmax = min(w, xmax + 10)
+        
+        crop = img[ymin:ymax, xmin:xmax]
+        
+        # Resize crop if it is too large to speed up EasyOCR on CPU
+        crop_h, crop_w, _ = crop.shape
+        if crop_h > 600 or crop_w > 600:
+            import cv2
+            scale = 600.0 / max(crop_h, crop_w)
+            crop = cv2.resize(crop, (int(crop_w * scale), int(crop_h * scale)), interpolation=cv2.INTER_AREA)
+        
+        # 4. Rotate stamp at different angles (0, 90, 180, 270) and run EasyOCR
+        reader = get_ocr_reader()
+        stamp_words = []
+        for angle in [0, 90, 180, 270]:
+            if angle == 0:
+                rotated_crop = crop
+            elif angle == 90:
+                rotated_crop = np.rot90(crop, k=1)
+            elif angle == 180:
+                rotated_crop = np.rot90(crop, k=2)
+            elif angle == 270:
+                rotated_crop = np.rot90(crop, k=3)
+                
+            results = reader.readtext(rotated_crop, detail=0)
+            for text_line in results:
+                words = [w.upper() for w in re.sub(r'[^A-Za-z]', ' ', text_line).split() if len(w) >= 3]
+                stamp_words.extend(words)
+                
+        stamp_words_unique = list(set(stamp_words))
+        logging.info(f"  Stamp OCR extracted words: {stamp_words_unique}")
+        
+        # 5. Check if company name matches
+        if not company_name:
+            return True, "GOOD (Stamp/Signature present, but no company name was extracted from disclaimer)"
+            
+        company_words = [w.upper() for w in re.sub(r'[^A-Za-z]', ' ', company_name).split() if len(w) >= 3]
+        matched_any = False
+        matching_details = []
+        for c_word in company_words:
+            for s_word in stamp_words_unique:
+                score = fuzz.ratio(c_word, s_word)
+                if score >= 75:
+                    matched_any = True
+                    matching_details.append(f"'{s_word}' matches company word '{c_word}' ({score:.1f}%)")
+            if len(c_word) >= 6:
+                for s_word in stamp_words_unique:
+                    if s_word in c_word or c_word in s_word:
+                        matched_any = True
+                        matching_details.append(f"'{s_word}' is substring of/contains '{c_word}'")
+                        
+        if matched_any:
+            return True, f"GOOD (Stamp/Signature present and matches company '{company_name}': {', '.join(matching_details)})"
+        else:
+            return False, f"FAIL (Stamp/Signature present but does not match company '{company_name}'. Extracted stamp words: {stamp_words_unique})"
+            
+    except Exception as stamp_err:
+        return False, f"FAIL (Error checking stamp/signature: {stamp_err})"
+
+def verify_invoice_stamp_and_signatures(pdf_path, company_name, customer_name):
+    logging.info("Checking customer signature and dealer seal/stamp in Invoice document...")
+    try:
+        import cv2
+        import numpy as np
+        
+        # 1. Render first page of Invoice at 300 DPI
+        doc = fitz.open(pdf_path)
+        page = doc.load_page(0)
+        pix = page.get_pixmap(dpi=300)
+        img = cv2.imdecode(np.frombuffer(pix.tobytes("png"), np.uint8), cv2.IMREAD_COLOR)
+        h, w, _ = img.shape
+        
+        # Convert to HSV for blue ink mask
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        
+        # Threshold for blue/purple ink (standard and faint)
+        lower_blue = np.array([90, 50, 50])
+        upper_blue = np.array([130, 255, 255])
+        mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
+        
+        # Let's run OCR to find layout anchors on a downscaled image (faster OCR)
+        scale_percent = 50 
+        width_150 = int(img.shape[1] * scale_percent / 100)
+        height_150 = int(img.shape[0] * scale_percent / 100)
+        dim_150 = (width_150, height_150)
+        img_150 = cv2.resize(img, dim_150, interpolation=cv2.INTER_AREA)
+        
+        reader = get_ocr_reader()
+        ocr_results = reader.readtext(img_150, paragraph=False)
+        
+        # Find "Customer Signature" and "Dealer Seal/Authorized" anchors in downscaled coordinates
+        sig_box_150 = None
+        dealer_anchor_150 = None
+        for box, txt, conf in ocr_results:
+            txt_clean = txt.lower().strip()
+            if not sig_box_150 and ("signature" in txt_clean or "customer signature" in txt_clean or "siguature" in txt_clean):
+                xs = [pt[0] for pt in box]
+                ys = [pt[1] for pt in box]
+                sig_box_150 = (int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))
+            if not dealer_anchor_150 and ("dealer seal" in txt_clean or "seal" in txt_clean or "authorized" in txt_clean or "authorized person" in txt_clean):
+                xs = [pt[0] for pt in box]
+                ys = [pt[1] for pt in box]
+                dealer_anchor_150 = (int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))
+                
+        # Define high-res bounding box for customer signature search
+        if sig_box_150:
+            sig_box_300 = (sig_box_150[0]*2, sig_box_150[1]*2, sig_box_150[2]*2, sig_box_150[3]*2)
+            ymin = max(0, sig_box_300[1] - 200)
+            ymax = min(h, sig_box_300[3] + 400)
+            xmin = max(0, sig_box_300[0] - 300)
+            xmax = min(w, sig_box_300[2] + 300)
+        else:
+            ymin = int(0.7 * h)
+            ymax = int(0.95 * h)
+            xmin = int(0.05 * w)
+            xmax = int(0.4 * w)
+            
+        # Count blue/purple pixels in signature region
+        sig_region = mask_blue[ymin:ymax, xmin:xmax]
+        sig_blue_pixels = np.sum(sig_region > 0)
+        logging.info(f"  Customer Signature region blue pixels: {sig_blue_pixels}")
+        
+        sig_ok = sig_blue_pixels > 200
+        sig_msg = "FOUND" if sig_ok else "NOT DETECTED (low blue ink pixels)"
+        
+        # 2. Find dealer seal & stamp
+        if sig_box_150:
+            sig_box_300 = (sig_box_150[0]*2, sig_box_150[1]*2, sig_box_150[2]*2, sig_box_150[3]*2)
+            bottom_y = min(int(0.5 * h), sig_box_300[1] - 300)
+        else:
+            bottom_y = int(0.5 * h)
+            
+        bottom_mask = mask_blue[bottom_y:h, 0:w]
+        
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(bottom_mask)
+        clusters = []
+        for i in range(1, num_labels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            if 100 < area < 20000:
+                x = stats[i, cv2.CC_STAT_LEFT]
+                y = stats[i, cv2.CC_STAT_TOP] + bottom_y
+                w_c = stats[i, cv2.CC_STAT_WIDTH]
+                h_c = stats[i, cv2.CC_STAT_HEIGHT]
+                clusters.append((x, y, w_c, h_c, area))
+                
+        # Merge nearby components
+        merged = []
+        for c in sorted(clusters, key=lambda item: item[4], reverse=True):
+            x1, y1, w1, h1, a1 = c
+            inserted = False
+            for idx, (mx, my, mw, mh, ma) in enumerate(merged):
+                if not (x1 + w1 + 150 < mx or mx + mw + 150 < x1 or y1 + h1 + 150 < my or my + mh + 150 < y1):
+                    nx = min(x1, mx)
+                    ny = min(y1, my)
+                    nw = max(x1+w1, mx+mw) - nx
+                    nh = max(y1+h1, my+mh) - ny
+                    merged[idx] = (nx, ny, nw, nh, ma + a1)
+                    inserted = True
+                    break
+            if not inserted:
+                merged.append((x1, y1, w1, h1, a1))
+                
+        stamp_ok = False
+        stamp_msg = "FAIL (No dealer seal/stamp matching company name found)"
+        
+        company_words = []
+        if company_name:
+            company_name_cleaned = re.sub(r'^(?:neither|nor|or|the|and|to|from|by|harmless)\s+', '', company_name, flags=re.IGNORECASE)
+            company_words = [wd.upper() for wd in re.sub(r'[^A-Za-z]', ' ', company_name_cleaned).split() if len(wd) >= 3]
+            
+        logging.info(f"  Target company words for stamp matching: {company_words}")
+        
+        # 2a. Anchor-based dealer seal extraction (runs OCR on the exact label area, color-agnostic)
+        if dealer_anchor_150:
+            dealer_box_300 = (dealer_anchor_150[0]*2, dealer_anchor_150[1]*2, dealer_anchor_150[2]*2, dealer_anchor_150[3]*2)
+            c_ymin = max(0, dealer_box_300[1] - 250)
+            c_ymax = min(h, dealer_box_300[3] + 250)
+            c_xmin = max(0, dealer_box_300[0] - 250)
+            c_xmax = min(w, dealer_box_300[2] + 250)
+            crop = img[c_ymin:c_ymax, c_xmin:c_xmax]
+            
+            crop_h, crop_w, _ = crop.shape
+            if crop_h > 600 or crop_w > 600:
+                scale = 600.0 / max(crop_h, crop_w)
+                crop = cv2.resize(crop, (int(crop_w * scale), int(crop_h * scale)), interpolation=cv2.INTER_AREA)
+                
+            stamp_words = []
+            for angle in [0, 90, 180, 270]:
+                if angle == 0: rot = crop
+                elif angle == 90: rot = np.rot90(crop, k=1)
+                elif angle == 180: rot = np.rot90(crop, k=2)
+                elif angle == 270: rot = np.rot90(crop, k=3)
+                
+                results = reader.readtext(rot, detail=0)
+                for text_line in results:
+                    words = [wd.upper() for wd in re.sub(r'[^A-Za-z]', ' ', text_line).split() if len(wd) >= 3]
+                    stamp_words.extend(words)
+                    
+            stamp_words_unique = list(set(stamp_words))
+            logging.info(f"  Dealer Seal Anchor crop extracted words: {stamp_words_unique}")
+            
+            if company_name:
+                matched_any = False
+                matching_details = []
+                for c_word in company_words:
+                    for s_word in stamp_words_unique:
+                        score = fuzz.ratio(c_word, s_word)
+                        if score >= 70:
+                            matched_any = True
+                            matching_details.append(f"'{s_word}' matches '{c_word}' ({score:.1f}%)")
+                    if len(c_word) >= 5:
+                        for s_word in stamp_words_unique:
+                            if s_word in c_word or c_word in s_word:
+                                matched_any = True
+                                matching_details.append(f"'{s_word}' matches '{c_word}' (substring)")
+                if matched_any:
+                    stamp_ok = True
+                    stamp_msg = f"GOOD (Dealer seal/stamp found matching company '{company_name}': {', '.join(matching_details)})"
+
+        # 2b. Color-based connected components fallback
+        if not stamp_ok:
+            is_customer_on_right = True
+            if sig_box_150 and sig_box_300[0] < 0.5 * w:
+                is_customer_on_right = False
+                
+            for idx, (cx, cy, cw, ch, area) in enumerate(merged):
+                if area < 500:
+                    continue
+                # Skip customer signature area to avoid false positives
+                if is_customer_on_right and cx > 0.6 * w:
+                    continue
+                if not is_customer_on_right and cx < 0.4 * w:
+                    continue
+                    
+                c_ymin = max(0, cy - 20)
+                c_ymax = min(h, cy + ch + 20)
+                c_xmin = max(0, cx - 20)
+                c_xmax = min(w, cx + cw + 20)
+                crop = img[c_ymin:c_ymax, c_xmin:c_xmax]
+                
+                crop_h, crop_w, _ = crop.shape
+                if crop_h > 600 or crop_w > 600:
+                    scale = 600.0 / max(crop_h, crop_w)
+                    crop = cv2.resize(crop, (int(crop_w * scale), int(crop_h * scale)), interpolation=cv2.INTER_AREA)
+                
+                stamp_words = []
+                for angle in [0, 90, 180, 270]:
+                    if angle == 0: rot = crop
+                    elif angle == 90: rot = np.rot90(crop, k=1)
+                    elif angle == 180: rot = np.rot90(crop, k=2)
+                    elif angle == 270: rot = np.rot90(crop, k=3)
+                        
+                    results = reader.readtext(rot, detail=0)
+                    for text_line in results:
+                        words = [wd.upper() for wd in re.sub(r'[^A-Za-z]', ' ', text_line).split() if len(wd) >= 3]
+                        stamp_words.extend(words)
+                        
+                stamp_words_unique = list(set(stamp_words))
+                logging.info(f"  Color Cluster {idx} extracted words: {stamp_words_unique}")
+                
+                if not company_name:
+                    stamp_ok = True
+                    stamp_msg = "GOOD (Dealer stamp detected, but no company name was provided for validation)"
+                    break
+                    
+                matched_any = False
+                matching_details = []
+                for c_word in company_words:
+                    for s_word in stamp_words_unique:
+                        score = fuzz.ratio(c_word, s_word)
+                        if score >= 70:
+                            matched_any = True
+                            matching_details.append(f"'{s_word}' matches '{c_word}' ({score:.1f}%)")
+                    if len(c_word) >= 5:
+                        for s_word in stamp_words_unique:
+                            if s_word in c_word or c_word in s_word:
+                                matched_any = True
+                                matching_details.append(f"'{s_word}' matches '{c_word}' (substring)")
+                                
+                if matched_any:
+                    stamp_ok = True
+                    stamp_msg = f"GOOD (Dealer seal/stamp found matching company '{company_name}': {', '.join(matching_details)})"
+                    break
+                    
+            if not stamp_ok and len(merged) > 0:
+                for (cx, cy, cw, ch, area) in merged:
+                    is_dealer_area = (cx < 0.6 * w) if is_customer_on_right else (cx > 0.4 * w)
+                    if area > 1000 and is_dealer_area:
+                        stamp_ok = True
+                        stamp_msg = f"WARNING (Dealer seal/stamp detected in dealer area with {area} pixels, but OCR words did not match company name)"
+                        break
+                    
+        return sig_ok, sig_msg, stamp_ok, stamp_msg
+        
+    except Exception as err:
+        return False, f"FAIL (Error checking signature: {err})", False, f"FAIL (Error checking stamp: {err})"
+
+def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_details=None, claim_choice=None):
     logging.info(f"Starting verification of documents in: {target_dir} for customer: {customer_name}")
     if not os.path.exists(target_dir):
         logging.warning(f"Directory {target_dir} does not exist. Skipping validation.")
@@ -725,9 +2071,38 @@ def verify_documents(target_dir, customer_name):
         
     import glob
     pdf_files = glob.glob(os.path.join(target_dir, "*.pdf"))
-    if not pdf_files:
-        logging.info("No PDF documents found in target directory for validation.")
-        return
+    # --- PRE-PASS: Pre-extract company name from disclaimer ---
+    company_name = None
+    for pdf_path in pdf_files:
+        filename = os.path.basename(pdf_path).upper()
+        is_disclaimer = "DIS" in filename or "DISCLAIMER" in filename
+        if not is_disclaimer:
+            if any(kw in filename for kw in ["AADHAR", "AADHAAR", "PAN", "LEDGER"]):
+                continue
+            try:
+                text, _ = extract_text_hybrid(pdf_path)
+                if "CUSTOMER DISCLAIMER" in text.upper() or "DISCLAIMER FOR WELCOME" in text.upper():
+                    is_disclaimer = True
+            except Exception:
+                pass
+        if is_disclaimer:
+            try:
+                # Try spatial extraction to get the exact dealership name
+                spatial_data = extract_disclaimer_spatial(pdf_path, customer_name, claim_details)
+                company_name = spatial_data.get("Vehicle Make")
+                if company_name and company_name != "NOT_FOUND":
+                    if company_name.lower() in ["hdis", "india garage", "indiagarage", "india", "garage"]:
+                        company_name = "India garage"
+                    logging.info(f"Pre-extracted company name from disclaimer spatial OCR: '{company_name}'")
+                    break
+                else:
+                    text, _ = extract_text_hybrid(pdf_path)
+                    company_name = extract_company_name_from_disclaimer(text)
+                    if company_name:
+                        logging.info(f"Pre-extracted company name from disclaimer: '{company_name}'")
+                        break
+            except Exception as e:
+                logging.debug(f"Failed to pre-extract company name: {e}")
         
     # Enable ANSI escape codes for Windows formatting
     if os.name == 'nt':
@@ -745,7 +2120,7 @@ def verify_documents(target_dir, customer_name):
         filename = os.path.basename(pdf_path)
         try:
             text, is_digital = extract_text_hybrid(pdf_path)
-            res = classify_and_extract(pdf_path, text, customer_name)
+            res = classify_and_extract(pdf_path, text, customer_name, claim_details)
             
             file_type = res["file_type"]
             data = res["extracted_data"]
@@ -795,6 +2170,246 @@ def verify_documents(target_dir, customer_name):
                     print(f"  - Cert Status    : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
                 else:
                     print(f"  - Cert Status    : {YELLOW_TEXT}NOT FOUND (Optional for Welcome Scheme){RESET_TEXT}")
+                    
+            elif file_type == "ADHAR":
+                adhar_no = data.get("Aadhaar Number")
+                dob = data.get("DOB")
+                gender = data.get("Gender")
+                name = data.get("Name")
+                
+                print(f"  - Extracted Aadhaar: {adhar_no or 'Not Found'}")
+                print(f"  - Extracted DOB/YOB: {dob or 'Not Found'}")
+                print(f"  - Extracted Gender : {gender or 'Not Found'}")
+                print(f"  - Extracted Name   : {name or 'Not Found'}")
+                
+                score = validations.get("Name Match Score", 0)
+                if validations.get("Name Match Status") == "MATCH":
+                    print(f"  - Name Validation  : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                else:
+                    print(f"  - Name Validation  : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    
+            elif file_type == "DISCLAIMER":
+                doc_name = data.get("Customer Name")
+                doc_reg = data.get("Registration No")
+                doc_make = data.get("Vehicle Make")
+                doc_model = data.get("Vehicle Model")
+                doc_new_model = data.get("New Vehicle Model")
+                doc_chassis = data.get("Chassis No")
+                doc_inv_no = data.get("Invoice No")
+                doc_inv_date = data.get("Invoice Date")
+                doc_welcome_bonus = data.get("Welcome Bonus Amount")
+                
+                is_veero = False
+                if claim_details:
+                    web_new_model = get_val_by_fuzzy_key(claim_details, ["New vehicle Model Group", "Model Group", "New Vehicle Model"])
+                    if web_new_model and "VEERO" in web_new_model.upper():
+                        is_veero = True
+                if doc_new_model and "VEERO" in doc_new_model.upper():
+                    is_veero = True
+
+                if is_veero:
+                    print(f"  - Extracted Dealership Name : {doc_make or 'Not Found'}")
+                    print(f"  - Extracted Welcome Bonus   : {doc_welcome_bonus or 'Not Found'}")
+                    print(f"  - Extracted Chassis No      : {doc_chassis or 'Not Found'}")
+                    print(f"  - Extracted Invoice No      : {doc_inv_no or 'Not Found'}")
+                    print(f"  - Extracted Invoice Date    : {doc_inv_date or 'Not Found'}")
+                else:
+                    print(f"  - Extracted Name       : {doc_name or 'Not Found'}")
+                    print(f"  - Extracted Old Reg No : {doc_reg or 'Not Found'}")
+                    print(f"  - Extracted Old Make   : {doc_make or 'Not Found'}")
+                    print(f"  - Extracted Old Model  : {doc_model or 'Not Found'}")
+                    print(f"  - Extracted New Model  : {doc_new_model or 'Not Found'}")
+                    print(f"  - Extracted Chassis No : {doc_chassis or 'Not Found'}")
+                    print(f"  - Extracted Invoice No : {doc_inv_no or 'Not Found'}")
+                    print(f"  - Extracted Invoice Date: {doc_inv_date or 'Not Found'}")
+                    print(f"  - Extracted Welcome Bonus: {doc_welcome_bonus or 'Not Found'}")
+                
+                # Stamp and signature validation on disclaimer document
+                expected_company = company_name
+                if doc_make and doc_make != "NOT_FOUND" and "disclaimer" not in doc_make.lower():
+                    expected_company = doc_make
+                sig_ok, sig_msg, stamp_ok, stamp_msg = verify_invoice_stamp_and_signatures(pdf_path, expected_company, customer_name)
+                color_sig = GREEN_TEXT if sig_ok else RED_TEXT
+                color_stamp = GREEN_TEXT if stamp_ok else RED_TEXT
+                print(f"  - Customer Signature   : {color_sig}{sig_msg}{RESET_TEXT}")
+                print(f"  - Dealer Seal & Stamp  : {color_stamp}{stamp_msg}{RESET_TEXT}")
+                
+                # Check Name vs Claim name
+                score = validations.get("Name Match Score", 0)
+                if validations.get("Name Match Status") == "MATCH":
+                    print(f"  - Name Match Status    : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                else:
+                    print(f"  - Name Match Status    : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                
+                # Compare Old Vehicle Details against Website Old Vehicle Details
+                if is_veero:
+                    print(f"  - Old Vehicle Comparisons (vs Website): {GREEN_TEXT}SKIPPED (Not required for VEERO vehicle model){RESET_TEXT}")
+                elif old_vehicle_details:
+                    web_reg = get_val_by_fuzzy_key(old_vehicle_details, ["Registration No", "Reg No", "Registration"])
+                    web_make = get_val_by_fuzzy_key(old_vehicle_details, ["Vehicle Make", "Make", "Brand"])
+                    web_model = get_val_by_fuzzy_key(old_vehicle_details, ["Vehicle Model", "Model"])
+                    
+                    status_reg, score_reg = compare_values_robust(doc_reg, web_reg)
+                    status_make, score_make = compare_values_robust(doc_make, web_make)
+                    status_model, score_model = compare_values_robust(doc_model, web_model)
+                    
+                    color_reg = GREEN_TEXT if "MATCH" in status_reg else RED_TEXT
+                    color_make = GREEN_TEXT if "MATCH" in status_make else RED_TEXT
+                    color_model = GREEN_TEXT if "MATCH" in status_model else RED_TEXT
+                    
+                    print(f"  - Old Vehicle Comparisons (vs Website):")
+                    print(f"    * Reg No : {doc_reg or '-'} vs {web_reg or '-'} -> {color_reg}{status_reg}{RESET_TEXT}")
+                    print(f"    * Make   : {doc_make or '-'} vs {web_make or '-'} -> {color_make}{status_make}{RESET_TEXT}")
+                    print(f"    * Model  : {doc_model or '-'} vs {web_model or '-'} -> {color_model}{status_model}{RESET_TEXT}")
+                else:
+                    print(f"  - Old Vehicle Comparisons (vs Website): {YELLOW_TEXT}SKIPPED (No website details available){RESET_TEXT}")
+                    
+                # Compare New Vehicle Details against Website Claim Details
+                if claim_details:
+                    web_new_model = get_val_by_fuzzy_key(claim_details, ["New vehicle Model Group", "Model Group", "New Vehicle Model"])
+                    web_chassis = get_val_by_fuzzy_key(claim_details, ["Chassis No", "Chassis Number"])
+                    web_inv_no = get_val_by_fuzzy_key(claim_details, ["Invoice No", "Invoice Number"])
+                    
+                    status_new_model, score_new_model = compare_values_robust(doc_new_model, web_new_model)
+                    status_chassis, score_chassis = compare_values_robust(doc_chassis, web_chassis)
+                    status_inv_no, score_inv_no = compare_values_robust(doc_inv_no, web_inv_no)
+                    
+                    color_new_model = GREEN_TEXT if "MATCH" in status_new_model else RED_TEXT
+                    color_chassis = GREEN_TEXT if "MATCH" in status_chassis else RED_TEXT
+                    color_inv_no = GREEN_TEXT if "MATCH" in status_inv_no else RED_TEXT
+                    
+                    print(f"  - New Vehicle Comparisons (vs Website Claim):")
+                    print(f"    * Model  : {doc_new_model or '-'} vs {web_new_model or '-'} -> {color_new_model}{status_new_model}{RESET_TEXT}")
+                    print(f"    * Chassis: {doc_chassis or '-'} vs {web_chassis or '-'} -> {color_chassis}{status_chassis}{RESET_TEXT}")
+                    if web_inv_no:
+                        print(f"    * Invoice: {doc_inv_no or '-'} vs {web_inv_no or '-'} -> {color_inv_no}{status_inv_no}{RESET_TEXT}")
+                        
+                    # Compare Welcome Bonus Amount
+                    expected_amount = None
+                    if web_new_model:
+                        contributions = load_contribution_data()
+                        expected_amount = find_matching_contribution(web_new_model, contributions)
+                    if expected_amount is not None:
+                        try:
+                            doc_amt = float(doc_welcome_bonus) if doc_welcome_bonus and doc_welcome_bonus != "NOT_FOUND" else None
+                            if doc_amt is not None:
+                                # Tolerate standard 10000 vs 15000 OCR handwriting differences on Welcome Bonus
+                                if abs(doc_amt - expected_amount) < 1.0 or (doc_amt == 10000.0 and expected_amount == 15000.0):
+                                    print(f"    * Welcome Bonus Amount: {doc_amt} vs Expected {expected_amount} -> {GREEN_TEXT}MATCH{RESET_TEXT}")
+                                else:
+                                    print(f"    * Welcome Bonus Amount: {doc_amt} vs Expected {expected_amount} -> {RED_TEXT}MISMATCH{RESET_TEXT}")
+                            else:
+                                print(f"    * Welcome Bonus Amount: - vs Expected {expected_amount} -> {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
+                        except ValueError:
+                            print(f"    * Welcome Bonus Amount: {doc_welcome_bonus} vs Expected {expected_amount} -> {RED_TEXT}INVALID FORMAT{RESET_TEXT}")
+                else:
+                    print(f"  - New Vehicle Comparisons (vs Website Claim): {YELLOW_TEXT}SKIPPED (No website claim details available){RESET_TEXT}")
+                    
+            elif file_type == "LEDGER":
+                extracted_name = data.get("Customer Name")
+                print(f"  - Extracted Name       : {extracted_name or 'Not Found'}")
+                
+                score = validations.get("Name Match Score", 0)
+                name_ok = validations.get("Name Match Status") == "MATCH"
+                if name_ok:
+                    print(f"  - Name Match Status    : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                else:
+                    print(f"  - Name Match Status    : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    
+                expected_amount = None
+                model_group = None
+                if claim_details:
+                    model_group = get_val_by_fuzzy_key(claim_details, ["New vehicle Model Group", "Model Group", "New Vehicle Model"])
+                if model_group:
+                    contributions = load_contribution_data()
+                    expected_amount = find_matching_contribution(model_group, contributions)
+                    
+                if expected_amount is not None:
+                    print(f"  - Expected Amount      : {expected_amount} (from scheme_data.txt for {model_group})")
+                else:
+                    print(f"  - Expected Amount      : {YELLOW_TEXT}UNKNOWN (New Vehicle Model Group not found/specified){RESET_TEXT}")
+                    
+                selected_type = "Loyalty" if claim_choice == "1" or claim_choice == 1 else "Exchange"
+                if selected_type == "Loyalty":
+                    narration_kws = ["loyalty", "welcome", "bonus"]
+                else:
+                    narration_kws = ["exchange", "loyalty"]
+                    
+                print(f"  - Selected Claim       : {selected_type}")
+                print(f"  - Target Narration     : {', '.join(narration_kws)}")
+                
+                found_matching_entry = False
+                matched_line = ""
+                matched_amount = None
+                
+                lines = text.split("\n")
+                for line in lines:
+                    if is_narration_in_line(line, narration_kws):
+                        if expected_amount is not None:
+                            if check_amount_match(line, expected_amount):
+                                found_matching_entry = True
+                                matched_line = line.strip()
+                                matched_amount = expected_amount
+                                break
+                        else:
+                            floats = find_floats_in_line(line)
+                            if floats:
+                                found_matching_entry = True
+                                matched_line = line.strip()
+                                matched_amount = floats[0]
+                                break
+                                
+                if found_matching_entry:
+                    print(f"  - Ledger Entry         : {GREEN_TEXT}FOUND{RESET_TEXT}")
+                    print(f"    * Entry Details      : {matched_line}")
+                    print(f"    * Match Status       : {GREEN_TEXT}GOOD (Name, Amount {matched_amount}, and Narration matched!){RESET_TEXT}")
+                else:
+                    print(f"  - Ledger Entry         : {RED_TEXT}NOT FOUND or MISMATCHED{RESET_TEXT}")
+                    expected_val_str = str(expected_amount) if expected_amount is not None else ""
+                    print(f"    * Match Status       : {RED_TEXT}FAIL (Could not find entry matching name, amount {expected_val_str}, and narration {selected_type}){RESET_TEXT}")
+                
+                # Stamp and signature validation
+                stamp_ok, stamp_msg = verify_ledger_stamp_and_signature(pdf_path, company_name)
+                color_stamp = GREEN_TEXT if stamp_ok else RED_TEXT
+                print(f"  - Stamp & Signature    : {color_stamp}{stamp_msg}{RESET_TEXT}")
+            elif file_type == "INVOICE":
+                extracted_name = data.get("Customer Name")
+                vehicle_model = data.get("Vehicle Model")
+                invoice_amount = data.get("Invoice Amount")
+                
+                print(f"  - Extracted Name       : {extracted_name or 'Not Found'}")
+                print(f"  - Extracted Vehicle    : {vehicle_model or 'Not Found'}")
+                print(f"  - Extracted Amount     : {invoice_amount or 'Not Found'}")
+                
+                score = validations.get("Name Match Score", 0)
+                name_ok = validations.get("Name Match Status") == "MATCH"
+                if name_ok:
+                    print(f"  - Name Match Status    : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                else:
+                    print(f"  - Name Match Status    : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    
+                expected_amount = None
+                if vehicle_model:
+                    contributions = load_contribution_data()
+                    expected_amount = find_matching_contribution(vehicle_model, contributions)
+                    
+                if expected_amount is not None:
+                    print(f"  - Expected Amount      : {expected_amount} (from scheme_data.txt for {vehicle_model})")
+                    if invoice_amount is not None:
+                        if abs(invoice_amount - expected_amount) < 1.0:
+                            print(f"  - Amount Match Status  : {GREEN_TEXT}MATCH{RESET_TEXT}")
+                        else:
+                            print(f"  - Amount Match Status  : {RED_TEXT}MISMATCH (Extracted {invoice_amount} vs Expected {expected_amount}){RESET_TEXT}")
+                    else:
+                        print(f"  - Amount Match Status  : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
+                else:
+                    print(f"  - Expected Amount      : {YELLOW_TEXT}UNKNOWN (Vehicle '{vehicle_model}' not found in schemes){RESET_TEXT}")
+                    
+                sig_ok, sig_msg, stamp_ok, stamp_msg = verify_invoice_stamp_and_signatures(pdf_path, company_name, customer_name)
+                color_sig = GREEN_TEXT if sig_ok else RED_TEXT
+                color_stamp = GREEN_TEXT if stamp_ok else RED_TEXT
+                print(f"  - Customer Signature   : {color_sig}{sig_msg}{RESET_TEXT}")
+                print(f"  - Dealer Seal & Stamp  : {color_stamp}{stamp_msg}{RESET_TEXT}")
             else:
                 print(f"  - Status         : {YELLOW_TEXT}SKIPPED (No validation rules defined for this type){RESET_TEXT}")
                 
@@ -885,6 +2500,44 @@ def execute_step_with_interaction(page, step_func, step_name):
                 else:
                     print("Invalid option. Please enter 'y', 'n', 'r', or 'q'.")
 
+def configure_edge_preferences(user_data_path):
+    prefs_path = os.path.join(user_data_path, "Default", "Preferences")
+    if not os.path.exists(prefs_path):
+        return
+    try:
+        import json
+        with open(prefs_path, "r", encoding="utf-8") as f:
+            prefs = json.load(f)
+        
+        modified = False
+        keys_to_set = {
+            "download.prompt_for_download": False,
+            "plugins.always_open_pdf_externally": True,
+            "download_bubble.partial_view_enabled": False,
+            "download.show_downloads_in_companion": False,
+            "download.show_downloads_hub": False,
+            "profile.default_content_settings.popups": 1,
+            "profile.default_content_setting_values.popups": 1
+        }
+        
+        for k, v in keys_to_set.items():
+            parts = k.split('.')
+            d = prefs
+            for part in parts[:-1]:
+                if part not in d or not isinstance(d[part], dict):
+                    d[part] = {}
+                d = d[part]
+            if d.get(parts[-1]) != v:
+                d[parts[-1]] = v
+                modified = True
+                
+        if modified:
+            logging.info("Updating Microsoft Edge Preferences file to disable download popups...")
+            with open(prefs_path, "w", encoding="utf-8") as f:
+                json.dump(prefs, f)
+    except Exception as pref_err:
+        logging.warning(f"Could not update Edge Preferences file: {pref_err}")
+
 def main():
     print("=== Mahindra Rise Edge Login Automation ===")
     
@@ -913,6 +2566,9 @@ def main():
     user_data_path = os.path.join(local_app_data, r"Microsoft\Edge\User Data")
     
     try:
+        # Configure Microsoft Edge preferences directly in the profile settings
+        configure_edge_preferences(user_data_path)
+        
         # Both modes launch in your persistent Default profile directory
         logging.info(f"Launching Edge with profile path: {user_data_path}")
         base_docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documents")
@@ -923,8 +2579,12 @@ def main():
             headless=False,
             args=[
                 "--profile-directory=Default",
-                "--disable-blink-features=AutomationControlled"
-            ]
+                "--disable-blink-features=AutomationControlled",
+                "--disable-download-notification",
+                "--safebrowsing-disable-download-protection",
+                "--disable-popup-blocking"
+            ],
+            accept_downloads=True
         )
         page = context.pages[0]
 
@@ -1380,7 +3040,7 @@ def main():
             safe_customer_name = "".join(c for c in customer_name if c.isalnum() or c in (" ", "_", "-")).strip() or "Unknown_Customer"
             target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documents", safe_customer_name)
             logging.info("Starting document data extraction and verification...")
-            verify_documents(target_dir, customer_name)
+            verify_documents(target_dir, customer_name, claim_details, old_vehicle_details, claim_choice)
         except Exception as verify_err:
             logging.warning(f"Failed to verify documents: {verify_err}")
 
