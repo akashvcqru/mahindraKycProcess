@@ -342,7 +342,28 @@ def parse_drawer_details_table(page):
 
 def select_drawer_timeline_tab(page, tab_name):
     """Clicks on a specific timeline item tab in the details drawer sidebar."""
-    tab_locator = page.locator("div.ant-drawer-body").get_by_text(tab_name).first
+    drawer_body = page.locator("div.ant-drawer-body")
+    tab_locator = None
+    
+    # List of possible texts to try for robust matching
+    try_names = [tab_name]
+    if tab_name == "Non Mandatory Document":
+        try_names = ["Non Mandatory Document", "Non Mandatory Documents", "Non-Mandatory Document", "Non-Mandatory Documents"]
+    elif tab_name == "Supporting Document":
+        try_names = ["Supporting Document", "Supporting Documents", "SupportingDoc"]
+        
+    for name in try_names:
+        try:
+            loc = drawer_body.get_by_text(name, exact=False).first
+            if loc.count() > 0:
+                tab_locator = loc
+                break
+        except Exception:
+            pass
+            
+    if not tab_locator:
+        tab_locator = drawer_body.get_by_text(tab_name).first
+        
     tab_locator.wait_for(state="visible", timeout=20000)
     
     logging.info(f"Clicking on details drawer tab: '{tab_name}'")
@@ -1233,7 +1254,7 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
             
     return final_dict
 
-def classify_and_extract(file_path, text, claim_customer_name, claim_details=None):
+def classify_and_extract(file_path, text, claim_customer_name, claim_details=None, old_vehicle_details=None):
     filename = os.path.basename(file_path).upper()
     text_upper = text.upper()
     
@@ -1289,12 +1310,29 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
         dob_match = re.search(r'\b\d{2}[-/\.]\d{2}[-/\.]\d{4}\b', text)
         dob = dob_match.group(0) if dob_match else None
         
+        old_owner_name = None
+        is_relative_doc = False
+        if old_vehicle_details:
+            rel_val = get_val_by_fuzzy_key(old_vehicle_details, ["Relationship"])
+            if rel_val and rel_val.strip().lower() != "self":
+                owner_val = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+                if owner_val:
+                    old_owner_name = owner_val.strip()
+                    
         extracted_name, name_score = extract_best_name(text, claim_customer_name)
-        
+        if old_owner_name:
+            rel_extracted_name, rel_name_score = extract_best_name(text, old_owner_name)
+            if rel_name_score > name_score:
+                extracted_name = rel_extracted_name
+                name_score = rel_name_score
+                is_relative_doc = True
+                
         result["extracted_data"] = {
             "PAN Number": pan_no,
             "DOB": dob,
-            "Name": extracted_name
+            "Name": extracted_name,
+            "is_relative_doc": is_relative_doc,
+            "relative_owner_name": old_owner_name
         }
         result["validations"] = {
             "Name Match Score": name_score,
@@ -1372,13 +1410,30 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
         gender_match = re.search(r'\b(Male|Female)\b', text, re.IGNORECASE)
         gender = gender_match.group(1).capitalize() if gender_match else None
         
+        old_owner_name = None
+        is_relative_doc = False
+        if old_vehicle_details:
+            rel_val = get_val_by_fuzzy_key(old_vehicle_details, ["Relationship"])
+            if rel_val and rel_val.strip().lower() != "self":
+                owner_val = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+                if owner_val:
+                    old_owner_name = owner_val.strip()
+                    
         extracted_name, name_score = extract_best_name(text, claim_customer_name)
-        
+        if old_owner_name:
+            rel_extracted_name, rel_name_score = extract_best_name(text, old_owner_name)
+            if rel_name_score > name_score:
+                extracted_name = rel_extracted_name
+                name_score = rel_name_score
+                is_relative_doc = True
+                
         result["extracted_data"] = {
             "Aadhaar Number": adhar_no,
             "DOB": dob,
             "Gender": gender,
-            "Name": extracted_name
+            "Name": extracted_name,
+            "is_relative_doc": is_relative_doc,
+            "relative_owner_name": old_owner_name
         }
         result["validations"] = {
             "Name Match Score": name_score,
@@ -2064,11 +2119,28 @@ def verify_invoice_stamp_and_signatures(pdf_path, company_name, customer_name):
         return False, f"FAIL (Error checking signature: {err})", False, f"FAIL (Error checking stamp: {err})"
 
 def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_details=None, claim_choice=None):
+    """Validate all downloaded PDFs and return a list of issue strings.
+    Empty list  → APPROVED.  Non-empty list → HOLD."""
     logging.info(f"Starting verification of documents in: {target_dir} for customer: {customer_name}")
+    issues = []   # ← accumulated issues; returned at end
     if not os.path.exists(target_dir):
         logging.warning(f"Directory {target_dir} does not exist. Skipping validation.")
-        return
+        return issues
         
+    # Determine old vehicle owner details and relationship
+    relationship = "Self"
+    old_owner_name = customer_name
+    if old_vehicle_details:
+        rel_val = get_val_by_fuzzy_key(old_vehicle_details, ["Relationship"])
+        if rel_val:
+            relationship = rel_val.strip()
+        owner_val = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+        if owner_val:
+            old_owner_name = owner_val.strip()
+            
+    is_relationship_self = (relationship.lower() == "self")
+    relative_doc_found = False
+    
     import glob
     pdf_files = glob.glob(os.path.join(target_dir, "*.pdf"))
     # --- PRE-PASS: Pre-extract company name from disclaimer ---
@@ -2120,7 +2192,7 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
         filename = os.path.basename(pdf_path)
         try:
             text, is_digital = extract_text_hybrid(pdf_path)
-            res = classify_and_extract(pdf_path, text, customer_name, claim_details)
+            res = classify_and_extract(pdf_path, text, customer_name, claim_details, old_vehicle_details)
             
             file_type = res["file_type"]
             data = res["extracted_data"]
@@ -2139,15 +2211,28 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                 print(f"  - Extracted Name : {name or 'Not Found'}")
                 
                 score = validations.get("Name Match Score", 0)
+                is_rel = data.get("is_relative_doc", False)
+                rel_name = data.get("relative_owner_name", "")
+                
                 if validations.get("Name Match Status") == "MATCH":
-                    print(f"  - Name Validation: {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    if is_rel:
+                        print(f"  - Name Validation: {GREEN_TEXT}MATCH for relative '{rel_name}' ({score:.1f}% Similarity){RESET_TEXT}")
+                        relative_doc_found = True
+                    else:
+                        print(f"  - Name Validation: {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
                 else:
-                    print(f"  - Name Validation: {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    if is_rel:
+                        print(f"  - Name Validation: {RED_TEXT}MISMATCH for relative '{rel_name}' ({score:.1f}% Similarity){RESET_TEXT}")
+                        issues.append(f"PAN [{filename}]: Name mismatch for relative '{rel_name}' ({score:.1f}%)")
+                    else:
+                        print(f"  - Name Validation: {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                        issues.append(f"PAN [{filename}]: Name mismatch ({score:.1f}% similarity)")
                     
                 if pan_no:
                     print(f"  - PAN Status     : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
                 else:
                     print(f"  - PAN Status     : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
+                    issues.append(f"PAN [{filename}]: PAN number could not be extracted")
                 if dob:
                     print(f"  - DOB Status     : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
                 else:
@@ -2183,10 +2268,22 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                 print(f"  - Extracted Name   : {name or 'Not Found'}")
                 
                 score = validations.get("Name Match Score", 0)
+                is_rel = data.get("is_relative_doc", False)
+                rel_name = data.get("relative_owner_name", "")
+                
                 if validations.get("Name Match Status") == "MATCH":
-                    print(f"  - Name Validation  : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    if is_rel:
+                        print(f"  - Name Validation  : {GREEN_TEXT}MATCH for relative '{rel_name}' ({score:.1f}% Similarity){RESET_TEXT}")
+                        relative_doc_found = True
+                    else:
+                        print(f"  - Name Validation  : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
                 else:
-                    print(f"  - Name Validation  : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    if is_rel:
+                        print(f"  - Name Validation  : {RED_TEXT}MISMATCH for relative '{rel_name}' ({score:.1f}% Similarity){RESET_TEXT}")
+                        issues.append(f"Aadhaar [{filename}]: Name mismatch for relative '{rel_name}' ({score:.1f}%)")
+                    else:
+                        print(f"  - Name Validation  : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                        issues.append(f"Aadhaar [{filename}]: Name mismatch ({score:.1f}% similarity)")
                     
             elif file_type == "DISCLAIMER":
                 doc_name = data.get("Customer Name")
@@ -2208,6 +2305,7 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                     is_veero = True
 
                 if is_veero:
+                    print(f"  - Extracted Customer Name   : {doc_name or 'Not Found'}")
                     print(f"  - Extracted Dealership Name : {doc_make or 'Not Found'}")
                     print(f"  - Extracted Welcome Bonus   : {doc_welcome_bonus or 'Not Found'}")
                     print(f"  - Extracted Chassis No      : {doc_chassis or 'Not Found'}")
@@ -2233,6 +2331,10 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                 color_stamp = GREEN_TEXT if stamp_ok else RED_TEXT
                 print(f"  - Customer Signature   : {color_sig}{sig_msg}{RESET_TEXT}")
                 print(f"  - Dealer Seal & Stamp  : {color_stamp}{stamp_msg}{RESET_TEXT}")
+                if not sig_ok:
+                    issues.append(f"Disclaimer [{filename}]: Customer signature missing/invalid")
+                if not stamp_ok:
+                    issues.append(f"Disclaimer [{filename}]: Dealer seal/stamp missing or company name mismatch")
                 
                 # Check Name vs Claim name
                 score = validations.get("Name Match Score", 0)
@@ -2240,6 +2342,7 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                     print(f"  - Name Match Status    : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
                 else:
                     print(f"  - Name Match Status    : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    issues.append(f"Disclaimer [{filename}]: Customer name mismatch ({score:.1f}% similarity)")
                 
                 # Compare Old Vehicle Details against Website Old Vehicle Details
                 if is_veero:
@@ -2261,6 +2364,12 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                     print(f"    * Reg No : {doc_reg or '-'} vs {web_reg or '-'} -> {color_reg}{status_reg}{RESET_TEXT}")
                     print(f"    * Make   : {doc_make or '-'} vs {web_make or '-'} -> {color_make}{status_make}{RESET_TEXT}")
                     print(f"    * Model  : {doc_model or '-'} vs {web_model or '-'} -> {color_model}{status_model}{RESET_TEXT}")
+                    if "MATCH" not in status_reg and web_reg:
+                        issues.append(f"Disclaimer [{filename}]: Old Reg No mismatch (doc: {doc_reg} vs web: {web_reg})")
+                    if "MATCH" not in status_make and web_make:
+                        issues.append(f"Disclaimer [{filename}]: Old Vehicle Make mismatch (doc: {doc_make} vs web: {web_make})")
+                    if "MATCH" not in status_model and web_model:
+                        issues.append(f"Disclaimer [{filename}]: Old Vehicle Model mismatch (doc: {doc_model} vs web: {web_model})")
                 else:
                     print(f"  - Old Vehicle Comparisons (vs Website): {YELLOW_TEXT}SKIPPED (No website details available){RESET_TEXT}")
                     
@@ -2283,6 +2392,12 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                     print(f"    * Chassis: {doc_chassis or '-'} vs {web_chassis or '-'} -> {color_chassis}{status_chassis}{RESET_TEXT}")
                     if web_inv_no:
                         print(f"    * Invoice: {doc_inv_no or '-'} vs {web_inv_no or '-'} -> {color_inv_no}{status_inv_no}{RESET_TEXT}")
+                    if "MATCH" not in status_new_model and web_new_model:
+                        issues.append(f"Disclaimer [{filename}]: New Vehicle Model mismatch (doc: {doc_new_model} vs web: {web_new_model})")
+                    if "MATCH" not in status_chassis and web_chassis:
+                        issues.append(f"Disclaimer [{filename}]: Chassis No mismatch (doc: {doc_chassis} vs web: {web_chassis})")
+                    if web_inv_no and "MATCH" not in status_inv_no:
+                        issues.append(f"Disclaimer [{filename}]: Invoice No mismatch (doc: {doc_inv_no} vs web: {web_inv_no})")
                         
                     # Compare Welcome Bonus Amount
                     expected_amount = None
@@ -2298,10 +2413,13 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                                     print(f"    * Welcome Bonus Amount: {doc_amt} vs Expected {expected_amount} -> {GREEN_TEXT}MATCH{RESET_TEXT}")
                                 else:
                                     print(f"    * Welcome Bonus Amount: {doc_amt} vs Expected {expected_amount} -> {RED_TEXT}MISMATCH{RESET_TEXT}")
+                                    issues.append(f"Disclaimer [{filename}]: Welcome Bonus mismatch (doc: {doc_amt} vs expected: {expected_amount})")
                             else:
                                 print(f"    * Welcome Bonus Amount: - vs Expected {expected_amount} -> {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
+                                issues.append(f"Disclaimer [{filename}]: Welcome Bonus amount could not be extracted")
                         except ValueError:
                             print(f"    * Welcome Bonus Amount: {doc_welcome_bonus} vs Expected {expected_amount} -> {RED_TEXT}INVALID FORMAT{RESET_TEXT}")
+                            issues.append(f"Disclaimer [{filename}]: Welcome Bonus amount invalid format")
                 else:
                     print(f"  - New Vehicle Comparisons (vs Website Claim): {YELLOW_TEXT}SKIPPED (No website claim details available){RESET_TEXT}")
                     
@@ -2367,11 +2485,19 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                     print(f"  - Ledger Entry         : {RED_TEXT}NOT FOUND or MISMATCHED{RESET_TEXT}")
                     expected_val_str = str(expected_amount) if expected_amount is not None else ""
                     print(f"    * Match Status       : {RED_TEXT}FAIL (Could not find entry matching name, amount {expected_val_str}, and narration {selected_type}){RESET_TEXT}")
+                    issues.append(f"Ledger [{filename}]: No matching entry found for name/amount {expected_val_str}/{selected_type} narration")
+                
+                # Name match issue
+                if validations.get("Name Match Status") != "MATCH":
+                    nm_score = validations.get("Name Match Score", 0)
+                    issues.append(f"Ledger [{filename}]: Customer name mismatch ({nm_score:.1f}% similarity)")
                 
                 # Stamp and signature validation
                 stamp_ok, stamp_msg = verify_ledger_stamp_and_signature(pdf_path, company_name)
                 color_stamp = GREEN_TEXT if stamp_ok else RED_TEXT
                 print(f"  - Stamp & Signature    : {color_stamp}{stamp_msg}{RESET_TEXT}")
+                if not stamp_ok:
+                    issues.append(f"Ledger [{filename}]: Stamp/signature missing or invalid")
             elif file_type == "INVOICE":
                 extracted_name = data.get("Customer Name")
                 vehicle_model = data.get("Vehicle Model")
@@ -2416,56 +2542,73 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
         except Exception as doc_err:
             logging.error(f"Error validating document {filename}: {doc_err}")
             
+    # Enforce mandatory relative documents if relationship is not Self
+    if not is_relationship_self:
+        print("\n" + "="*50)
+        print("         RELATIONSHIP DOCUMENT VERIFICATION")
+        print("="*50)
+        print(f"  Relationship type: {relationship} (Owner: {old_owner_name})")
+        if relative_doc_found:
+            print(f"  - Relative ID Document: {GREEN_TEXT}VERIFIED (Found matching Aadhaar/PAN for relative '{old_owner_name}'){RESET_TEXT}")
+        else:
+            print(f"  - Relative ID Document: {RED_TEXT}FAILED (No matching Aadhaar/PAN found for relative '{old_owner_name}' in Supporting/Non Mandatory Documents){RESET_TEXT}")
+            issues.append(f"Relationship document: No Aadhaar/PAN found for relative '{old_owner_name}' (Relationship: {relationship})")
+            
     print("\n" + "="*50)
+    return issues  # empty → APPROVED, non-empty → HOLD
 
-def click_row_action_button(page):
-    """Robustly clicks the Action / Eye button in the first row of the claims table."""
+def click_row_action_button(page, row_index=0):
+    """Robustly clicks the Action / Eye button in the specified row (0-indexed) of the claims table."""
     table_selector = "div.app_mainDataTable__4u2RN table"
-    try:
-        page.wait_for_selector(table_selector, state="visible", timeout=15000)
-        # 1. Target the first row of the table
-        first_row = page.locator(f"{table_selector} tbody tr").first
-        
-        # 2. Try to find the button/icon in the first row
-        eye_selectors = [
-            "svg[data-icon='eye']",
-            ".anticon-eye",
-            "i.anticon-eye",
-            "button:has(svg)",
-            "button",
-            "a"
-        ]
-        
-        for sel in eye_selectors:
-            locator = first_row.locator(sel)
-            if locator.count() > 0:
-                logging.info(f"Clicking action button matching selector: {sel}")
-                locator.first.click()
-                return
-    except Exception as row_err:
-        logging.warning(f"Could not click dynamically via first row: {row_err}. Using fallback...")
+    page.wait_for_selector(table_selector, state="visible", timeout=15000)
 
-    # Fallback to direct cell selector
-    cell_selector = "#root > div > div > div > div > div > div > div > div > div > div > main > div:nth-child(4) > div > div > div.app_mainDataTable__4u2RN > div > div > div > div > div > div > table > tbody > tr:nth-child(1) > td:nth-child(9)"
-    page.wait_for_selector(cell_selector, state="visible", timeout=20000)
-    
-    # Try finding and clicking the svg or button tag directly to trigger the click handler
-    svg_locator = page.locator(f"{cell_selector} button > svg, {cell_selector} svg")
-    if svg_locator.count() > 0:
-        svg_locator.first.click()
-        return
-        
-    button_locator = page.locator(f"{cell_selector} button")
-    if button_locator.count() > 0:
-        button_locator.first.click()
-        return
-        
-    div_locator = page.locator(f"{cell_selector} div > div")
-    if div_locator.count() > 0:
-        div_locator.first.click()
-        return
-        
-    page.click(cell_selector)
+    # Ensure no drawer overlay is still present before clicking
+    try:
+        page.wait_for_selector("div.app_drawerBodyRight__LGAX0", state="hidden", timeout=3000)
+    except Exception:
+        pass
+
+    # PRIMARY: find the view button in the target row, use force=True to bypass any overlay
+    try:
+        target_row = page.locator(f"{table_selector} tbody tr").nth(row_index)
+        btn = target_row.locator(
+            "button[data-testid='view'], button[aria-label='ai-view'], "
+            "button:has(svg[data-icon='eye']), .anticon-eye, button:has(svg)"
+        )
+        if btn.count() > 0:
+            btn.first.scroll_into_view_if_needed()
+            page.wait_for_timeout(300)
+            btn.first.click(force=True)   # force=True bypasses overlays + works on SVGs
+            logging.info(f"Force-clicked view button on row {row_index}")
+            return
+    except Exception as js_err:
+        logging.warning(f"Primary click failed for row {row_index}: {js_err}. Trying fallback...")
+
+    # FALLBACK: last-cell CSS approach with force
+    nth = row_index + 1
+    try:
+        cell = page.locator(f"div.app_mainDataTable__4u2RN table tbody tr:nth-child({nth}) td:last-child")
+        btn2 = cell.locator("button, a")
+        if btn2.count() > 0:
+            btn2.first.click(force=True)
+            logging.info(f"Force-clicked fallback cell button on row {row_index}")
+            return
+    except Exception as fallback_err:
+        logging.warning(f"CSS fallback also failed for row {row_index}: {fallback_err}")
+
+    # LAST RESORT: pure JS dispatchEvent (works on all element types)
+    page.evaluate(f"""
+        (() => {{
+            const rows = document.querySelectorAll('div.app_mainDataTable__4u2RN table tbody tr');
+            if (rows[{row_index}]) {{
+                const btn = rows[{row_index}].querySelector(
+                    'button[data-testid="view"], button[aria-label="ai-view"], button'
+                );
+                if (btn) btn.dispatchEvent(new MouseEvent('click', {{bubbles: true, cancelable: true}}));
+            }}
+        }})()
+    """)
+    logging.info(f"JS dispatchEvent click fired for row {row_index}")
 
 def execute_step_with_interaction(page, step_func, step_name):
     """Executes a step function in Playwright. If it fails, prompts the user to terminate, keep open, or retry."""
@@ -2899,7 +3042,7 @@ def main():
             pass
         page.wait_for_timeout(1000)  # General stability delay
 
-        # --- PROCESS FIRST ROW CLAIM DETAILS ---
+        # --- PROCESS ROWS FROM CLAIMS TABLE ---
         logging.info("Locating data table...")
         table_container_selector = "div.app_mainDataTable__4u2RN"
         page.wait_for_selector(table_container_selector, state="visible", timeout=20000)
@@ -2914,144 +3057,281 @@ def main():
             logging.info("No claims found in the results table.")
             input("\nPress Enter here to close the browser...")
             return
-            
-        # Execute click on the action eye button and wait for drawer to open with retry
-        def click_and_open_drawer():
-            for attempt in range(3):
-                try:
-                    logging.info(f"Clicking view action button (Attempt {attempt+1}/3)...")
-                    click_row_action_button(page)
-                    page.wait_for_selector("div.ant-drawer-content-wrapper", state="visible", timeout=5000)
-                    return
-                except Exception as err:
-                    if attempt == 2:
-                        raise err
-                    logging.warning(f"Drawer did not open (Attempt {attempt+1}/3 failed): {err}. Retrying click...")
-                    page.wait_for_timeout(1000)
-                    
-        execute_step_with_interaction(
-            page,
-            click_and_open_drawer,
-            "Click view action (eye icon) on the first row and wait for drawer to open"
-        )
+
+        # ── Ask user: how many rows to process ──────────────────────────────
+        print(f"\n{'='*55}")
+        print(f"  {row_count} claim row(s) found in the table.")
+        print(f"{'='*55}")
+        print("  How many rows do you want to process?")
+        print("  Options:")
+        print("    a  - All rows")
+        print("    1  - 1 row")
+        print("    2  - 2 rows")
+        print("    3  - 3 rows")
+        print("    4  - 4 rows")
+        print("    5  - 5 rows (maximum)")
+        print(f"{'='*55}")
+        while True:
+            row_choice = input("  Enter your choice (a / 1-5): ").strip().lower()
+            if row_choice == 'a':
+                max_rows = row_count
+                break
+            elif row_choice.isdigit() and 1 <= int(row_choice) <= 5:
+                max_rows = min(int(row_choice), row_count)
+                break
+            else:
+                print("  Invalid choice. Please enter 'a' or a number between 1 and 5.")
         
-        # Parse claim details table inside drawer
-        logging.info("Parsing claim details metadata table...")
-        claim_details = parse_drawer_details_table(page)
-        
-        # Print parsed data in console
-        print("\n=== Extracted Claim Details ===")
-        for key, val in claim_details.items():
-            print(f"  {key} : {val}")
-            
-        # Validate: extract "New Vehicle Model Group" and "Approved Total Amount"
-        model_group = None
-        approval_amount = None
-        
-        for k, v in claim_details.items():
-            norm_k = k.lower()
-            if "new vehicle model group" in norm_k or "new vehical model group" in norm_k:
-                model_group = v
-            elif "approved total amount" in norm_k or "approval total amount" in norm_k or "approved amount" in norm_k:
-                # Prioritize approved total amount over approved dealer amount
-                if "dealer" not in norm_k:
-                    approval_amount = v
-                
-        # Enable ANSI escape code processing on Windows
+        logging.info(f"Will process {max_rows} row(s) out of {row_count} available.")
+
+        # ANSI color codes (already set below, but define early for the summary)
         if os.name == 'nt':
             os.system('')
+        ORANGE_TEXT  = "\033[38;5;208m"
+        GREEN_TEXT_S = "\033[92m"
+        RED_TEXT_S   = "\033[91m"
+        RESET_TEXT_S = "\033[0m"
+        BOLD         = "\033[1m"
 
-        GREEN_TEXT = "\033[92m"
-        RED_TEXT = "\033[91m"
-        RESET_TEXT = "\033[0m"
+        # Accumulate per-row verdicts for a final summary
+        row_verdicts = []  # list of (row_number, customer_name, status_label)
 
-        print("\n=== Scheme Validation Status ===")
-        if model_group and approval_amount:
-            print(f"  Model Group from Claim: {model_group}")
-            print(f"  Approval Amount from Claim: {approval_amount}")
             
-            # Find matching values in scheme_data.txt (could be in Welcome, Scrappage, or both)
-            matched_schemes = find_matching_schemes(model_group, schemes)
-            if matched_schemes:
-                print("  Expected Credit Note Amounts (excluding GST) from scheme_data.txt:")
-                for s_type, s_amount in matched_schemes.items():
-                    print(f"    - {s_type} Scheme: {s_amount}")
+        # ── Per-row processing loop ─────────────────────────────────────────
+        for row_idx in range(max_rows):
+            row_issues = []   # collect issues → determines Hold / Approved
+
+            print(f"\n{'='*60}")
+            print(f"  PROCESSING ROW {row_idx + 1} of {max_rows}")
+            print(f"{'='*60}")
+
+            # Execute click on the action eye button and wait for drawer to open with retry
+            current_row_idx = row_idx  # capture for closure
+            def click_and_open_drawer(ri=current_row_idx):
+                for attempt in range(3):
+                    try:
+                        logging.info(f"Clicking view action button for row {ri} (Attempt {attempt+1}/3)...")
+                        click_row_action_button(page, row_index=ri)
+                        page.wait_for_selector("div.ant-drawer-content-wrapper", state="visible", timeout=5000)
+                        return
+                    except Exception as err:
+                        if attempt == 2:
+                            raise err
+                        logging.warning(f"Drawer did not open for row {ri} (Attempt {attempt+1}/3 failed): {err}. Retrying...")
+                        page.wait_for_timeout(1000)
+                        
+            execute_step_with_interaction(
+                page,
+                click_and_open_drawer,
+                f"Click view action (eye icon) on row {row_idx + 1} and wait for drawer to open"
+            )
+            
+            # Parse claim details table inside drawer
+            logging.info("Parsing claim details metadata table...")
+            claim_details = parse_drawer_details_table(page)
+            
+            # Print parsed data in console
+            print("\n=== Extracted Claim Details ===")
+            for key, val in claim_details.items():
+                print(f"  {key} : {val}")
                 
-                try:
-                    # Parse claim's approval amount as float
-                    clean_val_str = ''.join(c for c in approval_amount if c.isdigit() or c == '.')
-                    actual_val = float(clean_val_str)
+            # Validate: extract "New Vehicle Model Group" and "Approved Total Amount"
+            model_group = None
+            approval_amount = None
+            
+            for k, v in claim_details.items():
+                norm_k = k.lower()
+                if "new vehicle model group" in norm_k or "new vehical model group" in norm_k:
+                    model_group = v
+                elif "approved total amount" in norm_k or "approval total amount" in norm_k or "approved amount" in norm_k:
+                    if "dealer" not in norm_k:
+                        approval_amount = v
                     
-                    # Check if actual_val matches any of the matched schemes
-                    matched_any = False
+            # Enable ANSI escape code processing on Windows
+            if os.name == 'nt':
+                os.system('')
+
+            GREEN_TEXT = "\033[92m"
+            RED_TEXT   = "\033[91m"
+            RESET_TEXT = "\033[0m"
+            YELLOW_TEXT = "\033[93m"
+
+            print("\n=== Scheme Validation Status ===")
+            if model_group and approval_amount:
+                print(f"  Model Group from Claim: {model_group}")
+                print(f"  Approval Amount from Claim: {approval_amount}")
+                
+                matched_schemes = find_matching_schemes(model_group, schemes)
+                if matched_schemes:
+                    print("  Expected Credit Note Amounts (excluding GST) from scheme_data.txt:")
                     for s_type, s_amount in matched_schemes.items():
-                        diff = abs(actual_val - s_amount)
-                        if diff < 1.0:
-                            print(f"{GREEN_TEXT}  --> Result: MATCH (Approval amount {actual_val} matches {model_group} {s_type} Scheme {s_amount} within rounding tolerance of 1.0; difference is {diff:.2f}) [FINE]{RESET_TEXT}")
-                            matched_any = True
-                            break
-                            
-                    if not matched_any:
-                        expected_desc = " or ".join(f"{v} ({k})" for k, v in matched_schemes.items())
-                        print(f"{RED_TEXT}  --> Result: MISMATCH (Expected {expected_desc}, got {actual_val}) [FAILED]{RESET_TEXT}")
-                except Exception as parse_err:
-                    print(f"{RED_TEXT}  --> Result: UNABLE TO COMPARE (Error parsing approval amount '{approval_amount}': {parse_err}) [FAILED]{RESET_TEXT}")
+                        print(f"    - {s_type} Scheme: {s_amount}")
+                    
+                    try:
+                        clean_val_str = ''.join(c for c in approval_amount if c.isdigit() or c == '.')
+                        actual_val = float(clean_val_str)
+                        
+                        matched_any = False
+                        for s_type, s_amount in matched_schemes.items():
+                            diff = abs(actual_val - s_amount)
+                            if diff < 1.0:
+                                print(f"{GREEN_TEXT}  --> Result: MATCH (Approval amount {actual_val} matches {model_group} {s_type} Scheme {s_amount}) [FINE]{RESET_TEXT}")
+                                matched_any = True
+                                break
+                                
+                        if not matched_any:
+                            expected_desc = " or ".join(f"{v} ({k})" for k, v in matched_schemes.items())
+                            print(f"{RED_TEXT}  --> Result: MISMATCH (Expected {expected_desc}, got {actual_val}) [FAILED]{RESET_TEXT}")
+                            row_issues.append(f"Scheme amount mismatch: got {actual_val}, expected {expected_desc}")
+                    except Exception as parse_err:
+                        print(f"{RED_TEXT}  --> Result: UNABLE TO COMPARE (Error: {parse_err}) [FAILED]{RESET_TEXT}")
+                        row_issues.append(f"Scheme amount parse error: {parse_err}")
+                else:
+                    print(f"{RED_TEXT}  --> Result: Brand '{model_group}' not found in scheme_data.txt. [FAILED]{RESET_TEXT}")
+                    row_issues.append(f"Brand '{model_group}' not found in scheme_data.txt")
             else:
-                print(f"{RED_TEXT}  --> Result: Brand '{model_group}' not found in scheme_data.txt mappings. [FAILED]{RESET_TEXT}")
-        else:
-            reasons = []
-            if not model_group:
-                reasons.append("Missing 'New vehicle Model Group' key/value")
-            if not approval_amount:
-                reasons.append("Missing 'Approved Total Amount' key/value")
-            print(f"{RED_TEXT}  --> Result: Missing required validation keys in claim details table. ({', '.join(reasons)}) [FAILED]{RESET_TEXT}")
-            print(f"      (Keys found: {list(claim_details.keys())})")
+                reasons = []
+                if not model_group:
+                    reasons.append("Missing 'New vehicle Model Group'")
+                if not approval_amount:
+                    reasons.append("Missing 'Approved Total Amount'")
+                print(f"{RED_TEXT}  --> Result: Missing required keys. ({', '.join(reasons)}) [FAILED]{RESET_TEXT}")
+                row_issues.append(f"Missing claim keys: {', '.join(reasons)}")
+                
+            # --- Fetch Old Vehicle Details ---
+            old_vehicle_details = {}
+            try:
+                logging.info("Switching to 'Old Vehicle Details' tab...")
+                select_drawer_timeline_tab(page, "Old Vehicle Details")
+                
+                logging.info("Parsing old vehicle details table...")
+                old_vehicle_details = parse_drawer_table_general(page, exclude_keys=["Invoice No", "New vehicle Model Group"], min_non_empty=1) or {}
+                
+                print("\n=== Extracted Old Vehicle Details ===")
+                if old_vehicle_details:
+                    for key, val in old_vehicle_details.items():
+                        print(f"  {key} : {val}")
+                else:
+                    print("  No details found or table was empty.")
+            except Exception as old_vehicle_err:
+                logging.warning(f"Failed to fetch or parse Old Vehicle Details: {old_vehicle_err}")
+
+            # --- Fetch Supporting Documents ---
+            customer_name = claim_details.get("Customer Name", "Unknown_Customer")
             
-        # --- NEW SECTION: Fetch Old Vehicle Details ---
-        try:
-            logging.info("Switching to 'Old Vehicle Details' tab...")
-            select_drawer_timeline_tab(page, "Old Vehicle Details")
-            
-            logging.info("Parsing old vehicle details table...")
-            old_vehicle_details = parse_drawer_table_general(page, exclude_keys=["Invoice No", "New vehicle Model Group"], min_non_empty=1)
-            
-            print("\n=== Extracted Old Vehicle Details ===")
+            relationship = "Self"
             if old_vehicle_details:
-                for key, val in old_vehicle_details.items():
-                    print(f"  {key} : {val}")
+                rel_val = get_val_by_fuzzy_key(old_vehicle_details, ["Relationship"])
+                if rel_val:
+                    relationship = rel_val.strip()
+                    
+            try:
+                logging.info("Switching to 'Supporting Documents' tab...")
+                select_drawer_timeline_tab(page, "Supporting Document")
+                logging.info("Downloading supporting documents...")
+                download_supporting_documents(page, context, customer_name)
+            except Exception as docs_err:
+                logging.warning(f"Failed to fetch or download Supporting Documents: {docs_err}")
+                row_issues.append(f"Supporting documents download failed: {docs_err}")
+                
+            if relationship.lower() != "self":
+                try:
+                    logging.info(f"Relationship is '{relationship}' (not Self). Switching to 'Non Mandatory Document' tab...")
+                    select_drawer_timeline_tab(page, "Non Mandatory Document")
+                    logging.info("Downloading non-mandatory documents...")
+                    download_supporting_documents(page, context, customer_name)
+                except Exception as docs_err:
+                    logging.warning(f"Failed to fetch or download Non Mandatory Documents: {docs_err}")
+
+            # --- Verify & Extract Data from Downloaded Documents ---
+            doc_issues = []
+            try:
+                safe_customer_name = "".join(c for c in customer_name if c.isalnum() or c in (" ", "_", "-")).strip() or "Unknown_Customer"
+                target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documents", safe_customer_name)
+                logging.info("Starting document data extraction and verification...")
+                doc_issues = verify_documents(target_dir, customer_name, claim_details, old_vehicle_details, claim_choice) or []
+            except Exception as verify_err:
+                logging.warning(f"Failed to verify documents: {verify_err}")
+                row_issues.append(f"Document verification error: {verify_err}")
+
+            row_issues.extend(doc_issues)
+
+            # ── Final verdict for this row ───────────────────────────────────
+            print(f"\n{'='*60}")
+            print(f"  ROW {row_idx + 1} FINAL RESULT  |  Customer: {customer_name}")
+            print(f"{'='*60}")
+            if row_issues:
+                print(f"{ORANGE_TEXT}{BOLD}  ⚠  STATUS : HOLD{RESET_TEXT_S}")
+                print(f"{ORANGE_TEXT}  Reason(s):{RESET_TEXT_S}")
+                for issue in row_issues:
+                    print(f"{ORANGE_TEXT}    • {issue}{RESET_TEXT_S}")
+                row_verdicts.append((row_idx + 1, customer_name, "HOLD"))
             else:
-                print("  No details found or table was empty.")
-        except Exception as old_vehicle_err:
-            logging.warning(f"Failed to fetch or parse Old Vehicle Details: {old_vehicle_err}")
+                print(f"{GREEN_TEXT_S}{BOLD}  ✔  STATUS : APPROVED{RESET_TEXT_S}")
+                row_verdicts.append((row_idx + 1, customer_name, "APPROVED"))
+            print(f"{'='*60}")
 
-        # --- NEW SECTION: Fetch Supporting Documents ---
-        customer_name = claim_details.get("Customer Name", "Unknown_Customer")
-        try:
-            logging.info("Switching to 'Supporting Documents' tab...")
-            select_drawer_timeline_tab(page, "Supporting Document")
-            
-            logging.info("Downloading supporting documents...")
-            download_supporting_documents(page, context, customer_name)
-        except Exception as docs_err:
-            logging.warning(f"Failed to fetch or download Supporting Documents: {docs_err}")
+            # ── Close drawer and return to table before next row ────────────
+            try:
+                # Step 1: Click the back/nav SVG or the column div that wraps it.
+                # Use force=True — works on SVG elements and bypasses overlays.
+                back_col = page.locator(
+                    "div.ant-row.withDrawer_mtop10__EYvAr div.ant-col, "
+                    "div.withDrawer_mtop10__EYvAr div.ant-col"
+                )
+                back_svg = page.locator(
+                    "div.ant-row.withDrawer_mtop10__EYvAr svg, "
+                    "div.withDrawer_mtop10__EYvAr svg"
+                )
+                if back_col.count() > 0:
+                    logging.info(f"Clicking back-col to exit drawer (row {row_idx + 1})...")
+                    back_col.first.click(force=True)
+                elif back_svg.count() > 0:
+                    logging.info(f"Clicking back-SVG to exit drawer (row {row_idx + 1})...")
+                    back_svg.first.click(force=True)
+                else:
+                    # Fallback: standard ant-drawer close button
+                    logging.info(f"Back button not found, using ant-drawer-close (row {row_idx + 1})...")
+                    close_btn = page.locator(
+                        "button.ant-drawer-close, .ant-drawer-close-x, .ant-drawer-header button"
+                    )
+                    if close_btn.count() > 0:
+                        close_btn.first.click(force=True)
 
-        # --- NEW SECTION: Verify & Extract Data from Downloaded Documents ---
-        try:
-            safe_customer_name = "".join(c for c in customer_name if c.isalnum() or c in (" ", "_", "-")).strip() or "Unknown_Customer"
-            target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documents", safe_customer_name)
-            logging.info("Starting document data extraction and verification...")
-            verify_documents(target_dir, customer_name, claim_details, old_vehicle_details, claim_choice)
-        except Exception as verify_err:
-            logging.warning(f"Failed to verify documents: {verify_err}")
+                # Step 2: Wait for the drawer body overlay to vanish
+                try:
+                    page.wait_for_selector("div.app_drawerBodyRight__LGAX0", state="hidden", timeout=12000)
+                except Exception:
+                    pass
 
-        # Wait for user input to close details
-        input("\nPress Enter to close details and close the browser...")
-        
-        # Close Drawer
-        close_btn = page.locator("button.ant-drawer-close, .ant-drawer-close-x, .ant-drawer-header button").first
-        close_btn.click()
-        page.wait_for_selector("div.ant-drawer-content-wrapper", state="hidden", timeout=10000)
-        logging.info("Drawer closed.")
+                # Step 3: Wait for the drawer wrapper to be hidden
+                try:
+                    page.wait_for_selector("div.ant-drawer-content-wrapper", state="hidden", timeout=8000)
+                except Exception:
+                    pass
+
+                # Step 4: Wait for the main table to be fully visible again
+                page.wait_for_selector("div.app_mainDataTable__4u2RN", state="visible", timeout=10000)
+                page.wait_for_timeout(2000)  # extra stability pause
+                logging.info(f"Drawer fully closed and table restored after row {row_idx + 1}.")
+            except Exception as close_err:
+                logging.warning(f"Could not close drawer cleanly after row {row_idx + 1}: {close_err}")
+                # Force wait as last resort
+                page.wait_for_timeout(4000)
+
+        # ── Final multi-row summary ──────────────────────────────────────────
+        print(f"\n{'='*60}")
+        print(f"  BATCH PROCESSING COMPLETE  ({len(row_verdicts)} row(s) processed)")
+        print(f"{'='*60}")
+        for rn, cname, status in row_verdicts:
+            if status == "APPROVED":
+                color = GREEN_TEXT_S
+            else:
+                color = ORANGE_TEXT
+            print(f"  Row {rn:>2}  |  {cname:<30}  |  {color}{BOLD}{status}{RESET_TEXT_S}")
+        print(f"{'='*60}")
+
+        input("\nPress Enter to close the browser...")
 
     except KeepBrowserOpenException:
         logging.info("Exiting script. Browser remains open as requested.")
