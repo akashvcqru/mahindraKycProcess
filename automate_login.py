@@ -373,6 +373,96 @@ def select_drawer_timeline_tab(page, tab_name):
     # Give the page 1.5 seconds to finish rendering/updating the pane content
     page.wait_for_timeout(1500)
 
+def dismiss_edge_download_popup():
+    """Brings Microsoft Edge to foreground and simulates an OS-level Escape keypress to close the download flyout."""
+    try:
+        import ctypes
+        import time
+        # Find window by class name (Edge uses Chrome_WidgetWin_1)
+        hwnd = ctypes.windll.user32.FindWindowW("Chrome_WidgetWin_1", None)
+        if hwnd:
+            # SW_RESTORE (9) will restore the window if minimized, SetForegroundWindow focuses it
+            ctypes.windll.user32.ShowWindow(hwnd, 9)
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            time.sleep(0.2)
+            # Simulate physical Escape keypress (VK_ESCAPE = 0x1B)
+            ctypes.windll.user32.keybd_event(0x1B, 0, 0, 0)  # Down
+            time.sleep(0.05)
+            ctypes.windll.user32.keybd_event(0x1B, 0, 2, 0)  # Up
+            logging.info("Dismissed Microsoft Edge download flyout via OS-level Escape.")
+    except Exception as e:
+        logging.warning(f"Could not dismiss Edge download popup: {e}")
+
+def close_drawer_robust(page):
+    """Robustly closes the drawer using multiple selector strategies."""
+    close_selectors = [
+        "div.DrawerFormButton_buttonsGroupLeft__YSmIq button",
+        "div[class*='DrawerFormButton_buttonsGroupLeft'] button",
+        ".DrawerFormButton_buttonsGroupLeft__YSmIq button",
+        "div.ant-drawer-content-wrapper button:has-text('Close')",
+        "div.ant-drawer-content-wrapper button:has-text('Cancel')",
+        "div.ant-drawer-content-wrapper button:has-text('Back')",
+        "div.ant-row.withDrawer_mtop10__EYvAr div.ant-col",
+        "div.withDrawer_mtop10__EYvAr div.ant-col",
+        "div.ant-row.withDrawer_mtop10__EYvAr svg",
+        "div.withDrawer_mtop10__EYvAr svg",
+        "button.ant-drawer-close",
+        ".ant-drawer-close-x",
+        ".ant-drawer-header button"
+    ]
+    
+    def click_any_close_button():
+        for selector in close_selectors:
+            try:
+                loc = page.locator(selector)
+                if loc.count() > 0:
+                    logging.info(f"Trying to close drawer via selector: '{selector}'")
+                    try:
+                        loc.first.scroll_into_view_if_needed(timeout=1000)
+                    except Exception:
+                        pass
+                    loc.first.click(force=True)
+                    page.wait_for_timeout(500)
+                    # Check if drawer wrapper is hidden
+                    hidden_check = page.locator("div.ant-drawer-content-wrapper")
+                    if hidden_check.count() == 0 or not hidden_check.first.is_visible():
+                        logging.info("Drawer closed successfully after click.")
+                        return True
+            except Exception as click_err:
+                logging.debug(f"Selector '{selector}' click failed: {click_err}")
+        return False
+
+    drawer_closed = False
+    for attempt in range(4):
+        # Check if already closed
+        wrapper = page.locator("div.ant-drawer-content-wrapper")
+        if wrapper.count() == 0 or not wrapper.first.is_visible():
+            drawer_closed = True
+            break
+
+        logging.info(f"Attempting to close drawer (Attempt {attempt + 1}/4)...")
+        # Try dismissing the Edge download popup first if it's open, as it can block focus
+        if attempt > 0:
+            logging.info("Dismissing Edge download popup before retrying close click...")
+            dismiss_edge_download_popup()
+            page.wait_for_timeout(500)
+
+        # Try clicking close buttons
+        click_any_close_button()
+        
+        # Wait up to 2 seconds for it to become hidden
+        try:
+            page.wait_for_selector("div.ant-drawer-content-wrapper", state="hidden", timeout=2000)
+            drawer_closed = True
+            break
+        except Exception:
+            pass
+
+    if not drawer_closed:
+        logging.warning("Drawer remained open after all close attempts.")
+        return False
+    return True
+
 def download_supporting_documents(page, context, customer_name):
     """Downloads all supporting documents in the current pane to documents/<customer_name>/."""
     def get_extension_from_headers(headers, default=".pdf"):
@@ -389,9 +479,9 @@ def download_supporting_documents(page, context, customer_name):
             return ".webp"
         return default
 
-    def get_filename_from_response(response):
+    def get_filename_from_response(headers, url):
         # 1. Try Content-Disposition header
-        cd = response.headers.get("content-disposition", "")
+        cd = headers.get("content-disposition", "")
         if cd:
             import re
             match = re.search(r'filename=["\']?([^"\';]+)["\']?', cd)
@@ -399,21 +489,12 @@ def download_supporting_documents(page, context, customer_name):
                 return os.path.basename(match.group(1).strip())
                 
         # 2. Try parsing filename from URL
-        url_path = response.url.split('?')[0]
+        url_path = url.split('?')[0]
         base_name = os.path.basename(url_path)
         if base_name and "." in base_name:
             return os.path.basename(base_name)
             
         return None
-
-    def is_file_response(response):
-        try:
-            content_type = response.headers.get("content-type", "").lower()
-            if any(t in content_type for t in ["pdf", "image/", "octet-stream"]):
-                return True
-        except Exception:
-            pass
-        return False
 
     # Sanitize customer name for folder path
     safe_customer_name = "".join(c for c in customer_name if c.isalnum() or c in (" ", "_", "-")).strip()
@@ -433,188 +514,231 @@ def download_supporting_documents(page, context, customer_name):
         logging.warning("No download buttons (data-testid='downloadBtn') found/loaded within 15 seconds. Skipping.")
         return
         
+    # Find all download button slots originally
     all_buttons = page.locator(button_selector)
     all_count = all_buttons.count()
     
-    # Filter only visible and enabled buttons
-    buttons_to_download = []
+    # Filter only visible and enabled buttons to know the total count
+    button_count = 0
     for idx in range(all_count):
         btn = all_buttons.nth(idx)
         if btn.is_visible() and not btn.is_disabled():
-            buttons_to_download.append(btn)
+            button_count += 1
             
-    button_count = len(buttons_to_download)
-    logging.info(f"Found {all_count} download button slots, {button_count} are active/visible.")
+    logging.info(f"Found active/visible download buttons: {button_count}")
     
-    for i in range(button_count):
-        btn = buttons_to_download[i]
-        page.wait_for_timeout(1000)
+    # Shared list to store files captured by our route interceptor
+    captured_files = []
+    
+    # Standard event capture fallbacks
+    event_result = {
+        "download": None,
+        "new_page": None
+    }
+    
+    def intercept_route(route):
+        req = route.request
+        url = req.url
         
-        # Get the closest parent card ancestor to correctly extract the header title
-        card = btn.locator("xpath=./ancestor::div[contains(@class, 'ant-card') or contains(@class, 'app_viewDocumentStrip')][1]").first
-        
-        title = f"document_{i+1}"
+        # Skip static assets
+        if any(url.endswith(ext) for ext in [".js", ".css", ".woff", ".woff2", ".svg"]):
+            route.continue_()
+            return
+            
         try:
-            title_el = card.locator(".ant-card-head-title, .ant-card-head")
-            if title_el.count() > 0:
-                title_text = title_el.first.text_content(timeout=1000).split("\n")[0].strip()
-                if title_text:
-                    title = "".join(c for c in title_text if c.isalnum() or c in (" ", "_", "-")).strip()
-        except Exception as title_err:
-            logging.debug(f"Failed to get card title: {title_err}")
+            # Fetch response in background
+            response = route.fetch()
+            headers = response.headers
+            content_type = headers.get("content-type", "").lower()
+            content_disposition = headers.get("content-disposition", "").lower()
             
-        logging.info(f"Downloading supporting document {i+1}/{button_count}: {title}...")
+            is_file = (
+                "pdf" in content_type or
+                "image/" in content_type or
+                "octet-stream" in content_type or
+                "attachment" in content_disposition or
+                "filename=" in content_disposition
+            )
+            
+            if is_file:
+                # Read bytes and append to captured list
+                body = response.body()
+                captured_files.append({
+                    "body": body,
+                    "headers": headers,
+                    "url": url
+                })
+                logging.info(f"[Debug] Background routing successfully captured file from: {url}")
+                # Respond with status 200 and empty body so Edge doesn't open native download popup
+                route.fulfill(status=200, body=b"")
+            else:
+                route.fulfill(response=response)
+        except Exception as err:
+            # If routing fails, continue natively (standard download/navigation)
+            logging.info(f"[Debug] Interception bypassed/failed for {url}: {err}")
+            route.continue_()
+            
+    # Enable background request interception at BrowserContext level
+    context.route("**/*", intercept_route)
+    
+    def on_download(d):
+        event_result["download"] = d
         
-        # We register event listeners for both page (new tab) and download (direct file stream) events
-        event_result = {
-            "download": None,
-            "new_page": None,
-            "response": None
-        }
+    def on_page_opened(p):
+        event_result["new_page"] = p
+        p.on("download", on_download)
         
-        # Watch for responses on the main page (handles lightbox/modal/inline fetches)
-        def on_main_response(res):
-            try:
-                if res.url == page.url or "dashboard" in res.url:
-                    return
-                if is_file_response(res):
-                    if event_result["response"] is None:
-                        event_result["response"] = res
-            except Exception:
-                pass
-
-        def on_page(p):
-            event_result["new_page"] = p
+    context.on("page", on_page_opened)
+    page.on("download", on_download)
+    
+    try:
+        for i in range(button_count):
+            page.wait_for_timeout(1000)
             
-            # Watch for responses inside this new tab
-            def on_child_response(res):
-                try:
-                    if is_file_response(res) or res.url == p.url:
-                        if event_result["response"] is None:
-                            event_result["response"] = res
-                except Exception:
-                    pass
-            p.on("response", on_child_response)
-            
-            # Watch for downloads inside this new tab
-            p.on("download", lambda d: on_download(d))
-            
-        def on_download(d):
-            event_result["download"] = d
-            
-        context.on("page", on_page)
-        page.on("download", on_download)
-        page.on("response", on_main_response)
-        
-        success = False
-        try:
-            # Click the button (try normal click, fall back to dispatching raw click event if obstructed)
-            try:
-                btn.click(timeout=3000)
-            except Exception:
-                btn.dispatch_event("click")
+            # Re-query locator to prevent stale elements
+            current_buttons = page.locator(button_selector)
+            active_buttons = []
+            for idx in range(current_buttons.count()):
+                btn = current_buttons.nth(idx)
+                if btn.is_visible() and not btn.is_disabled():
+                    active_buttons.append(btn)
+                    
+            if i >= len(active_buttons):
+                logging.warning(f"Active download button index {i} no longer exists in the DOM.")
+                break
                 
-            # Poll up to 10 seconds for either event to fire
+            btn = active_buttons[i]
+            
+            # Extract card title for filename fallback
+            card = btn.locator("xpath=./ancestor::div[contains(@class, 'ant-card') or contains(@class, 'app_viewDocumentStrip')][1]").first
+            title = f"document_{i+1}"
+            try:
+                title_el = card.locator(".ant-card-head-title, .ant-card-head")
+                if title_el.count() > 0:
+                    title_text = title_el.first.text_content(timeout=1000).split("\n")[0].strip()
+                    if title_text:
+                        title = "".join(c for c in title_text if c.isalnum() or c in (" ", "_", "-")).strip()
+            except Exception as title_err:
+                logging.debug(f"Failed to get card title: {title_err}")
+                
+            logging.info(f"Downloading supporting document {i+1}/{button_count}: {title}...")
+            
+            # Reset event and capture results for this iteration
+            captured_files.clear()
+            event_result["download"] = None
+            event_result["new_page"] = None
+            
+            # Trigger click using robust waterfall (normal click -> parent click -> DOM click)
+            try:
+                btn.click(timeout=2000)
+            except Exception:
+                try:
+                    # Click parent container (e.g. if btn is an SVG icon, click the containing button)
+                    btn.locator("xpath=..").click(timeout=1000)
+                except Exception:
+                    btn.dispatch_event("click")
+            
+            # Wait up to 10 seconds for file capture
             start_time = time.time()
+            success = False
             page_open_time = None
+            
             while time.time() - start_time < 10.0:
+                # Path 1: Background Route Interception (No popup)
+                if len(captured_files) > 0:
+                    file_info = captured_files[0]
+                    body = file_info["body"]
+                    headers = file_info["headers"]
+                    url = file_info["url"]
+                    
+                    filename = get_filename_from_response(headers, url)
+                    if not filename:
+                        ext = get_extension_from_headers(headers)
+                        filename = f"{title}{ext}"
+                        
+                    target_path = os.path.join(target_dir, filename)
+                    with open(target_path, "wb") as f:
+                        f.write(body)
+                    logging.info(f"Downloaded (via background intercept): {target_path}")
+                    success = True
+                    break
+                    
+                # Path 2: Playwright Download Event Fallback
                 if event_result["download"] is not None:
+                    download = event_result["download"]
+                    suggested = download.suggested_filename
+                    target_path = os.path.join(target_dir, suggested)
+                    download.save_as(target_path)
+                    logging.info(f"Downloaded (via event fallback): {target_path}")
+                    success = True
                     break
-                if event_result["response"] is not None:
-                    break
+                    
+                # Path 3: Playwright New Tab Event Fallback (wait up to 3 seconds for it to start a download)
                 if event_result["new_page"] is not None:
                     if page_open_time is None:
                         page_open_time = time.time()
-                    # Wait up to 3 seconds after page opens to see if a download event starts
                     if time.time() - page_open_time > 3.0:
                         break
+                        
                 page.wait_for_timeout(200)
                 
-            if event_result["download"] is not None:
-                download = event_result["download"]
-                suggested = download.suggested_filename
-                target_path = os.path.join(target_dir, suggested)
-                download.save_as(target_path)
-                logging.info(f"Downloaded: {target_path}")
-                success = True
-            elif event_result["response"] is not None:
-                response = event_result["response"]
-                body = response.body()
-                filename = get_filename_from_response(response)
-                if not filename:
-                    ext = get_extension_from_headers(response.headers)
-                    filename = f"{title}{ext}"
-                target_path = os.path.join(target_dir, filename)
-                with open(target_path, "wb") as f:
-                    f.write(body)
-                logging.info(f"Downloaded from response: {target_path}")
-                success = True
-            elif event_result["new_page"] is not None:
-                new_page = event_result["new_page"]
-                new_page.wait_for_load_state("load", timeout=5000)
-                url = new_page.url
+            # Path 4: Tab Evaluation Fallback
+            if not success and event_result["new_page"] is not None:
+                try:
+                    new_page = event_result["new_page"]
+                    new_page.wait_for_load_state("load", timeout=5000)
+                    url = new_page.url
+                    filename = os.path.basename(url.split('?')[0])
+                    if not filename or "." not in filename:
+                        filename = f"{title}.pdf"
+                        
+                    target_path = os.path.join(target_dir, filename)
+                    
+                    # Fetch inside the child page using standard browser fetch
+                    pdf_bytes = new_page.evaluate("""
+                        async (url) => {
+                            const response = await fetch(url);
+                            const buffer = await response.arrayBuffer();
+                            return Array.from(new Uint8Array(buffer));
+                        }
+                    """, url)
+                    
+                    with open(target_path, "wb") as f:
+                        f.write(bytes(pdf_bytes))
+                    logging.info(f"Downloaded (via fallback tab evaluation): {target_path}")
+                    success = True
+                except Exception as tab_err:
+                    logging.error(f"Fallback tab fetch error: {tab_err}")
+                    
+            if not success:
+                logging.error(f"Could not download supporting document: {title}")
                 
-                # Check for filename from URL
-                url_path = url.split('?')[0]
-                filename = os.path.basename(url_path)
-                if not filename or "." not in filename:
-                    ext = ".pdf"
-                    if any(img_ext in url.lower() for img_ext in [".png", ".jpg", ".jpeg", ".gif"]):
-                        for img_ext in [".png", ".jpg", ".jpeg", ".gif"]:
-                            if img_ext in url.lower():
-                                ext = img_ext
-                                break
-                    filename = f"{title}{ext}"
-                            
-                target_path = os.path.join(target_dir, filename)
-                
-                # Try fallback fetch
-                pdf_bytes = new_page.evaluate("""
-                    async (url) => {
-                        const response = await fetch(url);
-                        const buffer = await response.arrayBuffer();
-                        return Array.from(new Uint8Array(buffer));
-                    }
-                """, url)
-                
-                with open(target_path, "wb") as f:
-                    f.write(bytes(pdf_bytes))
-                logging.info(f"Downloaded via fallback fetch: {target_path}")
-                success = True
-            else:
-                logging.warning(f"Timeout waiting for download/page events for card '{title}'")
-        except Exception as err:
-            logging.error(f"Error handling download for card '{title}': {err}")
-        finally:
-            # Clean up the new page if it was opened
+            # Clean up child pages/tabs opened during this iteration
             if event_result["new_page"] is not None:
                 try:
                     event_result["new_page"].close()
                 except Exception:
                     pass
-            # Unregister listeners to prevent double-triggering or memory leaks
+                    
+            # Auto-dismiss Edge downloads popup by pressing Escape
             try:
-                context.remove_listener("page", on_page)
-            except Exception:
-                pass
-            try:
-                page.remove_listener("download", on_download)
-            except Exception:
-                pass
-            try:
-                page.remove_listener("response", on_main_response)
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(200)
             except Exception:
                 pass
                 
-        if not success:
-            logging.error(f"Could not download supporting document: {title}")
-            
-        # Dismiss any Edge download flyout/popup by pressing Escape
+    finally:
+        # Clean up listeners and route interception
         try:
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(200)
+            context.remove_listener("page", on_page_opened)
         except Exception:
             pass
+        try:
+            context.unroute("**/*")
+        except Exception:
+            pass
+        # Ensure the Edge download popup flyout is closed before we proceed
+        dismiss_edge_download_popup()
 
 _ocr_reader = None
 
@@ -2564,7 +2688,11 @@ def click_row_action_button(page, row_index=0):
 
     # Ensure no drawer overlay is still present before clicking
     try:
-        page.wait_for_selector("div.app_drawerBodyRight__LGAX0", state="hidden", timeout=3000)
+        page.wait_for_selector(
+            "div.app_drawerBodyRight__LGAX0, div[class*='app_drawerBodyRight'], div.ant-drawer-content-wrapper",
+            state="hidden",
+            timeout=3000
+        )
     except Exception:
         pass
 
@@ -2725,7 +2853,8 @@ def main():
                 "--disable-blink-features=AutomationControlled",
                 "--disable-download-notification",
                 "--safebrowsing-disable-download-protection",
-                "--disable-popup-blocking"
+                "--disable-popup-blocking",
+                "--disable-features=DownloadBubble"
             ],
             accept_downloads=True
         )
@@ -3108,6 +3237,12 @@ def main():
             # Execute click on the action eye button and wait for drawer to open with retry
             current_row_idx = row_idx  # capture for closure
             def click_and_open_drawer(ri=current_row_idx):
+                # If drawer is already open, try to close it first to ensure a clean state
+                drawer_wrapper = page.locator("div.ant-drawer-content-wrapper")
+                if drawer_wrapper.count() > 0 and drawer_wrapper.first.is_visible():
+                    logging.info("Drawer is already open. Closing it before opening new row drawer...")
+                    close_drawer_robust(page)
+                    
                 for attempt in range(3):
                     try:
                         logging.info(f"Clicking view action button for row {ri} (Attempt {attempt+1}/3)...")
@@ -3273,51 +3408,17 @@ def main():
 
             # ── Close drawer and return to table before next row ────────────
             try:
-                # Step 1: Click the back/nav SVG or the column div that wraps it.
-                # Use force=True — works on SVG elements and bypasses overlays.
-                back_col = page.locator(
-                    "div.ant-row.withDrawer_mtop10__EYvAr div.ant-col, "
-                    "div.withDrawer_mtop10__EYvAr div.ant-col"
-                )
-                back_svg = page.locator(
-                    "div.ant-row.withDrawer_mtop10__EYvAr svg, "
-                    "div.withDrawer_mtop10__EYvAr svg"
-                )
-                if back_col.count() > 0:
-                    logging.info(f"Clicking back-col to exit drawer (row {row_idx + 1})...")
-                    back_col.first.click(force=True)
-                elif back_svg.count() > 0:
-                    logging.info(f"Clicking back-SVG to exit drawer (row {row_idx + 1})...")
-                    back_svg.first.click(force=True)
-                else:
-                    # Fallback: standard ant-drawer close button
-                    logging.info(f"Back button not found, using ant-drawer-close (row {row_idx + 1})...")
-                    close_btn = page.locator(
-                        "button.ant-drawer-close, .ant-drawer-close-x, .ant-drawer-header button"
-                    )
-                    if close_btn.count() > 0:
-                        close_btn.first.click(force=True)
-
-                # Step 2: Wait for the drawer body overlay to vanish
-                try:
-                    page.wait_for_selector("div.app_drawerBodyRight__LGAX0", state="hidden", timeout=12000)
-                except Exception:
-                    pass
-
-                # Step 3: Wait for the drawer wrapper to be hidden
-                try:
-                    page.wait_for_selector("div.ant-drawer-content-wrapper", state="hidden", timeout=8000)
-                except Exception:
-                    pass
-
-                # Step 4: Wait for the main table to be fully visible again
-                page.wait_for_selector("div.app_mainDataTable__4u2RN", state="visible", timeout=10000)
-                page.wait_for_timeout(2000)  # extra stability pause
+                close_ok = close_drawer_robust(page)
+                if not close_ok:
+                    logging.warning(f"Could not close drawer cleanly after row {row_idx + 1}")
+                
+                # Wait for the main table to be fully visible again
+                page.wait_for_selector("div.app_mainDataTable__4u2RN", state="visible", timeout=5000)
+                page.wait_for_timeout(1000)  # stability pause
                 logging.info(f"Drawer fully closed and table restored after row {row_idx + 1}.")
             except Exception as close_err:
                 logging.warning(f"Could not close drawer cleanly after row {row_idx + 1}: {close_err}")
-                # Force wait as last resort
-                page.wait_for_timeout(4000)
+                page.wait_for_timeout(2000)
 
         # ── Final multi-row summary ──────────────────────────────────────────
         print(f"\n{'='*60}")
