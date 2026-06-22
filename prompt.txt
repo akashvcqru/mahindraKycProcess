@@ -1,53 +1,12 @@
-You are an expert Python developer specializing in document processing and OCR.
+i have python script where i need to add multiple condition something like loyalty and exchange under loyalty check zone north zone, south zone, east zone, west zone after that each zone like north zone and each zone different city like delhi,gurugram, lucknow and each city have different logic so tell me in python how to manage this conditions
 
-I have PDF documents that contain BOTH computer-printed text (labels) AND 
-handwritten fill-in-the-blank values written by humans.
+and what are they they are condition for document verification which script download and match data  like there is document Ledger okay sir some condition is common like if file name inv mean invoice or ledger but inside that file like in inv file you see ledger then this is wrong you need to hold it 
 
-Document structure looks like this:
-  Chassis No:        [HANDWRITTEN VALUE]
-  Invoice No:        [HANDWRITTEN VALUE]
-  Dealership Name:   [HANDWRITTEN VALUE]
-  Invoice Date:      [HANDWRITTEN VALUE]
+if loyalty/east/Raipur,Bhubaneswar, Patna,  in their ledger you find " Welcomc Bonus" then there is amount in same row you should match that with fetch data from dasdhboard there should be match okay 
 
-TECH STACK TO USE (mandatory):
-- PyMuPDF (fitz)   → extract printed text + bounding box coordinates
-- EasyOCR          → read handwritten values using deep learning OCR
-- RapidFuzz        → fuzzy match extracted labels to known field names
-- NumPy            → convert fitz pixmap to image array for EasyOCR
+and for scrappage "SCRAPPAGE BONUS" that row amount should match some time it show with gst and without gst so in claim details in dashboard you can see total amount with gst "Total Amount" and without gst "Claim Amount"  you can match that 
 
-FIELDS I NEED TO EXTRACT:
-- chassis_no
-- invoice_no
-- dealership_name
-- invoice_date
-(add more fields here if needed)
+so here in eash and south if "SCRAPPAGE BONUS" or " Welcomc Bonus" not found in ledger then you should hold it
 
-REQUIREMENTS:
-1. Render PDF page at 3x zoom (216 DPI) before passing to EasyOCR
-2. Use bounding box spatial logic to pair each printed label 
-   with its handwritten value (same row = Y difference < 15px, 
-   value is to the RIGHT of the label)
-3. Use RapidFuzz token_sort_ratio with threshold > 70 to normalize 
-   field names and handle OCR misreads
-4. Handle multi-page PDFs (loop through all pages)
-5. Output a clean Python dictionary:
-   {
-     "chassis_no": "extracted value",
-     "invoice_no": "extracted value",
-     "dealership_name": "extracted value",
-     "invoice_date": "extracted value"
-   }
-6. Add confidence score filtering — skip EasyOCR results below 0.4
-7. Add fallback: if spatial pairing finds no value, flag the field 
-   as "NOT_FOUND" instead of crashing
-8. Code must be clean, commented, and production-ready
 
-BONUS (if possible):
-- Save output as JSON file
-- Log which fields were found vs missing
-- Show a debug mode that draws bounding boxes on the page image 
-  to visualize label/value detection
-
-Write the complete Python script end to end.
-
-checking new branch
+first analysize our whole project understand then implement it 

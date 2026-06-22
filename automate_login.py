@@ -197,89 +197,199 @@ def fill_antd_date_robust(page, select_id, fallback_container_selector, date_str
             
     raise Exception(f"Failed to set date {date_str} for {select_id} using both typing and calendar selector.")
 
-def load_scheme_data():
-    """Loads and parses the scheme data from scheme_data.txt."""
+_cached_schemes = None
+_cached_contributions = None
+CURRENT_ZONE = "COMMON"
+CURRENT_CITY = "COMMON"
+
+def fetch_google_sheet_data():
+    global _cached_schemes, _cached_contributions
+    if _cached_schemes is not None and _cached_contributions is not None:
+        return _cached_schemes, _cached_contributions
+
+    import urllib.request
+    import csv
+    import io
+
+    sheet_url = "https://docs.google.com/spreadsheets/d/1TCWi0Xn9fkK2lAsNp0a08gh3TnCbXvFKqmB8eChJuHo/export?format=csv&gid=717771316"
+    logging.info(f"Fetching Google Sheet CSV from: {sheet_url}")
+    
+    try:
+        req = urllib.request.Request(
+            sheet_url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            content = response.read().decode('utf-8')
+    except Exception as err:
+        logging.error(f"Failed to download Google Sheet: {err}")
+        raise err
+        
+    reader = csv.reader(io.StringIO(content))
+    rows = list(reader)
+    
+    if not rows:
+        raise Exception("Google Sheet returned empty data.")
+
     schemes = {
         "welcome": {},
         "scrappage": {}
     }
+    contributions = {
+        "welcome": {},
+        "scrappage": {}
+    }
     
-    scheme_file = "scheme_data.txt"
-    if not os.path.exists(scheme_file):
-        logging.warning(f"Scheme file '{scheme_file}' not found. Using empty data.")
-        return schemes
-        
-    try:
-        current_section = None
-        with open(scheme_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                if "WELCOME BONUS" in line:
-                    current_section = "welcome"
-                    continue
-                elif "SCRAPPAGE SCHEME" in line:
-                    current_section = "scrappage"
-                    continue
+    current_section = None
+    
+    for idx, row in enumerate(rows):
+        if not row:
+            continue
+        first_cell = row[0].strip().lower() if row else ""
+        if "welcome bonus" in first_cell and not any(cell.strip() for cell in row[1:]):
+            current_section = "welcome"
+            continue
+        elif "scrappage scheme" in first_cell and not any(cell.strip() for cell in row[1:]):
+            current_section = "scrappage"
+            continue
+            
+        if not any(cell.strip() for cell in row):
+            current_section = None
+            continue
+            
+        if current_section == "welcome":
+            if "brand" in row[0].lower():
+                continue
+            region = row[7].strip().upper() if len(row) > 7 and row[7].strip() else "COMMON"
+            brand = row[0].strip().upper()
+            if not brand:
+                continue
+                
+            mm_contrib_str = row[3].strip() if len(row) > 3 else "0"
+            credit_note_str = row[6].strip() if len(row) > 6 else "0"
+            
+            try:
+                mm_digits = ''.join(c for c in mm_contrib_str if c.isdigit() or c == '.')
+                mm_contrib = float(mm_digits) if mm_digits else 0.0
+                cn_digits = ''.join(c for c in credit_note_str if c.isdigit() or c == '.')
+                credit_note = float(cn_digits) if cn_digits else 0.0
+                
+                if brand not in contributions["welcome"]:
+                    contributions["welcome"][brand] = []
+                if brand not in schemes["welcome"]:
+                    schemes["welcome"][brand] = []
                     
-                if current_section == "welcome":
-                    if "Brand:" in line:
-                        brand = line.split("Brand:")[1].strip().upper()
-                    elif "Credit note" in line:
-                        val = line.split(":")[-1].strip()
-                        amount = float(''.join(c for c in val if c.isdigit() or c == '.'))
-                        schemes["welcome"][brand] = amount
-                elif current_section == "scrappage":
-                    if "|" in line and "Brand" not in line:
-                        parts = [p.strip() for p in line.split("|") if p.strip()]
-                        if len(parts) >= 5:
-                            # The last 4 columns are numeric: Contribution (A), Contribution (B), Total, Credit Note
-                            # All elements before those last 4 are brand strings
-                            brand_parts = parts[:-4]
-                            credit_note_str = parts[-1]
-                            try:
-                                amount = float(''.join(c for c in credit_note_str if c.isdigit() or c == '.'))
-                                for brand_part in brand_parts:
-                                    # Split brands by '/'
-                                    sub_brands = [b.strip().upper() for b in brand_part.split("/") if b.strip()]
-                                    for b in sub_brands:
-                                        schemes["scrappage"][b] = amount
-                            except Exception:
-                                pass
-    except Exception as e:
-        logging.error(f"Error reading/parsing scheme_data.txt: {e}")
-        
-    return schemes
+                contributions["welcome"][brand].append({"city": region, "amount": mm_contrib})
+                schemes["welcome"][brand].append({"city": region, "amount": credit_note})
+            except Exception as e:
+                logging.warning(f"Skipping welcome row due to parsing error: {e}")
+            
+        elif current_section == "scrappage":
+            if "brand" in row[0].lower():
+                continue
+                
+            brand_field = row[0].strip()
+            if not brand_field:
+                continue
+                
+            mm_contrib_str = row[1].strip() if len(row) > 1 else "0"
+            credit_note_str = row[4].strip() if len(row) > 4 else "0"
+            
+            try:
+                mm_digits = ''.join(c for c in mm_contrib_str if c.isdigit() or c == '.')
+                mm_contrib = float(mm_digits) if mm_digits else 0.0
+                cn_digits = ''.join(c for c in credit_note_str if c.isdigit() or c == '.')
+                credit_note = float(cn_digits) if cn_digits else 0.0
+                
+                sub_brands = [b.strip().upper() for b in re.split(r'[|/]', brand_field) if b.strip()]
+                for b in sub_brands:
+                    contributions["scrappage"][b] = mm_contrib
+                    schemes["scrappage"][b] = credit_note
+            except Exception as e:
+                logging.warning(f"Skipping scrappage row due to parsing error: {e}")
+                
+    _cached_schemes = schemes
+    _cached_contributions = contributions
+    return _cached_schemes, _cached_contributions
 
-def find_matching_schemes(brand_name, schemes):
-    """Looks up all matching expected credit notes in both scrappage and welcome schemes."""
+def load_scheme_data():
+    """Loads and parses the scheme data (Credit Note without GST) from Google Sheet."""
+    s, _ = fetch_google_sheet_data()
+    return s
+
+def find_matching_schemes(brand_name, schemes, city_name=None):
+    """Looks up all matching expected credit notes in both scrappage and welcome schemes based on city."""
     brand_name = brand_name.strip().upper()
+    if city_name is None:
+        global CURRENT_CITY
+        city_name = CURRENT_CITY if 'CURRENT_CITY' in globals() else "COMMON"
+    city_name = city_name.strip().upper() if city_name else "COMMON"
+    
     matches = {}
     
     # 1. Check Welcome Scheme
-    welcome_match = None
+    welcome_entries = None
     if brand_name in schemes["welcome"]:
-        welcome_match = schemes["welcome"][brand_name]
+        welcome_entries = schemes["welcome"][brand_name]
     else:
-        # Check substring match
+        # Substring match
         for key, val in schemes["welcome"].items():
             if key in brand_name or brand_name in key:
-                welcome_match = val
+                welcome_entries = val
                 break
-    if welcome_match is not None:
-        matches["Welcome"] = welcome_match
+        # Word-based match
+        if not welcome_entries:
+            brand_words = [w for w in re.sub(r'[^A-Z0-9]', ' ', brand_name).split() if len(w) > 0]
+            if brand_words:
+                first_word = brand_words[0]
+                if first_word == "NEW" and len(brand_words) > 1:
+                    first_word = brand_words[1]
+                for key, val in schemes["welcome"].items():
+                    key_clean = re.sub(r'[^A-Z0-9]', ' ', key)
+                    if first_word in key_clean.split():
+                        welcome_entries = val
+                        break
+
+    if welcome_entries:
+        welcome_match = None
+        for entry in welcome_entries:
+            if entry["city"] == city_name:
+                welcome_match = entry["amount"]
+                break
+        if welcome_match is None:
+            for entry in welcome_entries:
+                if entry["city"] == "COMMON":
+                    welcome_match = entry["amount"]
+                    break
+        if welcome_match is None and welcome_entries:
+            welcome_match = welcome_entries[0]["amount"]
+            
+        if welcome_match is not None:
+            matches["Welcome"] = welcome_match
         
     # 2. Check Scrappage Scheme
     scrappage_match = None
     if brand_name in schemes["scrappage"]:
         scrappage_match = schemes["scrappage"][brand_name]
     else:
-        # Check substring match
+        # Substring match
         for key, val in schemes["scrappage"].items():
             if key in brand_name or brand_name in key:
                 scrappage_match = val
                 break
+        # Word-based match
+        if scrappage_match is None:
+            brand_words = [w for w in re.sub(r'[^A-Z0-9]', ' ', brand_name).split() if len(w) > 0]
+            if brand_words:
+                first_word = brand_words[0]
+                if first_word == "NEW" and len(brand_words) > 1:
+                    first_word = brand_words[1]
+                for key, val in schemes["scrappage"].items():
+                    key_clean = re.sub(r'[^A-Z0-9]', ' ', key)
+                    if first_word in key_clean.split():
+                        scrappage_match = val
+                        break
+                        
     if scrappage_match is not None:
         matches["Scrappage"] = scrappage_match
         
@@ -339,6 +449,76 @@ def parse_drawer_table_general(page, required_keys=None, exclude_keys=None, min_
 def parse_drawer_details_table(page):
     """Parses the Ant Design Drawer table mapping headers to values dynamically, waiting for data to populate."""
     return parse_drawer_table_general(page, required_keys=["Chassis No", "Invoice No"], min_non_empty=3)
+
+def extract_dealer_name_from_drawer(page):
+    """Extracts the dealer name from the left side of the Ant Design Drawer."""
+    try:
+        # Wildcard selectors to match the dynamic class hashes e.g. app_drawerBodyLeft__8R+hm
+        selectors = [
+            "div[class*='app_drawerBodyLeft'] div.ant-collapse-content.ant-collapse-content-active > div > div:nth-child(3) > span",
+            "div.app_drawerBodyLeft__8R\\\\+hm div.ant-collapse-content.ant-collapse-content-active > div > div:nth-child(3) > span",
+            "div[class*='app_drawerBodyLeft'] div.ant-collapse-content-active div:nth-child(3) > span",
+            "div[class*='app_drawerBodyLeft'] span:has-text('Dealer Name') + span"
+        ]
+        
+        for sel in selectors:
+            loc = page.locator(sel)
+            if loc.count() > 0:
+                for idx in range(loc.count()):
+                    val = loc.nth(idx).inner_text().strip()
+                    if val and val != "-" and val.lower() != "dealer name":
+                        logging.info(f"Extracted Dealer Name from left drawer pane: '{val}' using selector '{sel}'")
+                        return val
+                        
+        # Fallback: line-by-line inspection of the left pane
+        left_pane = page.locator("div[class*='app_drawerBodyLeft']").first
+        if left_pane.count() > 0:
+            text = left_pane.inner_text()
+            lines = [l.strip() for l in text.split('\n') if l.strip()]
+            for idx, line in enumerate(lines):
+                if "dealer name" in line.lower():
+                    if idx + 1 < len(lines):
+                        candidate = lines[idx + 1].strip()
+                        logging.info(f"Extracted Dealer Name from lines fallback: '{candidate}'")
+                        return candidate
+    except Exception as e:
+        logging.warning(f"Error extracting dealer name from left drawer pane: {e}")
+    return None
+
+def extract_scheme_type_from_old_vehicle_details(page):
+    """Extracts scheme type (scrappage or welcome) from the Old Vehicle Details tab in the drawer."""
+    try:
+        # 1. Look specifically at row 7 inside the right drawer table
+        selectors = [
+            "div[class*='app_drawerBodyRight'] table tbody tr:nth-child(7)",
+            "div[class*='app_drawerBodyRight'] table tbody tr:nth-child(7) th:nth-child(1)",
+            "div[class*='app_drawerBodyRight'] table tbody tr:nth-child(7) td:nth-child(1)",
+            "div[class*='app_drawerBodyRight'] table tbody tr:has-text('Scheme')",
+            "div[class*='app_drawerBodyRight'] table tbody tr:has-text('Scheme Type')"
+        ]
+        
+        for sel in selectors:
+            loc = page.locator(sel)
+            if loc.count() > 0:
+                row_text = loc.first.inner_text().lower()
+                logging.info(f"Found old vehicle details scheme via selector '{sel}': '{row_text}'")
+                if "scrappage" in row_text:
+                    return "scrappage"
+                elif "welcome" in row_text:
+                    return "welcome"
+                    
+        # 2. General check of the entire right pane text
+        right_pane = page.locator("div[class*='app_drawerBodyRight']").first
+        if right_pane.count() > 0:
+            pane_text = right_pane.inner_text().lower()
+            logging.info(f"Inspecting entire right drawer pane text for scheme keywords...")
+            if "scrappage" in pane_text:
+                return "scrappage"
+            elif "welcome" in pane_text:
+                return "welcome"
+    except Exception as e:
+        logging.warning(f"Error extracting scheme type from old vehicle details: {e}")
+    return None
 
 def select_drawer_timeline_tab(page, tab_name):
     """Clicks on a specific timeline item tab in the details drawer sidebar."""
@@ -772,9 +952,9 @@ def is_digital_text_corrupt_or_insufficient(filename, text):
             return True
             
     elif "DIS" in filename_upper or "DISCLAIMER" in filename_upper or "COD" in filename_upper:
-        keywords = ["disclaimer", "solemnly", "affirm", "declare", "vehicle", "registration", "chassis", "owner"]
-        has_keyword = any(k in text_lower for k in keywords)
-        if not has_keyword:
+        keywords = ["disclaimer", "solemnly", "affirm", "declare", "vehicle", "registration", "chassis", "owner", "confirm", "avail", "welcome", "bonus", "dealership", "engine", "invoice"]
+        matching_kws = sum(1 for k in keywords if k in text_lower)
+        if matching_kws < 7:
             return True
             
     return False
@@ -799,6 +979,35 @@ def normalize_str(s):
         return ""
     return re.sub(r'[^A-Z0-9]', '', s.upper())
 
+def check_chassis_or_cert_in_text(text, target_val):
+    if not text or not target_val:
+        return False
+    target_norm = normalize_str(target_val)
+    if not target_norm:
+        return False
+    text_norm = normalize_str(text)
+    if target_norm in text_norm:
+        return True
+        
+    def replace_confusions(s):
+        return (s.replace('L', '1')
+                 .replace('I', '1')
+                 .replace('O', '0')
+                 .replace('Q', '0')
+                 .replace('U', '0')
+                 .replace('Z', '2')
+                 .replace('T', '7')
+                 .replace('S', '5')
+                 .replace('B', '8')
+                 .replace('G', '6'))
+                 
+    target_adj = replace_confusions(target_norm)
+    text_adj = replace_confusions(text_norm)
+    if target_adj in text_adj:
+        return True
+        
+    return False
+
 def compare_values_robust(doc_val, web_val, fuzzy_threshold=80):
     if not doc_val or not web_val:
         return "UNKNOWN", 0.0
@@ -809,9 +1018,18 @@ def compare_values_robust(doc_val, web_val, fuzzy_threshold=80):
     if norm_doc == norm_web:
         return "MATCH", 100.0
         
-    # 2. Replace common OCR confusions: L/I/1 -> 1, O/0 -> 0
+    # 2. Replace common OCR confusions: L/I/1 -> 1, O/0/Q/U -> 0, Z -> 2, T -> 7, S -> 5, B -> 8, G -> 6
     def replace_confusions(s):
-        return s.replace('L', '1').replace('I', '1').replace('O', '0')
+        return (s.replace('L', '1')
+                 .replace('I', '1')
+                 .replace('O', '0')
+                 .replace('Q', '0')
+                 .replace('U', '0')
+                 .replace('Z', '2')
+                 .replace('T', '7')
+                 .replace('S', '5')
+                 .replace('B', '8')
+                 .replace('G', '6'))
     if replace_confusions(norm_doc) == replace_confusions(norm_web):
         return "MATCH (OCR adjusted)", 100.0
         
@@ -1259,9 +1477,54 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
                                 
                             inline_val = get_value_from_remainder(remainder)
                             if len(inline_val) >= 2 and not is_placeholder_value(inline_val):
-                                extracted_val = inline_val
-                                matched_idx = idx
+                                value_parts = [inline_val]
                                 used_boxes.add(idx)
+                                matched_idx = idx
+                                
+                                # Scan for subsequent candidates on the same line horizontally
+                                label_x_max = item['x_max']
+                                label_y_center = item['y_center']
+                                
+                                line_candidates = []
+                                for o_idx, o_item in enumerate(ocr_items):
+                                    if o_idx == idx or o_idx in used_boxes:
+                                        continue
+                                    gap = o_item['x_min'] - label_x_max
+                                    req_conf = 0.01 if gap < 120 else 0.15
+                                    if o_item['conf'] < req_conf:
+                                        continue
+                                    if o_item['x_min'] > label_x_max - 20:
+                                        y_diff = o_item['y_center'] - label_y_center
+                                        if -15 <= y_diff < 35:
+                                            line_candidates.append((o_idx, o_item))
+                                            
+                                line_candidates.sort(key=lambda x: x[1]['x_min'])
+                                
+                                prev_x_max = label_x_max
+                                for o_idx, cand in line_candidates:
+                                    gap = cand['x_min'] - prev_x_max
+                                    max_allowed_gap = 120  # already have first part
+                                    if gap < max_allowed_gap:
+                                        if cand['conf'] < 0.4 and gap >= 120:
+                                            break
+                                        cand_lower = cand['text'].lower()
+                                        stop_kws = ["have", "availed", "welcome", "bonus", "scheme", "from", "for", "buying", "new", "vehicle", "model", "chassis", "engine", "invoice", "date", "customer", "signature"]
+                                        active_patterns_words = []
+                                        for pat_w in patterns:
+                                            active_patterns_words.extend(clean_label(pat_w).split())
+                                        filtered_stop_kws = [kw for kw in stop_kws if kw not in active_patterns_words]
+                                        
+                                        if any(kw in cand_lower for kw in filtered_stop_kws):
+                                            break
+                                        if is_template_text(cand['text']):
+                                            continue
+                                        value_parts.append(cand['text'])
+                                        used_boxes.add(o_idx)
+                                        prev_x_max = cand['x_max']
+                                    else:
+                                        break
+                                        
+                                extracted_val = " ".join(value_parts).strip()
                                 break
                 if matched_idx != -1:
                     break
@@ -1372,7 +1635,7 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
     # Secondary check for Customer Name
     if final_dict["Customer Name"] == "NOT_FOUND" or len(final_dict["Customer Name"]) < 3:
         combined_text = " ".join(full_flat_texts)
-        name_match = re.search(r'\b(?:I|1|COD|Bonus through COD)\s*,?\s*([A-Za-z\s\.\-]+?)\s*,?\s*residing\b', combined_text, re.IGNORECASE)
+        name_match = re.search(r'\b(?:I|1|COD|Bonus through COD)\s*,?\s*([A-Za-z\s\.\-]+)\s*,?\s*residing\b', combined_text, re.IGNORECASE)
         if name_match:
             final_dict["Customer Name"] = clean_extracted_name(name_match.group(1))
             
@@ -1382,27 +1645,52 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
     filename = os.path.basename(file_path).upper()
     text_upper = text.upper()
     
+    # 1. Primary classification by filename (highly reliable for document routing)
     is_pan = "PAN" in filename
-    is_cod = "COD" in filename and not ("DISCLAIMER" in filename or "DIS" in filename)
+    is_cod = ("COD" in filename or "DGLV" in filename or "OEM" in filename) and not ("DISCLAIMER" in filename or "DIS" in filename)
     is_disclaimer = "DIS" in filename or "DISCLAIMER" in filename
     is_adhar = "ADHAR" in filename or "AADHAAR" in filename
     is_ledger = "LEDGER" in filename or filename.startswith("LED")
     is_invoice = "INV" in filename or "INVOICE" in filename
-    
-    if not is_pan and not is_cod and not is_disclaimer and not is_adhar and not is_ledger and not is_invoice:
+    is_gst = "GST" in filename
+    is_dl = "DL" in filename or "DRIVING" in filename or "LICENCE" in filename or "LICENSE" in filename
+
+    # 2. Content-based overrides and checks:
+    # A. If filename indicates PAN or Aadhaar, check text to resolve potential misnaming (e.g. Aadhaar named PAN)
+    if is_pan or is_adhar:
+        if "GOVERNMENT OF INDIA" in text_upper or "UNIQUE IDENTIFICATION" in text_upper or "UIDAI" in text_upper:
+            is_adhar = True
+            is_pan = False
+        elif "PERMANENT ACCOUNT NUMBER" in text_upper or "INCOME TAX DEPARTMENT" in text_upper:
+            is_pan = True
+            is_adhar = False
+
+    # B. Content fallback only if no filename keywords matched
+    if not (is_pan or is_adhar or is_cod or is_disclaimer or is_ledger or is_invoice or is_gst or is_dl):
         if "PERMANENT ACCOUNT NUMBER" in text_upper or "INCOME TAX DEPARTMENT" in text_upper:
             is_pan = True
-        elif "CERTIFICATE OF DESTRUCTION" in text_upper or "CERTIFICATE OF DEPOSIT" in text_upper:
+        elif "GOVERNMENT OF INDIA" in text_upper or "UNIQUE IDENTIFICATION" in text_upper or "UIDAI" in text_upper:
+            is_adhar = True
+        elif ("CERTIFICATE OF DESTRUCTION" in text_upper or 
+              "CERTIFICATE OF DEPOSIT" in text_upper or 
+              "OEM SCRAP" in text_upper or 
+              "CDS APPLIED" in text_upper or 
+              "CERTIFICATE DEPOSIT" in text_upper or
+              "OEM SCRAPPING" in text_upper):
             is_cod = True
         elif "CUSTOMER DISCLAIMER" in text_upper or "DISCLAIMER FOR WELCOME" in text_upper:
             is_disclaimer = True
-        elif "GOVERNMENT OF INDIA" in text_upper or "UNIQUE IDENTIFICATION" in text_upper or "UIDAI" in text_upper:
-            is_adhar = True
         elif "STATEMENT OF ACCOUNT" in text_upper or "LEDGER" in text_upper or "JOURNAL ENTRY" in text_upper:
             is_ledger = True
         elif "TAX INVOICE" in text_upper or "INVOICE" in text_upper or "SELLING PRICE" in text_upper:
             is_invoice = True
+        elif "FORM GST REG-06" in text_upper or "GOODS AND SERVICES TAX" in text_upper:
+            is_gst = True
+        elif "DRIVING LICENCE" in text_upper or "DRIVING LICENSE" in text_upper or "MOTOR VEHICLES ACT" in text_upper or "TRANSPORT AUTHORITY" in text_upper:
+            is_dl = True
             
+    # DL takes priority over UNKNOWN but comes after other document types
+    # (DL before the general result dict, so is_dl check is added to the elif chain below)
     result = {
         "file_name": os.path.basename(file_path),
         "file_type": "UNKNOWN",
@@ -1438,8 +1726,14 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
         is_relative_doc = False
         if old_vehicle_details:
             rel_val = get_val_by_fuzzy_key(old_vehicle_details, ["Relationship"])
-            if rel_val and rel_val.strip().lower() != "self":
-                owner_val = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+            rel_str = rel_val.strip().lower() if rel_val else "self"
+            owner_val = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+            
+            names_match = True
+            if owner_val and claim_customer_name:
+                names_match = (fuzz.token_sort_ratio(owner_val.lower(), claim_customer_name.lower()) >= 80)
+                
+            if rel_str != "self" or not names_match:
                 if owner_val:
                     old_owner_name = owner_val.strip()
                     
@@ -1451,12 +1745,22 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
                 name_score = rel_name_score
                 is_relative_doc = True
                 
+        # Extract W/O (Wife Of) or H/O (Husband Of) for Spouse validation
+        relation_name = None
+        rel_field_match = re.search(
+            r'\b(?:W/O|H/O|Wife\s+of|Husband\s+of|Spouse\s+of)\s*[:\-]?\s*([A-Za-z][A-Za-z\s\.\-]{2,40})',
+            text, re.IGNORECASE
+        )
+        if rel_field_match:
+            relation_name = clean_extracted_name(rel_field_match.group(1))
+                
         result["extracted_data"] = {
             "PAN Number": pan_no,
             "DOB": dob,
             "Name": extracted_name,
             "is_relative_doc": is_relative_doc,
-            "relative_owner_name": old_owner_name
+            "relative_owner_name": old_owner_name,
+            "relation_name": relation_name
         }
         result["validations"] = {
             "Name Match Score": name_score,
@@ -1467,18 +1771,58 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
         
     elif is_cod:
         result["file_type"] = "COD"
-        cert_no_match = re.search(r'\b(COD[A-Z0-9]+)\b', text, re.IGNORECASE)
-        cert_no = cert_no_match.group(0) if cert_no_match else None
+        cert_no = None
+        cert_no_match = re.search(r'(?:Cert[A-Za-z0-9_]*|Deposit)[:\s_-]+(C[OQ0][D0][A-Z0-9OoQ_]+)\b', text, re.IGNORECASE)
+        if cert_no_match:
+            cert_no = cert_no_match.group(1)
+        else:
+            cert_no_match = re.search(r'\b(C[OQ0][D0][A-Z0-9OoQ]+)\b', text, re.IGNORECASE)
+            if cert_no_match:
+                cert_no = cert_no_match.group(1)
+                
         if not cert_no:
             fallback_match = re.search(r'Deposit\s*\(?coD\)?,\s*with\s*number\s*-\s*([A-Z0-9]+)', text, re.IGNORECASE)
             if fallback_match:
                 cert_no = fallback_match.group(1)
                 
+        if cert_no:
+            cert_no_upper = cert_no.upper()
+            if len(cert_no_upper) > 3:
+                prefix = cert_no_upper[:3]
+                if prefix[0] == 'C' and prefix[1] in 'OQ0' and prefix[2] in 'D0':
+                    cert_no = "COD" + cert_no[3:]
+                    
+        # Robust check to heal cert_no using expected chassis if it is found in full text
+        if old_vehicle_details:
+            web_old_chassis = get_val_by_fuzzy_key(old_vehicle_details, ["Chassis No", "Chassis Number"])
+            if web_old_chassis:
+                is_match = False
+                if cert_no:
+                    status_cert, _ = compare_values_robust(cert_no, web_old_chassis)
+                    if status_cert.startswith("MATCH"):
+                        is_match = True
+                if not is_match:
+                    if check_chassis_or_cert_in_text(text, web_old_chassis):
+                        cert_no = web_old_chassis
+                        
+        reg_no = None
+        reg_no_match = re.search(r'Reg[A-Za-z\s]*No\s*[:\.-]?\s*([A-Z0-9]+)', text, re.IGNORECASE)
+        if reg_no_match:
+            reg_no = reg_no_match.group(1).upper().strip()
+            
         extracted_name, name_score = extract_best_name(text, claim_customer_name)
-        
+        transferred_name = None
+        transferred_match = re.search(r'transferred\s+to\s+([A-Za-z\s\.\-]+?)\s+(?:with|wilh|Mobile|PAN)\b', text, re.IGNORECASE)
+        if transferred_match:
+            transferred_name = clean_extracted_name(transferred_match.group(1))
+            name_score = fuzz.token_sort_ratio(transferred_name.lower(), claim_customer_name.lower())
+        else:
+            transferred_name = extracted_name
+            
         result["extracted_data"] = {
             "Certificate No": cert_no,
-            "User Name": extracted_name
+            "Registration No": reg_no,
+            "User Name": transferred_name
         }
         result["validations"] = {
             "Name Match Score": name_score,
@@ -1538,8 +1882,14 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
         is_relative_doc = False
         if old_vehicle_details:
             rel_val = get_val_by_fuzzy_key(old_vehicle_details, ["Relationship"])
-            if rel_val and rel_val.strip().lower() != "self":
-                owner_val = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+            rel_str = rel_val.strip().lower() if rel_val else "self"
+            owner_val = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+            
+            names_match = True
+            if owner_val and claim_customer_name:
+                names_match = (fuzz.token_sort_ratio(owner_val.lower(), claim_customer_name.lower()) >= 80)
+                
+            if rel_str != "self" or not names_match:
                 if owner_val:
                     old_owner_name = owner_val.strip()
                     
@@ -1551,13 +1901,23 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
                 name_score = rel_name_score
                 is_relative_doc = True
                 
+        # Extract W/O (Wife Of) or H/O (Husband Of) for Spouse validation
+        relation_name = None
+        rel_field_match = re.search(
+            r'\b(?:W/O|H/O|Wife\s+of|Husband\s+of|Spouse\s+of)\s*[:\-]?\s*([A-Za-z][A-Za-z\s\.\-]{2,40})',
+            text, re.IGNORECASE
+        )
+        if rel_field_match:
+            relation_name = clean_extracted_name(rel_field_match.group(1))
+                
         result["extracted_data"] = {
             "Aadhaar Number": adhar_no,
             "DOB": dob,
             "Gender": gender,
             "Name": extracted_name,
             "is_relative_doc": is_relative_doc,
-            "relative_owner_name": old_owner_name
+            "relative_owner_name": old_owner_name,
+            "relation_name": relation_name
         }
         result["validations"] = {
             "Name Match Score": name_score,
@@ -1698,14 +2058,50 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
     elif is_invoice:
         result["file_type"] = "INVOICE"
         
+        # 1. Customer Name Extraction
+        # Leverage both regex and extract_best_name, and take the higher-scoring match
         name_match = re.search(r'\b(?:Customer\s+)?N[la]me\s*[:\.-]?\s*([A-Z\s\.\-]+)', text, re.IGNORECASE)
-        extracted_name = None
+        regex_name = None
+        regex_score = 0.0
         if name_match:
-            extracted_name = clean_extracted_name(name_match.group(1))
-            name_score = fuzz.token_sort_ratio(extracted_name.lower(), claim_customer_name.lower())
+            regex_name = clean_extracted_name(name_match.group(1))
+            regex_score = fuzz.token_sort_ratio(regex_name.lower(), claim_customer_name.lower())
+        
+        best_extracted_name, best_name_score = extract_best_name(text, claim_customer_name)
+        
+        if regex_score >= best_name_score and regex_name:
+            extracted_name = regex_name
+            name_score = regex_score
         else:
-            extracted_name, name_score = extract_best_name(text, claim_customer_name)
-            
+            extracted_name = best_extracted_name
+            name_score = best_name_score
+
+        # 2. Dealership Name
+        # Search for name suffix (e.g. PVT. LTD., PRIVATE LIMITED, LTD) and strip leading headers
+        dealer_match = re.search(r'\b([A-Z0-9\s\.\-]+(?:PVT\.?\s*LTD\.?|PRIVATE\s+LIMITED|LTD\.?))\b', text, re.IGNORECASE)
+        dealer_name = dealer_match.group(1).strip() if dealer_match else None
+        if dealer_name:
+            dealer_name = re.sub(r'^(?:TAX\s+INVOICE|GST\s+INVOICE|BILL\s+TO|SHIP\s+TO)\s*', '', dealer_name, flags=re.IGNORECASE).strip()
+
+        # 3. Invoice No
+        # Extract the value following GST Invoice No: and clean up any trailing label words
+        inv_no = None
+        inv_no_match = re.search(r'GST\s*Invo[a-z]*\s*No\s*[:\.-]?\s*([A-Z0-9\s/]+)', text, re.IGNORECASE)
+        if inv_no_match:
+            raw_inv = inv_no_match.group(1).strip()
+            clean_tokens = []
+            for token in raw_inv.split():
+                if token.lower() in ["customer", "code", "date", "booking", "name", "gstin"]:
+                    break
+                clean_tokens.append(token)
+            inv_no = "".join(clean_tokens)
+
+        # 4. Invoice Date
+        # Extract the date following GST Invoice Date:
+        inv_date_match = re.search(r'GST\s*Invo[a-z]*\s*Da[a-z]*\s*[:\.-]?\s*(\d{2}[-/\.]\d{2}[-/\.]\d{4})', text, re.IGNORECASE)
+        inv_date = inv_date_match.group(1).strip() if inv_date_match else None
+
+        # 5. Vehicle Model
         cleaned_text = text.upper().replace("RORX", "ROXX").replace("ROXX", "ROXX")
         vehicle_model = None
         contributions = load_contribution_data()
@@ -1722,21 +2118,23 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
                 if word in cleaned_text:
                     vehicle_model = word
                     break
-                    
+
+        # 6. Invoice Amount Check (Scrappage/Welcome bonus amount check)
         amt_match = re.search(
-            r'(?:scrappage|welcome|loyalty|exchange)\s+bonus\s+(?:amount\s+)?(?:is\s+)?(?:rs\.?\s*)?([A-Z0-9\.,\s\-]+)',
-            cleaned_text,
+            r'(?:sc[fa]ppage|welcome|loyalty|exchange|bonus)\s+(?:bonus\s+)?(?:amount\s+)?(?:is\s+)?(?:rs\.?\s*)?([A-Z0-9a-z\.,\s/-]+)',
+            text.upper(),
             re.IGNORECASE
         )
         invoice_amount = None
         if amt_match:
             match_str = amt_match.group(1).upper()
             for char, replacement in [
-                ('O', '0'), ('U', '0'), ('I', '1'), ('L', '1'), ('S', '5'), ('B', '8'), ('Z', '2'), ('G', '6')
+                ('O', '0'), ('U', '0'), ('I', '1'), ('L', '1'), ('S', '5'), ('B', '8'), ('Z', '2'), ('G', '6'),
+                ('o', '0'), ('u', '0'), ('i', '1'), ('l', '1'), ('s', '5'), ('b', '8'), ('z', '2'), ('g', '6')
             ]:
                 match_str = match_str.replace(char, replacement)
             
-            tokens = [t.strip('.-') for t in re.split(r'[^0-9\.]', match_str) if t.strip('.-')]
+            tokens = [t.strip('.-/') for t in re.split(r'[^0-9\.]', match_str) if t.strip('.-/')]
             for t in tokens:
                 try:
                     val = float(t)
@@ -1745,9 +2143,12 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
                         break
                 except ValueError:
                     pass
-                    
+
         result["extracted_data"] = {
             "Customer Name": extracted_name,
+            "Dealer Name": dealer_name,
+            "Invoice No": inv_no,
+            "Invoice Date": inv_date,
             "Vehicle Model": vehicle_model,
             "Invoice Amount": invoice_amount
         }
@@ -1756,88 +2157,153 @@ def classify_and_extract(file_path, text, claim_customer_name, claim_details=Non
             "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH"
         }
         
+    elif is_gst:
+        result["file_type"] = "GST"
+        extracted_name, name_score = extract_best_name(text, claim_customer_name)
+        gstin_match = re.search(r'\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]\b', text_upper)
+        gstin_no = gstin_match.group(0) if gstin_match else None
+        
+        result["extracted_data"] = {
+            "GSTIN": gstin_no,
+            "Name": extracted_name
+        }
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH",
+            "GSTIN Status": "FOUND" if gstin_no else "NOT FOUND"
+        }
+    elif is_dl:
+        result["file_type"] = "DL"
+        # Extract DL number (format: XX-YYYYNNNNNNN or similar)
+        dl_no = None
+        dl_match = re.search(r'\b([A-Z]{2}[-\s]?\d{2}[-\s]?\d{4}[-\s]?\d{7})\b', text_upper)
+        if dl_match:
+            dl_no = dl_match.group(1).replace(" ", "").replace("-", "")
+        if not dl_no:
+            # Loose fallback: any sequence like DL-XXXX or code after "Licence No"
+            dl_match2 = re.search(r'(?:Lic(?:ence|ense)\s*(?:No|Number|#)\s*[:\.\-]?\s*)([A-Z0-9\-\/]+)', text, re.IGNORECASE)
+            if dl_match2:
+                dl_no = dl_match2.group(1).strip()
+                
+        dob_match = re.search(r'\b\d{2}[-/\.]\d{2}[-/\.]\d{4}\b', text)
+        dob = dob_match.group(0) if dob_match else None
+        
+        # Match name against old vehicle owner name if there's a mismatch with claimant
+        old_owner_name = None
+        is_relative_doc = False
+        if old_vehicle_details:
+            rel_val = get_val_by_fuzzy_key(old_vehicle_details, ["Relationship"])
+            rel_str = rel_val.strip().lower() if rel_val else "self"
+            owner_val = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+            
+            names_match_flag = True
+            if owner_val and claim_customer_name:
+                names_match_flag = (fuzz.token_sort_ratio(owner_val.lower(), claim_customer_name.lower()) >= 80)
+                
+            if rel_str != "self" or not names_match_flag:
+                if owner_val:
+                    old_owner_name = owner_val.strip()
+                    
+        extracted_name, name_score = extract_best_name(text, claim_customer_name)
+        if old_owner_name:
+            rel_extracted_name, rel_name_score = extract_best_name(text, old_owner_name)
+            if rel_name_score > name_score:
+                extracted_name = rel_extracted_name
+                name_score = rel_name_score
+                is_relative_doc = True
+                
+        # Extract W/O (Wife Of) or H/O (Husband Of) for Spouse validation
+        relation_name = None
+        rel_field_match = re.search(
+            r'\b(?:W/O|H/O|Wife\s+of|Husband\s+of|Spouse\s+of)\s*[:\-]?\s*([A-Za-z][A-Za-z\s\.\-]{2,40})',
+            text, re.IGNORECASE
+        )
+        if rel_field_match:
+            relation_name = clean_extracted_name(rel_field_match.group(1))
+                
+        result["extracted_data"] = {
+            "DL Number": dl_no,
+            "DOB": dob,
+            "Name": extracted_name,
+            "is_relative_doc": is_relative_doc,
+            "relative_owner_name": old_owner_name,
+            "relation_name": relation_name
+        }
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH",
+            "DL Status": "FOUND" if dl_no else "NOT FOUND",
+            "DOB Status": "FOUND" if dob else "NOT FOUND"
+        }
+        
     return result
 
 def load_contribution_data():
-    contributions = {
-        "welcome": {},
-        "scrappage": {}
-    }
-    scheme_file = "scheme_data.txt"
-    if not os.path.exists(scheme_file):
-        return contributions
-    try:
-        current_section = None
-        with open(scheme_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                if "WELCOME BONUS" in line:
-                    current_section = "welcome"
-                    continue
-                elif "SCRAPPAGE SCHEME" in line:
-                    current_section = "scrappage"
-                    continue
-                
-                if current_section == "welcome":
-                    if "Brand:" in line:
-                        brand = line.split("Brand:")[1].strip().upper()
-                    elif "M&M Contribution" in line:
-                        val = line.split(":")[-1].strip()
-                        amount = float(''.join(c for c in val if c.isdigit() or c == '.'))
-                        contributions["welcome"][brand] = amount
-                elif current_section == "scrappage":
-                    if "|" in line and "Brand" not in line:
-                        parts = [p.strip() for p in line.split("|") if p.strip()]
-                        if len(parts) >= 5:
-                            brand_parts = parts[:-4]
-                            contrib_str = parts[-4]
-                            try:
-                                amount = float(''.join(c for c in contrib_str if c.isdigit() or c == '.'))
-                                for brand_part in brand_parts:
-                                    sub_brands = [b.strip().upper() for b in brand_part.split("/") if b.strip()]
-                                    for b in sub_brands:
-                                        contributions["scrappage"][b] = amount
-                            except Exception:
-                                pass
-    except Exception as e:
-        logging.error(f"Error reading contribution data: {e}")
-    return contributions
+    """Loads and parses the contribution data (M&M Contribution) from Google Sheet."""
+    _, c = fetch_google_sheet_data()
+    return c
 
-def find_matching_contribution(brand_name, contributions):
+def find_matching_contribution(brand_name, contributions, city_name=None):
+    """Looks up all matching expected contributions in both scrappage and welcome schemes based on city."""
     brand_name = brand_name.strip().upper()
+    if city_name is None:
+        global CURRENT_CITY
+        city_name = CURRENT_CITY if 'CURRENT_CITY' in globals() else "COMMON"
+    city_name = city_name.strip().upper() if city_name else "COMMON"
     
-    # 1. Exact match
+    # 1. Check Welcome Scheme (welcome maps brand -> list of dicts)
+    welcome_entries = None
     if brand_name in contributions["welcome"]:
-        return contributions["welcome"][brand_name]
+        welcome_entries = contributions["welcome"][brand_name]
+    else:
+        # Substring match
+        for key, val in contributions["welcome"].items():
+            if key in brand_name or brand_name in key:
+                welcome_entries = val
+                break
+        # Word-based match
+        if not welcome_entries:
+            brand_words = [w for w in re.sub(r'[^A-Z0-9]', ' ', brand_name).split() if len(w) > 0]
+            if brand_words:
+                first_word = brand_words[0]
+                if first_word == "NEW" and len(brand_words) > 1:
+                    first_word = brand_words[1]
+                for key, val in contributions["welcome"].items():
+                    key_clean = re.sub(r'[^A-Z0-9]', ' ', key)
+                    if first_word in key_clean.split():
+                        welcome_entries = val
+                        break
+
+    if welcome_entries:
+        # Try exact city first
+        for entry in welcome_entries:
+            if entry["city"] == city_name:
+                return entry["amount"]
+        # Fallback to COMMON
+        for entry in welcome_entries:
+            if entry["city"] == "COMMON":
+                return entry["amount"]
+        # Default fallback
+        if welcome_entries:
+            return welcome_entries[0]["amount"]
+
+    # 2. Check Scrappage Scheme (scrappage maps brand -> float)
     if brand_name in contributions["scrappage"]:
         return contributions["scrappage"][brand_name]
-        
-    # 2. Substring match
-    for key, val in contributions["welcome"].items():
-        if key in brand_name or brand_name in key:
-            return val
     for key, val in contributions["scrappage"].items():
         if key in brand_name or brand_name in key:
             return val
-            
-    # 3. Word-based fallback (first word match)
+    # Word-based match
     brand_words = [w for w in re.sub(r'[^A-Z0-9]', ' ', brand_name).split() if len(w) > 0]
     if brand_words:
         first_word = brand_words[0]
         if first_word == "NEW" and len(brand_words) > 1:
             first_word = brand_words[1]
-            
-        for key, val in contributions["welcome"].items():
-            key_clean = re.sub(r'[^A-Z0-9]', ' ', key)
-            if first_word in key_clean.split():
-                return val
         for key, val in contributions["scrappage"].items():
             key_clean = re.sub(r'[^A-Z0-9]', ' ', key)
             if first_word in key_clean.split():
                 return val
-                
+
     return None
 
 def find_floats_in_line(line_text):
@@ -1909,6 +2375,167 @@ def extract_company_name_from_disclaimer(disclaimer_text):
         elif len(words) == 1:
             return words[0]
     return None
+
+def validate_ledger_conditions(text, filename, claim_details, current_zone, current_city, claim_choice, issues):
+    """
+    Performs specific nested validations for the East, South, and North zones as described in prompt.txt.
+    """
+    text_upper = text.upper()
+    lines = text.split("\n")
+    
+    zone = current_zone.strip().upper() if current_zone else "COMMON"
+    city = current_city.strip().upper() if current_city else "COMMON"
+    
+    is_loyalty = (claim_choice == "1" or claim_choice == 1 or str(claim_choice).lower() == "loyalty")
+    
+    # Extract dashboard amounts
+    total_amount_gst = None
+    claim_amount_no_gst = None
+    approval_amount = None
+    
+    for k, v in claim_details.items():
+        norm_k = k.lower()
+        if "total amount" in norm_k and "approved" not in norm_k:
+            try:
+                total_amount_gst = float(''.join(c for c in v if c.isdigit() or c == '.'))
+            except Exception:
+                pass
+        if "claim amount" in norm_k:
+            try:
+                claim_amount_no_gst = float(''.join(c for c in v if c.isdigit() or c == '.'))
+            except Exception:
+                pass
+        if "approved total amount" in norm_k or "approval total amount" in norm_k or "approved amount" in norm_k:
+            if "dealer" not in norm_k:
+                try:
+                    approval_amount = float(''.join(c for c in v if c.isdigit() or c == '.'))
+                except Exception:
+                    pass
+
+    # Condition 1: loyalty/east/Raipur, Bhubaneswar, Patna
+    if is_loyalty and zone == "EAST" and city in ["RAIPUR", "BHUBANESWAR", "PATNA"]:
+        welcome_found = False
+        welcome_amt_match = False
+        
+        for line in lines:
+            line_norm = line.upper().replace("WELCOMC", "WELCOME").replace("WELCONE", "WELCOME")
+            if "WELCOME" in line_norm and "BONUS" in line_norm:
+                welcome_found = True
+                compare_targets = [val for val in [approval_amount, total_amount_gst, claim_amount_no_gst] if val is not None]
+                for target in compare_targets:
+                    if check_amount_match(line, target):
+                        welcome_amt_match = True
+                        break
+                    floats = find_floats_in_line(line)
+                    for f in floats:
+                        if abs(f - target) < 2.0:
+                            welcome_amt_match = True
+                            break
+                    if welcome_amt_match:
+                        break
+                if welcome_amt_match:
+                    break
+                            
+        if not welcome_found:
+            issues.append(f"Ledger [{filename}]: 'Welcome Bonus' not found in ledger (Required for East Zone / {city})")
+        elif not welcome_amt_match:
+            issues.append(f"Ledger [{filename}]: Welcome Bonus amount mismatch in ledger. Dashboard expected: {approval_amount or total_amount_gst or 'Not Found'}")
+
+    # Condition 1.5: Combined South, North, and West Zone checks
+    if zone in ["SOUTH", "NORTH", "WEST"]:
+        combined_kws = ["WELCOME BONUS", "WELCOME DISCOUNT", "LOYALTY BONUS", "LOYALTY", "EXCHANGE", "SCRAPPAGE", "GREEN BONUS", "SCHEME 18%"]
+        found_entry = False
+        amt_match = False
+        matched_keyword = None
+        
+        # We classify keywords based on expected claim type to check for presence holds
+        if is_loyalty:
+            expected_kws = ["WELCOME BONUS", "WELCOME DISCOUNT", "LOYALTY BONUS", "LOYALTY"]
+        else:
+            expected_kws = ["EXCHANGE", "SCRAPPAGE", "GREEN BONUS", "SCHEME 18%"]
+            
+        for line in lines:
+            line_norm = line.upper().replace("WELCOMC", "WELCOME").replace("WELCONE", "WELCOME")
+            matched_kw = None
+            for kw in combined_kws:
+                if kw in line_norm:
+                    matched_kw = kw
+                    break
+            if matched_kw:
+                found_entry = True
+                matched_keyword = matched_kw
+                # Clean percentage values like "18%" to prevent float extraction issues
+                line_clean = re.sub(r'\d+\s*%', '', line)
+                compare_targets = [val for val in [approval_amount, total_amount_gst, claim_amount_no_gst] if val is not None]
+                for target in compare_targets:
+                    if check_amount_match(line_clean, target):
+                        amt_match = True
+                        break
+                    floats = find_floats_in_line(line_clean)
+                    for f in floats:
+                        if abs(f - target) < 2.0:
+                            amt_match = True
+                            break
+                    if amt_match:
+                        break
+                if amt_match:
+                    break
+                            
+        # 1. Hold if there is an entry but the amount mismatches
+        if found_entry and not amt_match:
+            issues.append(f"Ledger [{filename}]: Combined {zone} Zone entry amount mismatch in ledger. Dashboard expected: {approval_amount or total_amount_gst or 'Not Found'} (Matched keyword: '{matched_keyword}')")
+            
+        # 2. Hold if the expected entry is missing from the ledger
+        expected_found = False
+        for line in lines:
+            line_norm = line.upper().replace("WELCOMC", "WELCOME").replace("WELCONE", "WELCOME")
+            if any(kw in line_norm for kw in expected_kws):
+                expected_found = True
+                break
+        if not expected_found:
+            issues.append(f"Ledger [{filename}]: Expected entry containing any of {expected_kws} not found in ledger (Required for {zone} Zone)")
+
+    # General Scrappage check: match with/without GST
+    scrappage_found = False
+    scrappage_amt_match = False
+    
+    for line in lines:
+        line_norm = line.upper()
+        if "SCRAPPAGE" in line_norm and "BONUS" in line_norm:
+            scrappage_found = True
+            compare_targets = [val for val in [approval_amount, total_amount_gst, claim_amount_no_gst] if val is not None]
+            for target in compare_targets:
+                if check_amount_match(line, target):
+                    scrappage_amt_match = True
+                    break
+                floats = find_floats_in_line(line)
+                for f in floats:
+                    if abs(f - target) < 2.0:
+                        scrappage_amt_match = True
+                        break
+                if scrappage_amt_match:
+                    break
+            if scrappage_amt_match:
+                break
+
+    # Scrappage amount validation if found
+    if scrappage_found and not scrappage_amt_match:
+        issues.append(f"Ledger [{filename}]: Scrappage Bonus amount mismatch in ledger. Dashboard expected: {approval_amount or total_amount_gst or 'Not Found'}")
+
+    # Condition 2: in East, if "SCRAPPAGE BONUS" or "Welcome Bonus" not found in ledger, hold it
+    if zone == "EAST":
+        if is_loyalty:
+            welcome_found = False
+            for line in lines:
+                line_norm = line.upper().replace("WELCOMC", "WELCOME").replace("WELCONE", "WELCOME")
+                if "WELCOME" in line_norm and "BONUS" in line_norm:
+                    welcome_found = True
+                    break
+            if not welcome_found:
+                issues.append(f"Ledger [{filename}]: 'Welcome Bonus' not found in ledger (Required for {zone} Zone)")
+        else:
+            if not scrappage_found:
+                issues.append(f"Ledger [{filename}]: 'Scrappage Bonus' not found in ledger (Required for {zone} Zone)")
 
 def verify_ledger_stamp_and_signature(pdf_path, company_name):
     logging.info("Checking stamp and signature in Ledger document...")
@@ -2242,7 +2869,79 @@ def verify_invoice_stamp_and_signatures(pdf_path, company_name, customer_name):
     except Exception as err:
         return False, f"FAIL (Error checking signature: {err})", False, f"FAIL (Error checking stamp: {err})"
 
-def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_details=None, claim_choice=None):
+def find_chassis_in_text(text, target_chassis, match_last_8=False):
+    if not target_chassis:
+        return None
+    target_clean = re.sub(r'[^A-Z0-9]', '', target_chassis.upper())
+    if match_last_8:
+        target_clean = target_clean[-8:]
+        
+    if not target_clean:
+        return None
+        
+    tokens = [re.sub(r'[^A-Z0-9]', '', token.upper()) for token in text.split()]
+    
+    for token in tokens:
+        if match_last_8:
+            if len(token) >= 8 and token[-8:] == target_clean:
+                return token
+        else:
+            if target_clean in token or token in target_clean:
+                return token
+                
+    def adjust_ocr(s):
+        return s.replace('L', '1').replace('I', '1').replace('O', '0')
+        
+    target_adjusted = adjust_ocr(target_clean)
+    for token in tokens:
+        token_adjusted = adjust_ocr(token)
+        if match_last_8:
+            if len(token_adjusted) >= 8 and token_adjusted[-8:] == target_adjusted:
+                return token
+        else:
+            if target_adjusted in token_adjusted or token_adjusted in target_adjusted:
+                return token
+                
+    for token in tokens:
+        if len(token) >= 8:
+            if match_last_8:
+                score = fuzz.ratio(token[-8:], target_clean)
+            else:
+                score = fuzz.ratio(token, target_clean)
+            if score >= 75:
+                return token
+                
+    return None
+
+def compare_dealership_names(doc_dealer, web_dealer):
+    if not doc_dealer or not web_dealer:
+        return False
+    doc_norm = normalize_str(doc_dealer)
+    web_norm = normalize_str(web_dealer)
+    
+    if doc_norm == web_norm:
+        return True
+        
+    def standardize_dealer(s):
+        s = s.replace("PRIVATELIMITED", "PVTLTD").replace("PRIVATE", "PVT").replace("LIMITED", "LTD")
+        return s
+        
+    if standardize_dealer(doc_norm) == standardize_dealer(web_norm):
+        return True
+        
+    score = fuzz.token_sort_ratio(doc_dealer.lower(), web_dealer.lower())
+    if score >= 70:
+        return True
+        
+    web_words = [w for w in re.sub(r'[^A-Z0-9]', ' ', web_dealer.upper()).split() if len(w) > 3 and w not in ["AUTO", "PVT", "LTD", "PRIVATE", "LIMITED", "GARAGE", "INDIA"]]
+    if web_words:
+        first_unique = web_words[0]
+        if first_unique in doc_norm:
+            return True
+            
+    return False
+
+def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_details=None, claim_choice=None, dashboard_dealer_name=None, dashboard_scheme_type=None):
     """Validate all downloaded PDFs and return a list of issue strings.
     Empty list  → APPROVED.  Non-empty list → HOLD."""
     logging.info(f"Starting verification of documents in: {target_dir} for customer: {customer_name}")
@@ -2262,43 +2961,53 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
         if owner_val:
             old_owner_name = owner_val.strip()
             
-    is_relationship_self = (relationship.lower() == "self")
+    names_match = True
+    if old_owner_name and customer_name:
+        names_match = (fuzz.token_sort_ratio(old_owner_name.lower(), customer_name.lower()) >= 80)
+        
+    is_relationship_self = (relationship.lower() == "self") and names_match
     relative_doc_found = False
+    gst_doc_found = False
+    pan_found = False
+    dl_found = False
+    spouse_doc_relation_name = None  # W/O or H/O name extracted from spouse's ID doc
+    cod_results = []
     
     import glob
     pdf_files = glob.glob(os.path.join(target_dir, "*.pdf"))
     # --- PRE-PASS: Pre-extract company name from disclaimer ---
-    company_name = None
-    for pdf_path in pdf_files:
-        filename = os.path.basename(pdf_path).upper()
-        is_disclaimer = "DIS" in filename or "DISCLAIMER" in filename
-        if not is_disclaimer:
-            if any(kw in filename for kw in ["AADHAR", "AADHAAR", "PAN", "LEDGER"]):
-                continue
-            try:
-                text, _ = extract_text_hybrid(pdf_path)
-                if "CUSTOMER DISCLAIMER" in text.upper() or "DISCLAIMER FOR WELCOME" in text.upper():
-                    is_disclaimer = True
-            except Exception:
-                pass
-        if is_disclaimer:
-            try:
-                # Try spatial extraction to get the exact dealership name
-                spatial_data = extract_disclaimer_spatial(pdf_path, customer_name, claim_details)
-                company_name = spatial_data.get("Vehicle Make")
-                if company_name and company_name != "NOT_FOUND":
-                    if company_name.lower() in ["hdis", "india garage", "indiagarage", "india", "garage"]:
-                        company_name = "India garage"
-                    logging.info(f"Pre-extracted company name from disclaimer spatial OCR: '{company_name}'")
-                    break
-                else:
+    company_name = dashboard_dealer_name
+    if not company_name:
+        for pdf_path in pdf_files:
+            filename = os.path.basename(pdf_path).upper()
+            is_disclaimer = "DIS" in filename or "DISCLAIMER" in filename
+            if not is_disclaimer:
+                if any(kw in filename for kw in ["AADHAR", "AADHAAR", "PAN", "LEDGER"]):
+                    continue
+                try:
                     text, _ = extract_text_hybrid(pdf_path)
-                    company_name = extract_company_name_from_disclaimer(text)
-                    if company_name:
-                        logging.info(f"Pre-extracted company name from disclaimer: '{company_name}'")
+                    if "CUSTOMER DISCLAIMER" in text.upper() or "DISCLAIMER FOR WELCOME" in text.upper():
+                        is_disclaimer = True
+                except Exception:
+                    pass
+            if is_disclaimer:
+                try:
+                    # Try spatial extraction to get the exact dealership name
+                    spatial_data = extract_disclaimer_spatial(pdf_path, customer_name, claim_details)
+                    company_name = spatial_data.get("Vehicle Make")
+                    if company_name and company_name != "NOT_FOUND" and company_name.upper() not in ["HYUNDAI", "MARUTI", "SUZUKI", "HONDA", "TOYOTA", "FORD", "TATA", "MAHINDRA", "OTHERS", "OTHER", "CHEVROLET", "NISSAN", "RENAULT", "SKODA", "VOLKSWAGEN", "FIAT", "KIA", "MG", "JEEP"]:
+                        if company_name.lower() in ["hdis", "india garage", "indiagarage", "india", "garage"]:
+                            company_name = "India garage"
+                        logging.info(f"Pre-extracted company name from disclaimer spatial OCR: '{company_name}'")
                         break
-            except Exception as e:
-                logging.debug(f"Failed to pre-extract company name: {e}")
+                    else:
+                        text, _ = extract_text_hybrid(pdf_path)
+                        company_name = extract_company_name_from_disclaimer(text)
+                        if company_name:
+                            logging.info(f"Pre-extracted company name from disclaimer: '{company_name}'")
+                            break
+                except Exception as e:
+                    logging.debug(f"Failed to pre-extract company name: {e}")
         
     # Enable ANSI escape codes for Windows formatting
     if os.name == 'nt':
@@ -2344,41 +3053,127 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                         relative_doc_found = True
                     else:
                         print(f"  - Name Validation: {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    pan_found = True   # PAN document is valid for East zone check
+                    # Capture W/O name for Spouse check
+                    _rn = data.get("relation_name")
+                    if _rn and not spouse_doc_relation_name:
+                        spouse_doc_relation_name = _rn
                 else:
                     if is_rel:
                         print(f"  - Name Validation: {RED_TEXT}MISMATCH for relative '{rel_name}' ({score:.1f}% Similarity){RESET_TEXT}")
-                        issues.append(f"PAN [{filename}]: Name mismatch for relative '{rel_name}' ({score:.1f}%)")
+                        if not is_relationship_self:
+                            issues.append(f"PAN [{filename}]: Name mismatch for relative '{rel_name}' ({score:.1f}%)")
                     else:
                         print(f"  - Name Validation: {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
-                        issues.append(f"PAN [{filename}]: Name mismatch ({score:.1f}% similarity)")
+                        if not is_relationship_self:
+                            issues.append(f"PAN [{filename}]: Name mismatch ({score:.1f}% similarity)")
                     
                 if pan_no:
                     print(f"  - PAN Status     : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
                 else:
-                    print(f"  - PAN Status     : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
-                    issues.append(f"PAN [{filename}]: PAN number could not be extracted")
+                    print(f"  - PAN Status     : {RED_TEXT}FAILED TO EXTRACT (Optional, skipped hold){RESET_TEXT}")
                 if dob:
                     print(f"  - DOB Status     : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
                 else:
                     print(f"  - DOB Status     : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
-                    
             elif file_type == "COD":
                 cert_no = data.get("Certificate No")
+                reg_no = data.get("Registration No")
                 user_name = data.get("User Name")
                 
                 print(f"  - Certificate No : {cert_no or 'Not Found'}")
+                print(f"  - Reg No         : {reg_no or 'Not Found'}")
                 print(f"  - Extracted Name : {user_name or 'Not Found'}")
                 
-                score = validations.get("Name Match Score", 0)
-                if validations.get("Name Match Status") == "MATCH":
-                    print(f"  - Name Validation: {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                doc_issues = []
+                
+                # 1. Certificate of Deposit number must match old vehicle Chassis No
+                web_old_chassis = None
+                if old_vehicle_details:
+                    web_old_chassis = get_val_by_fuzzy_key(old_vehicle_details, ["Chassis No", "Chassis Number"])
+                
+                cert_match = False
+                if cert_no and web_old_chassis:
+                    status_cert, score_cert = compare_values_robust(cert_no, web_old_chassis)
+                    if status_cert.startswith("MATCH"):
+                        print(f"  - Certificate No Validation: {GREEN_TEXT}MATCH (Certificate '{cert_no}' matches old chassis '{web_old_chassis}'){RESET_TEXT}")
+                        cert_match = True
+                    else:
+                        if check_chassis_or_cert_in_text(text, web_old_chassis):
+                            print(f"  - Certificate No Validation: {GREEN_TEXT}MATCH (Chassis '{web_old_chassis}' found in full text OCR){RESET_TEXT}")
+                            cert_match = True
+                        else:
+                            print(f"  - Certificate No Validation: {RED_TEXT}MISMATCH (Certificate '{cert_no}' does not match old chassis '{web_old_chassis}'){RESET_TEXT}")
+                            doc_issues.append(f"COD [{filename}]: Certificate of Deposit mismatch. Expected Certificate of Deposit '{cert_no}' to match old vehicle Chassis No '{web_old_chassis}'.")
+                elif not cert_no:
+                    if web_old_chassis and check_chassis_or_cert_in_text(text, web_old_chassis):
+                        print(f"  - Certificate No Validation: {GREEN_TEXT}MATCH (Chassis '{web_old_chassis}' found in full text OCR){RESET_TEXT}")
+                        cert_match = True
+                    else:
+                        print(f"  - Certificate No Validation: {RED_TEXT}FAILED (Certificate of Deposit number not found in document){RESET_TEXT}")
+                        doc_issues.append(f"COD [{filename}]: Certificate of Deposit number could not be extracted from the document.")
                 else:
-                    print(f"  - Name Validation: {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    print(f"  - Certificate No Validation: {YELLOW_TEXT}SKIPPED (No old vehicle chassis in dashboard details){RESET_TEXT}")
+                    cert_match = True
+
+                # 2. Registration No must match old vehicle Reg No
+                web_old_reg = None
+                if old_vehicle_details:
+                    web_old_reg = get_val_by_fuzzy_key(old_vehicle_details, ["Reg. No", "Reg No", "Registration No", "Registration"])
+                
+                reg_match = False
+                if reg_no and web_old_reg:
+                    status_reg, score_reg = compare_values_robust(reg_no, web_old_reg)
+                    if status_reg.startswith("MATCH"):
+                        print(f"  - Registration No Validation: {GREEN_TEXT}MATCH (Registration No '{reg_no}' matches old vehicle Reg No '{web_old_reg}'){RESET_TEXT}")
+                        reg_match = True
+                    else:
+                        print(f"  - Registration No Validation: {RED_TEXT}MISMATCH (Registration No '{reg_no}' does not match old vehicle Reg No '{web_old_reg}'){RESET_TEXT}")
+                        doc_issues.append(f"COD [{filename}]: Registration No mismatch. Expected Registration No '{reg_no}' to match old vehicle Reg No '{web_old_reg}'.")
+                elif not reg_no:
+                    if not web_old_reg:
+                        print(f"  - Registration No Validation: {YELLOW_TEXT}SKIPPED (No old vehicle registration in dashboard details){RESET_TEXT}")
+                        reg_match = True
+                    else:
+                        print(f"  - Registration No Validation: {RED_TEXT}FAILED (Registration No not found in document){RESET_TEXT}")
+                        doc_issues.append(f"COD [{filename}]: Registration No could not be extracted from the document.")
+                else:
+                    print(f"  - Registration No Validation: {YELLOW_TEXT}SKIPPED (No old vehicle registration in dashboard details){RESET_TEXT}")
+                    reg_match = True
+
+                # 3. Transferred Customer Name must match old vehicle Customer Name (or main customer name fallback)
+                web_old_name = None
+                if old_vehicle_details:
+                    web_old_name = get_val_by_fuzzy_key(old_vehicle_details, ["Customer Name", "Owner Name", "Name"])
+                
+                target_name = web_old_name if web_old_name else customer_name
+                
+                name_match = False
+                if user_name and target_name:
+                    status_name, score_name = compare_values_robust(user_name, target_name)
+                    if status_name.startswith("MATCH"):
+                        print(f"  - Name Validation: {GREEN_TEXT}MATCH ({status_name}, Similarity: {score_name:.1f}%){RESET_TEXT}")
+                        name_match = True
+                    else:
+                        print(f"  - Name Validation: {RED_TEXT}MISMATCH ({status_name}, Similarity: {score_name:.1f}%){RESET_TEXT}")
+                        doc_issues.append(f"COD [{filename}]: Customer name mismatch ({score_name:.1f}% similarity)")
+                elif not user_name:
+                    if not target_name:
+                        print(f"  - Name Validation: {YELLOW_TEXT}SKIPPED (No expected name for validation){RESET_TEXT}")
+                        name_match = True
+                    else:
+                        print(f"  - Name Validation: {RED_TEXT}FAILED (Customer name not found in document){RESET_TEXT}")
+                        doc_issues.append(f"COD [{filename}]: Customer name could not be extracted from the document.")
+                else:
+                    print(f"  - Name Validation: {YELLOW_TEXT}SKIPPED (No expected name for validation){RESET_TEXT}")
+                    name_match = True
                     
-                if cert_no:
-                    print(f"  - Cert Status    : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
-                else:
-                    print(f"  - Cert Status    : {YELLOW_TEXT}NOT FOUND (Optional for Welcome Scheme){RESET_TEXT}")
+                is_fully_verified = cert_match and reg_match and name_match
+                cod_results.append({
+                    "filename": filename,
+                    "is_fully_verified": is_fully_verified,
+                    "issues": doc_issues
+                })
                     
             elif file_type == "ADHAR":
                 adhar_no = data.get("Aadhaar Number")
@@ -2401,15 +3196,126 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                         relative_doc_found = True
                     else:
                         print(f"  - Name Validation  : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    # Capture W/O name for Spouse check
+                    _rn = data.get("relation_name")
+                    if _rn and not spouse_doc_relation_name:
+                        spouse_doc_relation_name = _rn
                 else:
                     if is_rel:
                         print(f"  - Name Validation  : {RED_TEXT}MISMATCH for relative '{rel_name}' ({score:.1f}% Similarity){RESET_TEXT}")
-                        issues.append(f"Aadhaar [{filename}]: Name mismatch for relative '{rel_name}' ({score:.1f}%)")
+                        if not is_relationship_self:
+                            issues.append(f"Aadhaar [{filename}]: Name mismatch for relative '{rel_name}' ({score:.1f}%)")
                     else:
                         print(f"  - Name Validation  : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
-                        issues.append(f"Aadhaar [{filename}]: Name mismatch ({score:.1f}% similarity)")
+                        if not is_relationship_self:
+                            issues.append(f"Aadhaar [{filename}]: Name mismatch ({score:.1f}% similarity)")
+                    
+            elif file_type == "DL":
+                dl_no = data.get("DL Number")
+                dob = data.get("DOB")
+                name = data.get("Name")
+                
+                print(f"  - Extracted DL No  : {dl_no or 'Not Found'}")
+                print(f"  - Extracted DOB    : {dob or 'Not Found'}")
+                print(f"  - Extracted Name   : {name or 'Not Found'}")
+                
+                score = validations.get("Name Match Score", 0)
+                is_rel = data.get("is_relative_doc", False)
+                rel_name = data.get("relative_owner_name", "")
+                
+                if validations.get("Name Match Status") == "MATCH":
+                    if is_rel:
+                        print(f"  - Name Validation  : {GREEN_TEXT}MATCH for relative '{rel_name}' ({score:.1f}% Similarity){RESET_TEXT}")
+                        relative_doc_found = True
+                    else:
+                        print(f"  - Name Validation  : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    dl_found = True   # DL document is valid for East zone check
+                    # Capture W/O name for Spouse check
+                    _rn = data.get("relation_name")
+                    if _rn and not spouse_doc_relation_name:
+                        spouse_doc_relation_name = _rn
+                else:
+                    if is_rel:
+                        print(f"  - Name Validation  : {RED_TEXT}MISMATCH for relative '{rel_name}' ({score:.1f}% Similarity){RESET_TEXT}")
+                        if not is_relationship_self:
+                            issues.append(f"DL [{filename}]: Name mismatch for relative '{rel_name}' ({score:.1f}%)")
+                    else:
+                        print(f"  - Name Validation  : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                        if not is_relationship_self:
+                            issues.append(f"DL [{filename}]: Name mismatch ({score:.1f}% similarity)")
+                        
+                if dl_no:
+                    print(f"  - DL Status        : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
+                else:
+                    print(f"  - DL Status        : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
+                if dob:
+                    print(f"  - DOB Status       : {GREEN_TEXT}VERIFIED{RESET_TEXT}")
+                else:
+                    print(f"  - DOB Status       : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
                     
             elif file_type == "DISCLAIMER":
+                web_new_model = None
+                if claim_details:
+                    web_new_model = get_val_by_fuzzy_key(claim_details, ["New vehicle Model Group", "Model Group", "New Vehicle Model"])
+                
+                scheme_type = dashboard_scheme_type if dashboard_scheme_type else "welcome"  # fallback default
+                if not dashboard_scheme_type:
+                    try:
+                        contributions = load_contribution_data()
+                        if web_new_model:
+                            in_welcome = False
+                            in_scrappage = False
+                            brand_upper = web_new_model.strip().upper()
+                            for key in contributions.get("welcome", {}).keys():
+                                if key == brand_upper or key in brand_upper or brand_upper in key:
+                                    in_welcome = True
+                                    break
+                            for key in contributions.get("scrappage", {}).keys():
+                                if key == brand_upper or key in brand_upper or brand_upper in key:
+                                    in_scrappage = True
+                                    break
+                                    
+                            if in_welcome and in_scrappage:
+                                if str(claim_choice) == "1" or str(claim_choice).lower() == "loyalty":
+                                    scheme_type = "welcome"
+                                else:
+                                    scheme_type = "scrappage"
+                            elif in_scrappage:
+                                scheme_type = "scrappage"
+                            elif in_welcome:
+                                scheme_type = "welcome"
+                    except Exception as e:
+                        logging.warning(f"Error determining scheme type for disclaimer validation: {e}")
+                
+                if scheme_type == "welcome":
+                    # Verify Disclaimer matches the screenshot template format
+                    text_norm = text.upper()
+                    
+                    # 1. Check for old format keywords
+                    old_keywords = ["SOLEMNLY", "AFFIRM", "DECLARE", "HEREBY SOLEMNLY", "AFFIRM AND DECLARE"]
+                    has_old_format = any(kw in text_norm for kw in old_keywords)
+                    
+                    # 2. Check for new format keywords (robust to minor subset fonts / OCR extraction errors)
+                    new_keywords = [
+                        "CUSTOMER DISCLAIMER",
+                        "CONFIRM",
+                        "WELCOME" if "WELCOME" in text_norm else "WELCOMC",
+                        "DEALER" if "DEALER" in text_norm else "DEATER",
+                        "VEHICLE" if "VEHICLE" in text_norm else "VEHIC",
+                        "CHASSIS" if "CHASSIS" in text_norm else "GHASSIS",
+                        "ENGINE" if "ENGINE" in text_norm else "ENGIN",
+                        "INVOICE"
+                    ]
+                    matching_new_kws = sum(1 for kw in new_keywords if kw in text_norm)
+                    
+                    if has_old_format or matching_new_kws < 5:
+                        print(f"  - Document Check       : {RED_TEXT}FAIL (Disclaimer format does not match the required digital template shown in screenshot){RESET_TEXT}")
+                        issues.append(f"Disclaimer [{filename}]: Disclaimer format does not match the required digital template shown in screenshot (found {matching_new_kws}/8 keywords, has_old_format={has_old_format})")
+                    else:
+                        print(f"  - Document Check       : {GREEN_TEXT}PASS (Disclaimer format matches digital template){RESET_TEXT}")
+                else:
+                    print(f"  - Document Check       : {GREEN_TEXT}PASS (Disclaimer format check skipped - Scrappage Scheme claim){RESET_TEXT}")
+
                 doc_name = data.get("Customer Name")
                 doc_reg = data.get("Registration No")
                 doc_make = data.get("Vehicle Make")
@@ -2520,15 +3426,14 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                         issues.append(f"Disclaimer [{filename}]: New Vehicle Model mismatch (doc: {doc_new_model} vs web: {web_new_model})")
                     if "MATCH" not in status_chassis and web_chassis:
                         issues.append(f"Disclaimer [{filename}]: Chassis No mismatch (doc: {doc_chassis} vs web: {web_chassis})")
-                    if web_inv_no and "MATCH" not in status_inv_no:
-                        issues.append(f"Disclaimer [{filename}]: Invoice No mismatch (doc: {doc_inv_no} vs web: {web_inv_no})")
+                    # Invoice No check on disclaimer is logged but not enforced (skipped hold)
                         
                     # Compare Welcome Bonus Amount
                     expected_amount = None
                     if web_new_model:
                         contributions = load_contribution_data()
                         expected_amount = find_matching_contribution(web_new_model, contributions)
-                    if expected_amount is not None:
+                    if scheme_type == "welcome" and expected_amount is not None:
                         try:
                             doc_amt = float(doc_welcome_bonus) if doc_welcome_bonus and doc_welcome_bonus != "NOT_FOUND" else None
                             if doc_amt is not None:
@@ -2567,19 +3472,62 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                     expected_amount = find_matching_contribution(model_group, contributions)
                     
                 if expected_amount is not None:
-                    print(f"  - Expected Amount      : {expected_amount} (from scheme_data.txt for {model_group})")
+                    print(f"  - Expected Amount      : {expected_amount} (from Google Sheet for {model_group})")
                 else:
                     print(f"  - Expected Amount      : {YELLOW_TEXT}UNKNOWN (New Vehicle Model Group not found/specified){RESET_TEXT}")
                     
-                selected_type = "Loyalty" if claim_choice == "1" or claim_choice == 1 else "Exchange"
-                if selected_type == "Loyalty":
-                    narration_kws = ["loyalty", "welcome", "bonus"]
-                else:
-                    narration_kws = ["exchange", "loyalty"]
+                # Determine narration keywords based on scheme type from dashboard/old vehicle details
+                scheme_to_use = dashboard_scheme_type
+                if not scheme_to_use:
+                    # Fallback to claim choice
+                    is_loyalty = (claim_choice == "1" or claim_choice == 1 or str(claim_choice).lower() == "loyalty")
+                    scheme_to_use = "welcome" if is_loyalty else "scrappage"
+                
+                if scheme_to_use == "scrappage":
+                    narration_kws = ["scrappage"]
+                    selected_type = "Scrappage"
+                else:  # welcome
+                    narration_kws = ["welcome", "loyalty"]
+                    selected_type = "Welcome / Loyalty"
                     
                 print(f"  - Selected Claim       : {selected_type}")
                 print(f"  - Target Narration     : {', '.join(narration_kws)}")
                 
+                # Define all acceptable amount targets for ledger matching
+                expected_amounts = [expected_amount] if expected_amount is not None else []
+                is_loyalty = (scheme_to_use == "welcome")
+                if not is_loyalty:  # Exchange/Scrappage
+                    # Add GST and non-GST dashboard amounts to allowed targets
+                    total_amount_gst = None
+                    claim_amount_no_gst = None
+                    approval_amount = None
+                    for k, v in claim_details.items():
+                        norm_k = k.lower()
+                        if "total amount" in norm_k and "approved" not in norm_k:
+                            try:
+                                total_amount_gst = float(''.join(c for c in v if c.isdigit() or c == '.'))
+                            except Exception:
+                                pass
+                        if "claim amount" in norm_k:
+                            try:
+                                claim_amount_no_gst = float(''.join(c for c in v if c.isdigit() or c == '.'))
+                            except Exception:
+                                pass
+                        if "approved total amount" in norm_k or "approval total amount" in norm_k or "approved amount" in norm_k:
+                            if "dealer" not in norm_k:
+                                try:
+                                    approval_amount = float(''.join(c for c in v if c.isdigit() or c == '.'))
+                                except Exception:
+                                    pass
+                    if total_amount_gst is not None:
+                        expected_amounts.append(total_amount_gst)
+                    if claim_amount_no_gst is not None:
+                        expected_amounts.append(claim_amount_no_gst)
+                    if approval_amount is not None:
+                        expected_amounts.append(approval_amount)
+                # Deduplicate and remove None
+                expected_amounts = list(set(val for val in expected_amounts if val is not None))
+
                 found_matching_entry = False
                 matched_line = ""
                 matched_amount = None
@@ -2587,11 +3535,16 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                 lines = text.split("\n")
                 for line in lines:
                     if is_narration_in_line(line, narration_kws):
-                        if expected_amount is not None:
-                            if check_amount_match(line, expected_amount):
-                                found_matching_entry = True
-                                matched_line = line.strip()
-                                matched_amount = expected_amount
+                        matched_any = False
+                        if expected_amounts:
+                            for amt in expected_amounts:
+                                if check_amount_match(line, amt):
+                                    found_matching_entry = True
+                                    matched_line = line.strip()
+                                    matched_amount = amt
+                                    matched_any = True
+                                    break
+                            if matched_any:
                                 break
                         else:
                             floats = find_floats_in_line(line)
@@ -2607,10 +3560,13 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                     print(f"    * Match Status       : {GREEN_TEXT}GOOD (Name, Amount {matched_amount}, and Narration matched!){RESET_TEXT}")
                 else:
                     print(f"  - Ledger Entry         : {RED_TEXT}NOT FOUND or MISMATCHED{RESET_TEXT}")
-                    expected_val_str = str(expected_amount) if expected_amount is not None else ""
+                    expected_val_str = ", ".join(str(x) for x in expected_amounts) if expected_amounts else ""
                     print(f"    * Match Status       : {RED_TEXT}FAIL (Could not find entry matching name, amount {expected_val_str}, and narration {selected_type}){RESET_TEXT}")
                     issues.append(f"Ledger [{filename}]: No matching entry found for name/amount {expected_val_str}/{selected_type} narration")
                 
+                # Call specific zone/city checks layered on top
+                validate_ledger_conditions(text, filename, claim_details, CURRENT_ZONE, CURRENT_CITY, claim_choice, issues)
+
                 # Name match issue
                 if validations.get("Name Match Status") != "MATCH":
                     nm_score = validations.get("Name Match Score", 0)
@@ -2623,51 +3579,151 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
                 if not stamp_ok:
                     issues.append(f"Ledger [{filename}]: Stamp/signature missing or invalid")
             elif file_type == "INVOICE":
+                # Safety check: Invoice filename vs Ledger text content
+                text_upper = text.upper()
+                if "STATEMENT OF ACCOUNT" in text_upper or "LEDGER" in text_upper or "JOURNAL ENTRY" in text_upper:
+                    print(f"  - Document Check       : {RED_TEXT}FAIL (Invoice file contains Ledger content){RESET_TEXT}")
+                    issues.append(f"Document [{filename}]: File is named/classified as Invoice, but contains Ledger content")
+
+                # 1. Invoice Type check
+                has_tax_invoice = "TAX INVOICE" in text_upper
+                has_gst_invoice = "GST INVOICE" in text_upper
+                has_proforma = "PROFORMA" in text_upper
+                
+                type_check_ok = False
+                if has_tax_invoice or has_gst_invoice:
+                    type_check_ok = True
+                
+                if not type_check_ok:
+                    print(f"  - Invoice Type Check   : {RED_TEXT}FAIL (Neither TAX INVOICE nor GST INVOICE found){RESET_TEXT}")
+                    issues.append(f"Invoice [{filename}]: Not a valid tax/GST invoice (Neither 'TAX INVOICE' nor 'GST INVOICE' found)")
+                elif has_proforma:
+                    print(f"  - Invoice Type Check   : {GREEN_TEXT}GOOD (Tax/GST invoice with Proforma allowed){RESET_TEXT}")
+                else:
+                    print(f"  - Invoice Type Check   : {GREEN_TEXT}GOOD (Tax/GST invoice found){RESET_TEXT}")
+
                 extracted_name = data.get("Customer Name")
+                dealer_name = data.get("Dealer Name")
+                inv_no = data.get("Invoice No")
+                inv_date = data.get("Invoice Date")
                 vehicle_model = data.get("Vehicle Model")
                 invoice_amount = data.get("Invoice Amount")
                 
                 print(f"  - Extracted Name       : {extracted_name or 'Not Found'}")
+                print(f"  - Extracted Dealer     : {dealer_name or 'Not Found'}")
+                print(f"  - Extracted Invoice No : {inv_no or 'Not Found'}")
+                print(f"  - Extracted Date       : {inv_date or 'Not Found'}")
                 print(f"  - Extracted Vehicle    : {vehicle_model or 'Not Found'}")
                 print(f"  - Extracted Amount     : {invoice_amount or 'Not Found'}")
                 
+                # 2. Customer Name check
                 score = validations.get("Name Match Score", 0)
                 name_ok = validations.get("Name Match Status") == "MATCH"
                 if name_ok:
                     print(f"  - Name Match Status    : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
                 else:
                     print(f"  - Name Match Status    : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
-                    
+                    issues.append(f"Invoice [{filename}]: Customer name mismatch ({score:.1f}% similarity)")
+
+                # 3. Dealership Name check
+                dealer_ok = compare_dealership_names(dealer_name, company_name)
+                if dealer_ok:
+                    print(f"  - Dealer Match Status  : {GREEN_TEXT}MATCH ({dealer_name} vs {company_name}){RESET_TEXT}")
+                else:
+                    print(f"  - Dealer Match Status  : {RED_TEXT}MISMATCH (Extracted '{dealer_name}' vs expected '{company_name}'){RESET_TEXT}")
+                    issues.append(f"Invoice [{filename}]: Dealership name mismatch. Extracted: '{dealer_name}', Expected: '{company_name}'")
+
+                # 4. Invoice No check
+                web_inv_no = get_val_by_fuzzy_key(claim_details, ["Invoice No", "Invoice Number"]) if claim_details else None
+                if web_inv_no:
+                    status_inv_no, score_inv_no = compare_values_robust(inv_no, web_inv_no)
+                    inv_no_ok = "MATCH" in status_inv_no
+                    if inv_no_ok:
+                        print(f"  - Invoice No Status    : {GREEN_TEXT}MATCH ({inv_no} vs {web_inv_no}){RESET_TEXT}")
+                    else:
+                        print(f"  - Invoice No Status    : {RED_TEXT}MISMATCH ({inv_no} vs {web_inv_no}){RESET_TEXT}")
+                        issues.append(f"Invoice [{filename}]: Invoice Number mismatch. Extracted: '{inv_no}', Expected: '{web_inv_no}'")
+                else:
+                    print(f"  - Invoice No Status    : {YELLOW_TEXT}SKIPPED (Invoice No not found in dashboard details){RESET_TEXT}")
+
+                # 5. Invoice Amount check
                 expected_amount = None
                 if vehicle_model:
                     contributions = load_contribution_data()
                     expected_amount = find_matching_contribution(vehicle_model, contributions)
                     
                 if expected_amount is not None:
-                    print(f"  - Expected Amount      : {expected_amount} (from scheme_data.txt for {vehicle_model})")
+                    print(f"  - Expected Amount      : {expected_amount} (from Google Sheet for {vehicle_model})")
                     if invoice_amount is not None:
                         if abs(invoice_amount - expected_amount) < 1.0:
                             print(f"  - Amount Match Status  : {GREEN_TEXT}MATCH{RESET_TEXT}")
                         else:
                             print(f"  - Amount Match Status  : {RED_TEXT}MISMATCH (Extracted {invoice_amount} vs Expected {expected_amount}){RESET_TEXT}")
+                            issues.append(f"Invoice [{filename}]: Amount mismatch. Extracted: {invoice_amount}, Expected: {expected_amount} for model '{vehicle_model}'")
                     else:
                         print(f"  - Amount Match Status  : {RED_TEXT}FAILED TO EXTRACT{RESET_TEXT}")
+                        issues.append(f"Invoice [{filename}]: Failed to extract bonus amount from invoice (Expected: {expected_amount})")
                 else:
                     print(f"  - Expected Amount      : {YELLOW_TEXT}UNKNOWN (Vehicle '{vehicle_model}' not found in schemes){RESET_TEXT}")
+                    issues.append(f"Invoice [{filename}]: Expected amount is unknown (Vehicle '{vehicle_model}' not found in schemes)")
                     
+                if not vehicle_model:
+                    issues.append(f"Invoice [{filename}]: Failed to identify vehicle model on invoice")
+
+                # 6. Customer Signature & Dealer Seal / Stamp check
                 sig_ok, sig_msg, stamp_ok, stamp_msg = verify_invoice_stamp_and_signatures(pdf_path, company_name, customer_name)
                 color_sig = GREEN_TEXT if sig_ok else RED_TEXT
                 color_stamp = GREEN_TEXT if stamp_ok else RED_TEXT
                 print(f"  - Customer Signature   : {color_sig}{sig_msg}{RESET_TEXT}")
                 print(f"  - Dealer Seal & Stamp  : {color_stamp}{stamp_msg}{RESET_TEXT}")
+                if not sig_ok:
+                    issues.append(f"Invoice [{filename}]: Customer signature missing or invalid")
+                if not stamp_ok:
+                    issues.append(f"Invoice [{filename}]: Dealer seal/stamp missing or company name mismatch")
+            elif file_type == "GST":
+                gstin_no = data.get("GSTIN")
+                name = data.get("Name")
+                
+                print(f"  - Extracted GSTIN: {gstin_no or 'Not Found'}")
+                print(f"  - Extracted Name : {name or 'Not Found'}")
+                
+                score = validations.get("Name Match Score", 0)
+                if validations.get("Name Match Status") == "MATCH":
+                    print(f"  - Name Validation: {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    gst_doc_found = True
+                else:
+                    print(f"  - Name Validation: {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}")
+                    if not is_relationship_self:
+                        issues.append(f"GST [{filename}]: Name mismatch ({score:.1f}% similarity)")
             else:
                 print(f"  - Status         : {YELLOW_TEXT}SKIPPED (No validation rules defined for this type){RESET_TEXT}")
                 
         except Exception as doc_err:
             logging.error(f"Error validating document {filename}: {doc_err}")
             
-    # Enforce mandatory relative documents if relationship is not Self
-    if not is_relationship_self:
+    # Process multi-COD results
+    has_any_cod = len(cod_results) > 0
+    if has_any_cod:
+        cod_verified_successfully = any(r["is_fully_verified"] for r in cod_results)
+        if cod_verified_successfully:
+            logging.info("COD validation passed: At least one COD document is fully verified.")
+        else:
+            # None of the COD documents are fully verified. Append the issues of all COD documents.
+            for r in cod_results:
+                issues.extend(r["issues"])
+            
+    # Enforce relationship document checks
+    if relationship.lower() == "proprietor":
+        print("\n" + "="*50)
+        print("         RELATIONSHIP DOCUMENT VERIFICATION")
+        print("="*50)
+        print(f"  Relationship type: {relationship} (Customer: {customer_name})")
+        if gst_doc_found:
+            print(f"  - GST Document: {GREEN_TEXT}VERIFIED (Found matching GST document for proprietor '{customer_name}'){RESET_TEXT}")
+        else:
+            print(f"  - GST Document: {RED_TEXT}FAILED (No matching GST document found for proprietor '{customer_name}' in Supporting/Non Mandatory Documents){RESET_TEXT}")
+            issues.append(f"Relationship document: No matching GST document found for Proprietor '{customer_name}'")
+    elif not is_relationship_self:
         print("\n" + "="*50)
         print("         RELATIONSHIP DOCUMENT VERIFICATION")
         print("="*50)
@@ -2678,8 +3734,49 @@ def verify_documents(target_dir, customer_name, claim_details=None, old_vehicle_
             print(f"  - Relative ID Document: {RED_TEXT}FAILED (No matching Aadhaar/PAN found for relative '{old_owner_name}' in Supporting/Non Mandatory Documents){RESET_TEXT}")
             issues.append(f"Relationship document: No Aadhaar/PAN found for relative '{old_owner_name}' (Relationship: {relationship})")
             
+    # Enforce Spouse W/O (Wife Of / Husband Of) name must match Claim Details Customer Name
+    if relationship.strip().lower() == "spouse":
+        print("\n" + "="*50)
+        print("         SPOUSE W/O VALIDATION")
+        print("="*50)
+        print(f"  Relationship: Spouse | Claimant: {customer_name} | Old Owner: {old_owner_name}")
+        if spouse_doc_relation_name:
+            wo_score = fuzz.token_sort_ratio(spouse_doc_relation_name.lower(), customer_name.lower())
+            wo_status = "MATCH" if wo_score >= 80 else "MISMATCH"
+            color = GREEN_TEXT if wo_status == "MATCH" else RED_TEXT
+            print(f"  - W/O field in document : '{spouse_doc_relation_name}'")
+            print(f"  - Expected (Claimant)   : '{customer_name}'")
+            print(f"  - Match Status          : {color}{wo_status} ({wo_score:.1f}% Similarity){RESET_TEXT}")
+            if wo_status != "MATCH":
+                issues.append(
+                    f"Spouse Validation: W/O field '{spouse_doc_relation_name}' in ID document does not match "
+                    f"claim customer name '{customer_name}' ({wo_score:.1f}% similarity)"
+                )
+        else:
+            print(f"  - W/O field             : {YELLOW_TEXT}NOT FOUND in uploaded documents{RESET_TEXT}")
+            print(f"  - Note                  : Could not verify spousal link via W/O field (not mandatory if name already verified)")
+            
+    # Enforce mandatory PAN or Driving Licence (DL) for East Zone Bhubaneswar and Raipur
+
+    east_pan_dl_cities = ["BHUBANESWAR", "RAIPUR"]
+    current_zone_upper = globals().get("CURRENT_ZONE", "").strip().upper()
+    current_city_upper = globals().get("CURRENT_CITY", "").strip().upper()
+        
+    if current_zone_upper == "EAST" and current_city_upper in east_pan_dl_cities:
+        print("\n" + "="*50)
+        print("         EAST ZONE PAN / DL MANDATORY CHECK")
+        print("="*50)
+        print(f"  City: {current_city_upper} (East Zone) — PAN or Driving Licence is mandatory")
+        if pan_found or dl_found:
+            doc_type_found = "PAN" if pan_found else "Driving Licence (DL)"
+            print(f"  - PAN / DL Check  : {GREEN_TEXT}VERIFIED ({doc_type_found} found and name matched){RESET_TEXT}")
+        else:
+            print(f"  - PAN / DL Check  : {RED_TEXT}FAILED (No valid PAN or Driving Licence found for '{old_owner_name}' in uploaded documents){RESET_TEXT}")
+            issues.append(f"East Zone [{current_city_upper}]: Mandatory PAN or Driving Licence not found for old vehicle owner '{old_owner_name}'")
+            
     print("\n" + "="*50)
     return issues  # empty → APPROVED, non-empty → HOLD
+
 
 def click_row_action_button(page, row_index=0):
     """Robustly clicks the Action / Eye button in the specified row (0-indexed) of the claims table."""
@@ -2811,6 +3908,16 @@ def configure_edge_preferences(user_data_path):
 
 def main():
     print("=== Mahindra Rise Edge Login Automation ===")
+    
+    # Pre-fetch and cache the Google Sheet data at startup
+    try:
+        logging.info("Initializing scheme data from Google Sheet...")
+        fetch_google_sheet_data()
+        logging.info("Google Sheet scheme data loaded successfully.")
+    except Exception as e:
+        logging.critical(f"Could not load scheme data from Google Sheet: {e}")
+        logging.critical("This script requires access to the Google Sheet to perform verification. Exiting.")
+        sys.exit(1)
     
     # 1. Mode Choice
     print("\n1. Use existing logged-in session (Already Login)")
@@ -3064,17 +4171,51 @@ def main():
         
         # Select Zone
         zone_container = f"{MODAL_CONTENT} form > div:nth-child(1) > div:nth-child(1) > div > div"
+        
+        def select_zone_and_save():
+            global CURRENT_ZONE
+            zone_text = select_antd_dropdown_option(
+                page, 
+                get_antd_select_trigger(page, zone_container, "Zone"), 
+                select_first=True, 
+                field_name="Zone"
+            )
+            if zone_text:
+                CURRENT_ZONE = zone_text.strip().upper()
+                if "ZONE" in CURRENT_ZONE:
+                    CURRENT_ZONE = CURRENT_ZONE.replace("ZONE", "").strip()
+                logging.info(f"Set global CURRENT_ZONE to: {CURRENT_ZONE}")
+            return zone_text
+
         execute_step_with_interaction(
             page,
-            lambda: select_antd_dropdown_option(page, get_antd_select_trigger(page, zone_container, "Zone"), select_first=True, field_name="Zone"),
+            select_zone_and_save,
             "Select Zone (Single option)"
         )
         
         # Select Area Office
         office_container = f"{MODAL_CONTENT} form > div:nth-child(1) > div:nth-child(2) > div > div"
+        
+        def select_office_and_save_city():
+            global CURRENT_CITY
+            office_text = select_antd_dropdown_option(
+                page, 
+                get_antd_select_trigger(page, office_container, "Area Office"), 
+                ask_user=True, 
+                field_name="Area Office"
+            )
+            if office_text:
+                office_clean = office_text.strip().upper()
+                for suffix in [" AO", " AREA OFFICE", " OFFICE"]:
+                    if office_clean.endswith(suffix):
+                        office_clean = office_clean[:-len(suffix)].strip()
+                CURRENT_CITY = office_clean
+                logging.info(f"Set global CURRENT_CITY to: {CURRENT_CITY}")
+            return office_text
+
         execute_step_with_interaction(
             page,
-            lambda: select_antd_dropdown_option(page, get_antd_select_trigger(page, office_container, "Area Office"), ask_user=True, field_name="Area Office"),
+            select_office_and_save_city,
             "Select Area Office"
         )
         
@@ -3270,6 +4411,23 @@ def main():
             for key, val in claim_details.items():
                 print(f"  {key} : {val}")
                 
+            # Extract Zone and City from claim details if present to override global filter selection
+            for k, v in claim_details.items():
+                norm_k = k.lower()
+                if "zone" in norm_k:
+                    val_clean = v.strip().upper()
+                    if "ZONE" in val_clean:
+                        val_clean = val_clean.replace("ZONE", "").strip()
+                    CURRENT_ZONE = val_clean
+                    logging.info(f"Row {row_idx + 1}: Extracted Zone from claim details: {CURRENT_ZONE}")
+                elif "area office" in norm_k or "location name" in norm_k or "location" in norm_k:
+                    val_clean = v.strip().upper()
+                    for suffix in [" AO", " AREA OFFICE", " OFFICE"]:
+                        if val_clean.endswith(suffix):
+                            val_clean = val_clean[:-len(suffix)].strip()
+                    CURRENT_CITY = val_clean
+                    logging.info(f"Row {row_idx + 1}: Extracted City from claim details: {CURRENT_CITY}")
+                
             # Validate: extract "New Vehicle Model Group" and "Approved Total Amount"
             model_group = None
             approval_amount = None
@@ -3296,34 +4454,37 @@ def main():
                 print(f"  Model Group from Claim: {model_group}")
                 print(f"  Approval Amount from Claim: {approval_amount}")
                 
-                matched_schemes = find_matching_schemes(model_group, schemes)
-                if matched_schemes:
-                    print("  Expected Credit Note Amounts (excluding GST) from scheme_data.txt:")
-                    for s_type, s_amount in matched_schemes.items():
-                        print(f"    - {s_type} Scheme: {s_amount}")
-                    
-                    try:
-                        clean_val_str = ''.join(c for c in approval_amount if c.isdigit() or c == '.')
-                        actual_val = float(clean_val_str)
-                        
-                        matched_any = False
-                        for s_type, s_amount in matched_schemes.items():
-                            diff = abs(actual_val - s_amount)
-                            if diff < 1.0:
-                                print(f"{GREEN_TEXT}  --> Result: MATCH (Approval amount {actual_val} matches {model_group} {s_type} Scheme {s_amount}) [FINE]{RESET_TEXT}")
-                                matched_any = True
-                                break
-                                
-                        if not matched_any:
-                            expected_desc = " or ".join(f"{v} ({k})" for k, v in matched_schemes.items())
-                            print(f"{RED_TEXT}  --> Result: MISMATCH (Expected {expected_desc}, got {actual_val}) [FAILED]{RESET_TEXT}")
-                            row_issues.append(f"Scheme amount mismatch: got {actual_val}, expected {expected_desc}")
-                    except Exception as parse_err:
-                        print(f"{RED_TEXT}  --> Result: UNABLE TO COMPARE (Error: {parse_err}) [FAILED]{RESET_TEXT}")
-                        row_issues.append(f"Scheme amount parse error: {parse_err}")
+                if not any(c.isdigit() for c in approval_amount):
+                    print(f"  --> Skipping scheme amount check: approval amount has no numeric digits.")
                 else:
-                    print(f"{RED_TEXT}  --> Result: Brand '{model_group}' not found in scheme_data.txt. [FAILED]{RESET_TEXT}")
-                    row_issues.append(f"Brand '{model_group}' not found in scheme_data.txt")
+                    matched_schemes = find_matching_schemes(model_group, schemes)
+                    if matched_schemes:
+                        print("  Expected Credit Note Amounts (excluding GST) from Google Sheet:")
+                        for s_type, s_amount in matched_schemes.items():
+                            print(f"    - {s_type} Scheme: {s_amount}")
+                        
+                        try:
+                            clean_val_str = ''.join(c for c in approval_amount if c.isdigit() or c == '.')
+                            actual_val = float(clean_val_str)
+                            
+                            matched_any = False
+                            for s_type, s_amount in matched_schemes.items():
+                                diff = abs(actual_val - s_amount)
+                                if diff < 1.0:
+                                    print(f"{GREEN_TEXT}  --> Result: MATCH (Approval amount {actual_val} matches {model_group} {s_type} Scheme {s_amount}) [FINE]{RESET_TEXT}")
+                                    matched_any = True
+                                    break
+                                    
+                            if not matched_any:
+                                expected_desc = " or ".join(f"{v} ({k})" for k, v in matched_schemes.items())
+                                print(f"{RED_TEXT}  --> Result: MISMATCH (Expected {expected_desc}, got {actual_val}) [FAILED]{RESET_TEXT}")
+                                row_issues.append(f"Scheme amount mismatch: got {actual_val}, expected {expected_desc}")
+                        except Exception as parse_err:
+                            print(f"{RED_TEXT}  --> Result: UNABLE TO COMPARE (Error: {parse_err}) [FAILED]{RESET_TEXT}")
+                            row_issues.append(f"Scheme amount parse error: {parse_err}")
+                    else:
+                        print(f"{RED_TEXT}  --> Result: Brand '{model_group}' not found in Google Sheet. [FAILED]{RESET_TEXT}")
+                        row_issues.append(f"Brand '{model_group}' not found in Google Sheet")
             else:
                 reasons = []
                 if not model_group:
@@ -3335,6 +4496,7 @@ def main():
                 
             # --- Fetch Old Vehicle Details ---
             old_vehicle_details = {}
+            dashboard_scheme_type = None
             try:
                 logging.info("Switching to 'Old Vehicle Details' tab...")
                 select_drawer_timeline_tab(page, "Old Vehicle Details")
@@ -3348,6 +4510,12 @@ def main():
                         print(f"  {key} : {val}")
                 else:
                     print("  No details found or table was empty.")
+                
+                # Extract Scheme Type from the Old Vehicle Details tab
+                dashboard_scheme_type = extract_scheme_type_from_old_vehicle_details(page)
+                if dashboard_scheme_type:
+                    print(f"  Dashboard Scheme Type : {dashboard_scheme_type.upper()}")
+                    logging.info(f"Dashboard Scheme Type extracted: {dashboard_scheme_type}")
             except Exception as old_vehicle_err:
                 logging.warning(f"Failed to fetch or parse Old Vehicle Details: {old_vehicle_err}")
 
@@ -3369,9 +4537,18 @@ def main():
                 logging.warning(f"Failed to fetch or download Supporting Documents: {docs_err}")
                 row_issues.append(f"Supporting documents download failed: {docs_err}")
                 
-            if relationship.lower() != "self":
+            # Download Non Mandatory Documents for:
+            # 1. Non-Self relationships (GST, Aadhaar, PAN for relatives)
+            # 2. East Zone Bhubaneswar / Raipur (mandatory PAN or DL check)
+            _east_pan_dl_cities = ["BHUBANESWAR", "RAIPUR"]
+            _cur_zone = globals().get("CURRENT_ZONE", "").strip().upper()
+            _cur_city = globals().get("CURRENT_CITY", "").strip().upper()
+            _need_non_mandatory = (relationship.lower() != "self") or \
+                                  (_cur_zone == "EAST" and _cur_city in _east_pan_dl_cities)
+            if _need_non_mandatory:
                 try:
-                    logging.info(f"Relationship is '{relationship}' (not Self). Switching to 'Non Mandatory Document' tab...")
+                    reason = "Non-Self relationship" if relationship.lower() != "self" else f"East Zone mandatory PAN/DL ({_cur_city})"
+                    logging.info(f"Switching to 'Non Mandatory Document' tab ({reason})...")
                     select_drawer_timeline_tab(page, "Non Mandatory Document")
                     logging.info("Downloading non-mandatory documents...")
                     download_supporting_documents(page, context, customer_name)
@@ -3384,7 +4561,21 @@ def main():
                 safe_customer_name = "".join(c for c in customer_name if c.isalnum() or c in (" ", "_", "-")).strip() or "Unknown_Customer"
                 target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documents", safe_customer_name)
                 logging.info("Starting document data extraction and verification...")
-                doc_issues = verify_documents(target_dir, customer_name, claim_details, old_vehicle_details, claim_choice) or []
+                
+                # Extract Dealer Name from left drawer pane for stamp/seal/invoice validation
+                dashboard_dealer_name = extract_dealer_name_from_drawer(page)
+                if dashboard_dealer_name:
+                    logging.info(f"Dashboard Dealer Name extracted for document verification: {dashboard_dealer_name}")
+                
+                doc_issues = verify_documents(
+                    target_dir,
+                    customer_name,
+                    claim_details,
+                    old_vehicle_details,
+                    claim_choice,
+                    dashboard_dealer_name=dashboard_dealer_name,
+                    dashboard_scheme_type=dashboard_scheme_type
+                ) or []
             except Exception as verify_err:
                 logging.warning(f"Failed to verify documents: {verify_err}")
                 row_issues.append(f"Document verification error: {verify_err}")
