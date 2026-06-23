@@ -1,0 +1,23 @@
+# Secret keys — NEVER commit
+.env
+.env.*
+
+# Python compiled cache — also contained API key, never commit
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Downloaded customer documents — private data
+documents/
+
+# Excel temp lock files
+~$*.xlsx
+~$*.xls
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

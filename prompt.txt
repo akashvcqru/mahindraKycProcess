@@ -1,0 +1,35 @@
+Looking at both images very carefully...
+
+---
+
+## 🤯 There IS No Difference — Both Invoices Are Identical!
+
+Look at the Note line on **both** invoices:
+
+| | Note on Invoice |
+|---|---|
+| **MUNNA KUMAR** (HOLD ❌) | `Welcome Bonus Amount is Rs.5000.00/-(inclusive of GST)` |
+| **MUKESH KUMAR** (APPROVED ✅) | `Welcome Bonus Amount is Rs.5000.00/-(inclusive of GST)` |
+
+**Word for word — exactly the same.**
+
+---
+
+## So Why Did the Script Treat Them Differently?
+
+This is a **bug in the script**. The most likely reason:
+
+**Mukesh Kumar's invoice was named `INVOICE_PAN-...pdf`**
+**MUNNA KUMAR's invoice was named `INV-...pdf`**
+
+The script probably has different handling based on filename — the `INVOICE_PAN` file may have been processed through a different code path that **skipped or passed the amount check**, while `INV-...pdf` went through the path that **actually read and validated the note text** and flagged "inclusive of GST".
+
+---
+
+## In Short
+
+- ✅ The documents are **correct and identical**
+- ❌ The script is **wrong** — it's giving different results for the same content
+- MUNNA KUMAR should also be **APPROVED** — it's a false HOLD
+
+**Should I fix the script so it doesn't flag "inclusive of GST" as an error, since both dealers write it the same way?**
