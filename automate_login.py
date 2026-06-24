@@ -17,8 +17,20 @@ from rapidfuzz import fuzz
 try:
     from dotenv import load_dotenv
 
+    def get_exe_dir():
+        import sys
+        if getattr(sys, 'frozen', False):
+            return os.path.dirname(sys.executable)
+        return os.path.dirname(os.path.abspath(__file__))
+
+    def get_bundled_dir():
+        import sys
+        if getattr(sys, 'frozen', False):
+            return sys._MEIPASS
+        return os.path.dirname(os.path.abspath(__file__))
+
     load_dotenv(
-        dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        dotenv_path=os.path.join(get_bundled_dir(), ".env")
     )
 except ImportError:
     pass  # python-dotenv not installed; fallback to system environment variables
@@ -66,9 +78,7 @@ def get_ui_input(prompt, prompt_type="text", options=None):
 def save_row_to_history(row_result):
     import json
 
-    history_file = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "ui_history.json"
-    )
+    history_file = os.path.join(get_exe_dir(), "ui_history.json")
     history = []
     if os.path.exists(history_file):
         try:
@@ -1296,7 +1306,7 @@ def download_supporting_documents(page, context, customer_name):
     if not safe_customer_name:
         safe_customer_name = "Unknown_Customer"
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_dir = get_exe_dir()
     target_dir = os.path.join(script_dir, "documents", safe_customer_name)
     os.makedirs(target_dir, exist_ok=True)
     logging.info(f"Target directory for documents: {target_dir}")
@@ -8584,46 +8594,99 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None):
     user_data_path = os.path.join(local_app_data, r"Microsoft\Edge\User Data")
 
     try:
-        # Configure Microsoft Edge preferences directly in the profile settings
-        # "Profile 3" folder = the Mahindra account (50016107@mahindra.com),
-        # displayed as "Profile 2" inside Edge UI.
-        # "Profile 2" folder = Gmail account (abhishekjbri@gmail.com) — NOT what we want.
-        profile_dir = "Profile 3"
+        # --- Dynamic Edge Profile Selection ---
+        import json
+        
+        profiles = []
+        try:
+            local_state_path = os.path.join(user_data_path, "Local State")
+            if os.path.exists(local_state_path):
+                with open(local_state_path, "r", encoding="utf-8") as f:
+                    local_state = json.load(f)
+                info_cache = local_state.get("profile", {}).get("info_cache", {})
+                
+                # Check for Default profile folder which might not be in info_cache
+                if "Default" not in info_cache and os.path.exists(os.path.join(user_data_path, "Default")):
+                     profiles.append({"folder": "Default", "name": "Default Profile", "user_name": ""})
+                     
+                for folder_name, info in info_cache.items():
+                    name = info.get("name", folder_name)
+                    user_name = info.get("user_name", "")
+                    profiles.append({"folder": folder_name, "name": name, "user_name": user_name})
+        except Exception as e:
+            logging.warning(f"Failed to read Edge profiles: {e}")
+            
+        if not profiles:
+            profiles = [{"folder": "Default", "name": "Default Profile", "user_name": ""}]
+            
+        print("\n=== Available Edge Profiles ===")
+        options = []
+        for i, prof in enumerate(profiles, start=1):
+            email = f" ({prof['user_name']})" if prof['user_name'] else ""
+            print(f"{i}. {prof['name']} - Folder: {prof['folder']}{email}")
+            options.append(str(i))
+
+        profile_dir = None
+        while profile_dir is None:
+            profile_choice = get_ui_input(f"Select a profile (1-{len(profiles)}): ", "choice", options).strip()
+            try:
+                profile_idx = int(profile_choice) - 1
+                if 0 <= profile_idx < len(profiles):
+                    profile_dir = profiles[profile_idx]["folder"]
+                    selected_name = profiles[profile_idx]["name"]
+                    logging.info(f"Selected Edge profile: {selected_name} (Folder: {profile_dir})")
+                else:
+                    print(f"  Please enter a number between 1 and {len(profiles)}.")
+            except ValueError:
+                print(f"  Please enter a number between 1 and {len(profiles)}.")
         configure_edge_preferences(user_data_path, profile_dir)
 
         # Launch persistent context with the chosen profile folder
         logging.info(
             f"Launching Edge with profile path: {user_data_path}, profile directory: {profile_dir}"
         )
-        base_docs_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "documents"
-        )
+        base_docs_dir = os.path.join(get_exe_dir(), "documents")
         os.makedirs(base_docs_dir, exist_ok=True)
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=user_data_path,
-            channel="msedge",
-            headless=False,
-            args=[
-                f"--profile-directory={profile_dir}",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-download-notification",
-                "--safebrowsing-disable-download-protection",
-                "--disable-popup-blocking",
-                "--disable-features=DownloadBubble",
-            ],
-            accept_downloads=True,
-        )
-        page = context.pages[0]
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=user_data_path,
+                    channel="msedge",
+                    headless=False,
+                    args=[
+                        f"--profile-directory={profile_dir}",
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-download-notification",
+                        "--safebrowsing-disable-download-protection",
+                        "--disable-popup-blocking",
+                        "--disable-features=DownloadBubble",
+                    ],
+                    accept_downloads=True,
+                )
+                page = context.pages[0]
+                break
+            except Exception as e:
+                logging.warning(f"Failed to launch Edge (Attempt {attempt + 1}/{max_retries}): Profile is locked or Edge is still running.")
+                if attempt < max_retries - 1:
+                    logging.info("Force killing background msedge.exe processes and retrying...")
+                    subprocess.run(["taskkill", "/F", "/IM", "msedge.exe"], capture_output=True)
+                    time.sleep(3)
+                else:
+                    raise e
 
     except Exception as e:
-        logging.critical(f"Failed to launch Microsoft Edge: {e}")
+        logging.critical(f"CRITICAL ERROR: Failed to launch Microsoft Edge after multiple attempts.")
+        logging.critical(f"Details: {e}")
         logging.critical(
-            "Ensure all Edge windows are fully closed to release profile locks."
+            "Please open Task Manager and manually kill all 'Microsoft Edge' processes, then try again."
         )
         try:
             p.stop()
         except Exception:
             pass
+        get_ui_input("Press Enter to exit...", "text")
         sys.exit(1)
 
     should_quit = True
@@ -9259,9 +9322,7 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None):
         excel_records = []  # list of dicts for Excel sheet generation
 
         # Path used for all per-row immediate saves
-        excel_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "kyc_process_results.xlsx"
-        )
+        excel_path = os.path.join(get_exe_dir(), "kyc_process_results.xlsx")
 
         # ── Snapshot main table columns before entering the row loop ──────────
         # Maps row_idx → {header: cell_value} from the visible claims table.
@@ -9857,11 +9918,7 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None):
                     ).strip()
                     or "Unknown_Customer"
                 )
-                target_dir = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)),
-                    "documents",
-                    safe_customer_name,
-                )
+                target_dir = os.path.join(get_exe_dir(), "documents", safe_customer_name)
                 logging.info("Starting document data extraction and verification...")
 
                 # Extract Dealer Name from left drawer pane for stamp/seal/invoice validation
