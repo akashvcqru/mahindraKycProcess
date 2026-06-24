@@ -4564,164 +4564,6 @@
     ]
   },
   {
-    "row_idx": 7,
-    "customer_name": "LALU KUMAR YADAV",
-    "status": "APPROVED",
-    "issues": [],
-    "claim_details": {
-      "Chassis No": "T6E12979",
-      "Invoice No": "INV27D000119",
-      "Invoice Date": "31 May 2026",
-      "Corporate Type": "-",
-      "Customer Id": "R270255738",
-      "Customer Type": "Individual",
-      "Customer Name": "LALU KUMAR YADAV",
-      "Dealer Share Amount": "1000",
-      "OEM Share Amount": "4000",
-      "Total Amount": "5000",
-      "Claim Amount": "3389.83",
-      "Approved Total Amount": "-",
-      "Claim Empowerment ID": "-",
-      "Claim Empowerment Date": "-",
-      "Claim Empowerment Approver ID": "-",
-      "Claim Empowerment Status": "-",
-      "Remarks": "-",
-      "New vehicle Model Group": "SUPRO-MT",
-      "dashboard_claim_date": "21 Jun 2026",
-      "dashboard_customer_names": [],
-      "dashboard_total_amount": 5000.0,
-      "portal_old_vehicle_chassis": "R270255738",
-      "portal_old_vehicle_reg": "Individual",
-      "portal_detected_pan": null,
-      "portal_detected_dl": null,
-      "portal_pan_dl_source_field": null
-    },
-    "old_vehicle_details": {
-      "Customer Name": "LALU KUMAR YADAV",
-      "Make": "Others",
-      "Model": "Others",
-      "Vehicle Variant": "Others",
-      "Chassis No": "AQJPY9888M",
-      "Reg. No": "AQJPY9888M",
-      "Year Of Registration": "2026",
-      "Month of Registration": "SEPTEMBER",
-      "KM": "0",
-      "Scheme": "Welcome Bonus",
-      "Relationship": "Self",
-      "Usage": "Commercial"
-    },
-    "documents": [
-      {
-        "file_name": "DIS-1782026113285.pdf",
-        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\LALU KUMAR YADAV\\DIS-1782026113285.pdf",
-        "file_type": "DISCLAIMER",
-        "extracted_data": {
-          "Customer Name": "Lalu Kr. Yadav",
-          "Dealer Name": "Mahindra",
-          "Invoice No": "INV27D000119",
-          "Invoice Date": "31.05.2026",
-          "Vehicle Model": "SUPRO-MT",
-          "Invoice Amount": 5000.0,
-          "Registration No": null,
-          "Vehicle Make": "Mahindra",
-          "New Vehicle Model": null,
-          "Chassis No": "T621279",
-          "Welcome Bonus Amount": 5000.0
-        },
-        "validations": {
-          "Name Match Score": 86.66666666666667,
-          "Name Match Status": "MATCH"
-        },
-        "ocr_text": "KIRAN AUTOMOBILES PVT. LTD mahindcaRise Xirok (Authorised Dealer for Mahindra Range of Vehicles) Registered Office Kamaldah Path; NH: 30. New Bye Pass Road, Patna City 800008 , Bihar; INDIA, Website wwwkiranautomobiles com Email ; info@kiranautomobiles com CIN U5010OBR2O12PTCO18270 GSTIN 1OAAECKG96SF; ZN PAN No. AAECK696SF Customer Disclaimer Date: 06/06/2026 confirm that have availed Welcome Bonus of Rs 5000/ - from the LALU KUMAR YADAV Dealership name KIRAN AUTOMOBILES PVT LTDfor Buying New Vehicle Model SUPRO-MT Chassis no T6E12979 Engine no XUT6E15269 Invoice_No INV27DOOO119 Invoice Date_ 31.052026 ES PVT Ldy Vr, [odav Dealer Authorized Person Customer Signature) Lalu V-- Name & Signature along with Dealer Seal (Customer name) 7481957274 (Telephone number) Maln Showroom (Sales |Service |spares) Boring Canal Road Showroom (Sales) cltv Showrdom (Sales) Kamaldah Path; N.H.30,New Bve Pass Road Near Udavan Hospital, Opp Alankar Business Center Near Kumhrar Park, Opp. Apunva Petro Sales Patna 800008, Bihar; INDIA West Boring Canal Road, Patna 800001 Kumhrar; Patna 800026, Mob.: 9263182030 Mob: 9263181133 Mob: 9263182021, 9263144000 Kurji Showroom (Sales)  chhapra Showroom (Sales (Servlce /spares) plhar Sharid Showroom (sales) Kurji Digha Main Road, Near Kurjl Pul Gheghta, Opp. Pashu Mela, NK:19,Chhapra Asha Nagar (NH 31), Soh Saral, Bihar Sharif 803118 Patna 801105, Mob : 7564901933 Saran 341301,Mob: 9263182049,9263182099 (Nalanda) Mob: 9263182039 cltv Workshop (Service) Atal path Workshop (Servlce) Nava Tola, Talab Par; Bhagwat Milan Mandir Road Stalin Nagar; Yamuna Prasad Singh Market; Wwwmahindracom Kumhrar; Patna 800026, Mob:: 9334230303 Atal Path; Digha, Patna 800011, Mob: 9031814440 (C Ltd City; PATNA-8 PATRA = ) owy TAMALTAA\" 'CaT:' Nadav Citv _\nKIRAN AUTOMOBILES PVT. LTD.\n(Authorised Dealer for Mahindra Range of Vehicles)\nRegistered Office : Kamaldah Path, N.H. 30, New Bye Pass Road, Patna City - 800008, Bihar, INDIA, Website : www.kiranautomobiles.com\nCIN : U50100BR2012PTC018270 | GSTIN : 10AAECK6965FZ1 | PAN No : AAECK6965F\n\nCustomer Disclaimer\n\nDate: 06/06/2026\n\nI confirm that I have availed Welcome Bonus of Rs _5000/-\nfrom the LALU KUMAR YADAV Dealership name KIRAN AUTOMOBILES PVT LTD for\nBuying New Vehicle Model SUPRO-MT Chassis no T621279 Engine no XU6TE15269\nInvoice_No INV27D000119 Invoice Date 31.05.2026\n\nDealer Authorized Person\nName & Signature along with Dealer Seal\n\nLalu Kr. Yadav\nCustomer Signature)\nLalu Kr. Yadav\n(Customer name)\n7481957274\n(Telephone number)\n\nMain Showroom (Sales/Service/Spares)\nKamaladah Path, N.H. 30, New Bye Pass Road\nPatna City - 800008, Bihar, INDIA\nMob: 9263181133\n\nBoring Canal Road Showroom (Sales)\nNear Udayan Hospital, OPP Abhakar Business Center\nWest: Boring Canal Road, Patna - 800001\nMob: 9263182021, 9263144400\n\nChhapra Showroom (Sales/Service/Spares)\nGehanga, Dwy. Pashu Mehla, N.H. 19, Chhapra\nSaran 841301, Mob: 9263180249, 9262182099\n\nBihar Sharif Showroom (Sales)\nAnsha Nagar (N.H. 31), 50th Sarai, Bihar Sharif - 803118\n(Nalanda) Mob: 9263182039\n\nCity Workshop (Service)\nNaya Tola, Talab Par, Bhagwat Milan Mandir Road\nKumhrar, Patna - 800026, Mob: 9342302303\n\nAtal Path Workshop (Service)\nStalih Nagar, Yamuna Prasad Singh Market,\nAtal Pat, Digha, Patna - 800001, Mob: 9031818440\n\nwww.mahindra.com"
-      },
-      {
-        "file_name": "INV-1782026113379.pdf",
-        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\LALU KUMAR YADAV\\INV-1782026113379.pdf",
-        "file_type": "INVOICE",
-        "extracted_data": {
-          "Customer Name": "LALU KUMAR YADAV",
-          "Dealer Name": "KIRAN AUTOMOBILES PVT. LTD.",
-          "Invoice No": "INV720300119",
-          "Invoice Date": "31/05/2026",
-          "Vehicle Model": "SUPRO PROFITTRUCK",
-          "Invoice Amount": 637590.0,
-          "Registration No": null,
-          "Vehicle Make": "KIRAN AUTOMOBILES PVT. LTD.",
-          "New Vehicle Model": "SUPRO PROFITTRUCK",
-          "Chassis No": null,
-          "Welcome Bonus Amount": "5000.00"
-        },
-        "validations": {
-          "Name Match Score": 100.0,
-          "Name Match Status": "MATCH"
-        },
-        "ocr_text": "KIRAN AUTOMOBILES PVT. LTD_ mahindraRise cKirax (Authorised Dealer for Mahindra Range of Vehicles) Registered Office Kamaldah Palh NH. 30,New Bye Pass Road, Patna 800008, Bihar; INDIA, Website wwWkiranautomobiles com Email info@kiranautomobiles.com CIN US01OOBR2O12PTCO18270 GSTIN 1OAAECK696SF ZN PAN No. AAECK696SF KIRAN AUTOMOBILES PVT. LTD: GHEGHTA, OPP, NH-19, CHAPRA, SARAN 841301. BIHAR- 841301 IOAAECKG96SFIZN PAN No AAECK6966F Dealar Stale Code; 10 GST No; TAX INVOICE (Invoice issued under Rule 46 of CGSTISGST Rule 2017.,) Ship To/Lessee details Invoice detalls Bill TolLessor details Customer Code: R2702557.38 Customer Code; R270255738 GST Invoice No; INV27DOUO119 Name: LALU KUMAR YADAV Name: LALU KUMAR YADAV GST Invoice Date: 31/05/*2026 Cust GSTIN: Cust GSTIN: Booking No; B- 12656598 PAN No:: AQJPY9888M PAN No;: AQJPY9888M Booklng Date 30/05/2026 Aadhar No;: XxxXxXXX8536 Aadhar No:: Koy No: 7481957274 Procoss Type: Sales Irvoice Phonu No: 7481957274 Phono No: Address: SIO-SHAMBHU YADAV AT- Address: SIO-SHAMBHU YADAV AT - Place of Supply: Bihar CHAMRAHIYA PO-BISHUNPURA CHAMRAHIYA PO-BISHUNPURA MAIIINDRA & KALA PS- DAUDPUR SARAN KALA PS- DAUDPUR SARAN; MAHINDRA SARAN; 841301 SARAN; 841301 Hiro Purchase /Leasel Hypo By: FINANCIAL SERVICES LTD State: Bihar State: Bihar Branch Name: Mitsi Chapra GST Coss Product Dotalls HSN Qty. Solllng Price Dlscount Taxablo Total Amount no Amnount Rato Amt. Rato Aint; MAHIINDRA SUPRO PROFITTRUCK 0/042100 540254,24 540254.24 18,0u 97245 76 637500,UQ EXCEL WD VIN; MAIFNZXUWTGE 12979 Ergine XUTGE15269 Color Dlamond Whlle 540254.24 0.00 540254.24 18,0 97245.76 Round Oii 0,0O Gun Tolal 63750,UQ AUU I Words Rupuos Six Lakh Thirly Suven Thousand Five Hundred Orily Note: On this iInvoice Tax Collection at Source undor Section 206C of Incoma Act; 1961 Is Rs. ard the total amount payable by customer Is Rs.637500.00 HSNISAC CGSTIIGST Rate cGstiGST Amt: SGSTIUGST Rate SGSTIUGST Amt: 87042100 9.00 48622.88 9,00 48622,88 (Accessories) (Lubour) Total CGSTIIGST Rato 48622,88 SGSTIUGST Rate 48622 86 Nole Welcoie Bonus Amount is Rs.5O0o,00/- (inclusive of GST) Cuslomner Numo\" LALU KUMAR YADAV Dealor Narne: KIRAN AUTOMOBILES PVT.  LTD, Wlelhur (ax IS Payable O/1 reversu charges NO IRN Dale; IRN Number Wanl to give a suggeslion or share feedback about dealership experience? You can roach oul to Mahindra & Mahindra Lld Email: customercare@mahindra,com Signature valid 24x7 Toll Ireo; 18002096006 Digitally Signed by; NITIN KUMAR Lums duLL couailiqnsz 14/06/2026@12.54.52/ST Customer Signature Einvoicing QR Authorised Signatory Lalu Mr : Av Pvt Es Noa Main Showroom (Sales /Service /Spares) Boring Canal Road Shoraroom (Sales) cltv Showreor (Sales) Kamaldah Path; N.H. 30, New Bve Pass Road Near Udavan Hospital; Opp Alankar Business Center Near Kumhrar Park, Opp. Apurva Petro Sales Patna Citv - 800008, Bihar; INDIA West Boring Canal Road, Patna 800001 Kumhrar; Patna 800026, Mob: 9263182030 Mob: 9263181133 Mob: 9263182021,9263144000 Kurji Showroom (Sales) chhapra Showroom (Sales (Service |Spares) plbar Sharlf Shavroom (Sales) Kurji Digha Main Road, Near Kurji Pul Gheghta, Opp; Pashu Mela, NH-19, Chhapra Asha Nagar (NH 31), Soh Saral, Blhar Sharif - 803118 Patna 801105, Mob: 7564901933 Saran-841301,Mob:: 9263182049,9263182099 (Nalanda) Mob:: 9263182039 citv Workshop (Service) Atal Path Workshop (Servlce) Nava Tola, Talab Par; Bhagwat Milan Mandir Road Stalin Nagar; Yamuna Prasad Singh Market; vwwntahindracom Kumhrar; Patna 800026, Mob: 9334230303 Atal Path, Digha, Patna 800011, Mob. 9031814440 Cily Tax dod LTD city, PATNA-8 (PATMA 1 1 KAvAL\" \"2447418'\nKIRAN AUTOMOBILES PVT. LTD. (Authorised Dealer for Mahindra Range of Vehicles) Registered Office : Kamalak Path, NH 30, New Eye Pass Road, Patna City - 800008, Bihar, INDIA. Website : www.kiranautomobiles.com Email : info@kiranautomobiles.com CIN : U50100BR2012PTC108270 | GSTIN : 10AAECK6965F12Z | PAN No : AAECK6965F KIRAN AUTOMOBILES PVT. LTD. GHEGHTA, OPP., NH-19, CHAPRA, SARAN - 841301. BIHAR - 841301 Dealer State Code : 10 GST No: 10AAECK6965F12N PAN No: AAECK6965F TAX INVOICE Bill To/Lessee details R2702575375 Ship To/Lessees details Customer Code: R270257953 Customer Name: LALU KUMAR YADAV Name: LALU KUMAR YADAV GST GSTIN: 10AAECK6965F12N GSTIN: 10AAECK6965F12N PAN No: AAKCK6965F PAN No: AAECK6965F Aadhar No: XXX0XXXX938 Aadhar No: xxx0xxxx938 Phone No: 7491975274 Phone No: 7481975724 Address: S/O-SHAMBI YADAV AT- CHARMIHYA, P.O-BISHUNPUR KALA, P.S-DAUDPUR, SARAN, 841301 Address: S/O-SHAMBI YADAV AT- CHARMIHYA, P.O-BISHUNPUR KALA, P.S-DAUDPUR, SARAN, 841301 State: Bihar Place of Supply: BIHAR Key No: N/A Booking Date: 30/05/2026 Pass Type: Invoice Branch Name: Mathura Chapra Sr. Product Details HSN Qty. Selling Price Discount Taxable Amount Rate Amt. Total Amount 1 MAHINDRA SUPRO PROFITTRUCK EXCEL, WD 87042100 540254.24 540254.24 18.00 9745.76 637590.00 Round Off 0.00 Amount in Words: Rupees Six Lakh Thirty Seven Thousand Five Hundred Only Note: On this invoice Tax Collection at Source under Section 206C of Income Tax Act, 1961 is Rs. and the total amount payable by customer is Rs.637590.00 HSN/SAC 87042100 CGST/SGST Rate CGST/SGST Amt. SGST/UGST Rate SGST/UGST Amt. 9.00 48622.88 9.00 48622.88 Total CGST/SGST Rate 48622.88 SGST/UGST Rate 48622.88 Customer Name: LALU KUMAR YADAV Dealer Name: KIRAN AUTOMOBILES PVT. LTD. IRN Number: QR CODE ********* Want to give a suggestion or share a feedback about dealership experience? You can reach out to Mahindra & Mahindra Ltd Email: customer.care@mahindra.com 24x7 Toll free: 18002620096 Terms and conditions: Customer Signature: Lalukj Yadav"
-      },
-      {
-        "file_name": "LEDGER-1782026113109.pdf",
-        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\LALU KUMAR YADAV\\LEDGER-1782026113109.pdf",
-        "file_type": "LEDGER",
-        "extracted_data": {
-          "Customer Name": "LALU KUMAR YADAV"
-        },
-        "validations": {
-          "Name Match Score": 100.0,
-          "Name Match Status": "MATCH"
-        },
-        "ocr_text": "Kiran Automobiles Pvt. Ltd: Gheghta, Opp. Pashu Mela, N.H.-19, Chhapra Head Office New Bypass Road, N.H, 30, Patna City Patna-800008 CIN: U5O1OO8R2012PTCO18270 LALU KUMAR YADAV S/o-SHAMBHU YADAV-TGE12979-270000119 Ledger Account PO-BISHUNPURA KALA PS- DAUDPUR SARAN AT-CHAMRAHIYA 1-Apr-26 to 10-Jun-26 Page 1 Vch Type Vch No. Debit Credit Date Particulars Finance Bill 1002026053103319 5,47,734.00 30-May-26 By MMFSL TA A/C Chhapra Bank Recejpl CH/26-27/E/411 10,000.00 Branch KIRAN AUTOMOBILES PVt; Ltd, 3s ICICI-32 F By AUTOMOBILES PVt: Ltd, 3s ICICI-32 F Bank Receipt CH/26-27/E/411 20,000.00 By Branch KIRAN 3s ICICI-32 F Bank Receipt CH/26-27/E/411 20,000.00 By Branch KIRAN AUTOMOBILES PVt; Ltd; CH/26-27/E/419 1,350.00 31-May-26 Branch KIRAN AUTOMOBILES PVt; Ltd;, 3s ICICI-32 F Bank Receipt By Sales Within State @18%-GST-M M Ltd KHLM\"EKA INV27DOO0119 6,37,500.00 To   Vehicle KGh W@ UOV27DO00120 5,000.00 By (as per details) Vehicle Sales Wihin State @I8% GST-M M Ltd 4,237,29 Dr Output SGST @ 9% 381,36 Dr Output CGST @9% 381,36 Dr Round Off 0.01 Cr Credit Note No: UOV27DO00120 Dt 31.05.2026 against Welcome Bonus Rs: 5000/ Vehicle Sales Within State @18%-GST-M M Ltd KGu KM WMM UOV27DO00121 53,000.00 1-Jun-26 Fv Vel DTo Office (Reg: Dept Payable) Journal 658 19,584.00 6,57,084.00 6,57,084.00 ES PVT ZTo \"'44= Being Nova (C City, PATNA-8 PATMAA 1 1 YAVAl\" IFATi'_\nKiran Automobiles Pvt. Ltd. \nGheghta, Opp. Pashu Mela, \nN.H.-19, Chhapra \nHead Office : New Bypass Road, \nN.H. 30, Patna City Patna-800008 \nCIN: U50100BR2008PTC012870 \n\nLALU KUMAR YADAV S/O-SHAMBHU YADAV-T6E12979-27D000119 \nLedger Account \nAT-CHAMRAHIYA PO-BISHUNPUR KALA PS-DAUDPUR SARAN \n\n1-Apr-26 to 10-Jun-26 \n\nPage 1 \n\nDate \t Particulars \t Vch Type \t Vch No. \t Debit \t Credit \n30-May-26 \t MMFSL TA A/C Chhapra \t Finance Bill \t 100202605310339 \t 5,477,734.00 \t \n\t By Branch KIRAN AUTOMOBILES PVT. Ltd. 3s ICICI-32 F \t Bank Receipt \t CH/26-27/E411 \t 20,000.00 \t \n\t By Branch KIRAN AUTOMOBILES PVT. Ltd. 3s ICICI-32 F \t Bank Receipt \t CH/26-27/E411 \t 20,000.00 \t \n\t By Branch KIRAN AUTOMOBILES PVT. Ltd. 3s ICICI-32 F \t Bank Receipt \t CH/26-27/E411 \t 20,000.00 \t \n\t By Branch KIRAN AUTOMOBILES PVT. Ltd. 3s ICICI-32 F \t Bank Receipt \t CH/26-27/E419 \t 1,350.00 \t \n\n31-May-26 \t To Vehicle Sales Within State @18%+GST-M M Ltd \t \t \t 6,37,500.00 \t  \n\t By (as per details) \t Vehicle Sales Within State @18%+GST-M M Ltd \t 427.29 Dr \t \n\t Output SGST @ 9% \t 381.86 Dr \t \n\t Output CGST @9% \t 381.36 Dr \t \n\t Round Off \t \t \t 0.01 Cr \t \n\nBeing Credit Note No. \nUOV27D000120 Dt 31.05.2026 \nagainst Welcome Bonus Rs 5000/ \n\nBy Vehicle Sales Within State @18%+GST-M M Ltd \t Journal \t 658 \t 19,584.00 \t 53,000.00 \n\n6,577,084.00 \t 6,577,084.00 \n\n\n"
-      }
-    ]
-  },
-  {
-    "row_idx": 8,
-    "customer_name": "RISWAT SAH",
-    "status": "APPROVED",
-    "issues": [],
-    "claim_details": {
-      "Chassis No": "T6E16530",
-      "Invoice No": "INV27D000113",
-      "Invoice Date": "31 May 2026",
-      "Corporate Type": "-",
-      "Customer Id": "R270173449",
-      "Customer Type": "Individual",
-      "Customer Name": "RISWAT SAH",
-      "Dealer Share Amount": "0",
-      "OEM Share Amount": "15000",
-      "Total Amount": "15000",
-      "Claim Amount": "12711.86",
-      "Approved Total Amount": "-",
-      "Claim Empowerment ID": "-",
-      "Claim Empowerment Date": "-",
-      "Claim Empowerment Approver ID": "-",
-      "Claim Empowerment Status": "-",
-      "Remarks": "-",
-      "New vehicle Model Group": "VEERO",
-      "dashboard_claim_date": "21 Jun 2026",
-      "dashboard_customer_names": [],
-      "dashboard_total_amount": 15000.0,
-      "portal_old_vehicle_chassis": "R270173449",
-      "portal_old_vehicle_reg": "Individual",
-      "portal_detected_pan": null,
-      "portal_detected_dl": null,
-      "portal_pan_dl_source_field": null
-    },
-    "old_vehicle_details": {
-      "Customer Name": "RISWAT SAH",
-      "Make": "Others",
-      "Model": "Others",
-      "Vehicle Variant": "Others",
-      "Chassis No": "OPMPS1683L",
-      "Reg. No": "OPMPS1683L",
-      "Year Of Registration": "2026",
-      "Month of Registration": "MAY",
-      "KM": "0",
-      "Scheme": "VEERO Welcome Bonus",
-      "Relationship": "Self",
-      "Usage": "Others"
-    },
-    "documents": []
-  },
-  {
     "row_idx": 9,
     "customer_name": "MANORANJAN SINGH",
     "status": "APPROVED",
@@ -4876,6 +4718,224 @@
           "Name Match Status": "MATCH"
         },
         "ocr_text": "hEXGEN\n                      malrindra\\.d\n\n\n                                                                                                                                                                                                                                                                                                      'ti\n\n\n\n\n\n                                                                          h Nh\u20ac rhous4ad F rc luidred oiry                                                                           ,        ,\",\".          ..;\"     ,.                                                        La                                           \"\",-\"        \"\".,,\".          \",\n\n\n\n\n                                             s 50oo 0q.ftc usie d Gsr,\n\n                                                                                                NETGEN sol!r.Ns rEcNNoL.cr.s  (P)\n\n\n                                                                                         EilrE\n                                                                    Effi\n\n                                      ,            H              -    )'  |  t, rt           l{'ll,,                     /.1\\r-l.-Ll             I                               t\n contact lnfo.                                                                                                                 - Vt\n  Authorlsed Dealer:\n  Mahrndra E Mah ndra Ltd\n  Near Dibdih Fly Over Bridge' 9y Pass Road\n  Ranchi- 834 002 (Jharkhand)\nNEXGEN SOLUTIONS TECHNOLOGIES (P)\nDEMOTAND, PO- MORANGI, MUFFASIL, HAZARIBAGH, NH 33, JHARKHAND- 825301\n\nDealer State Code: 20\nGST No: 20AOPACN2275K1ZN\nPAN No.: AACCN275K\n\n                     TAX INVOICE\n\nBill To Lessee details                Ship To Lessee details                       Invoice details\n\nCustomer Code: R272036565           Customer Code: R272036565                   GST Invoice No: INV/27/000228\nCust GSTIN: RAMESHWAR SAW           Cust GSTIN: RAMESHWAR SAW                  GST Invoice Date: 27/05/2026\nPAN No.: EYPYSP120G                PAN No.: EYPYSP1102G                         Booking No: 1-12875413\nAadhar No: XXXXXXXXXXXX1429           Aadhar No: 2XXXXXXXXX8                      Key No: 2/605/2026\nAddress:  9168119057                    Address:  9168119057                       Process Type: Sales\nS/O- BUDHAN SAW, WARD NO. 05 JAMID, PO- JAMAPUR, MARKCHO-KODERMA, KODERMA, 825315\n\n\n                     Place of Supply:\n                          H.D.B. FINANCIAL SERVICES LTD.\n Branch Name: \n\n\n\n                 Product Details                HSN                 Qty       Selling Price     Taxable\n                                                Amount    Rate       Amt. Cess              Total Amount\n\n1.\nMAHINDRA SUPRO PROFITTRUCK MAXI LCV WD   87041020           1         57415.54     18.0   51652.54   16.0   92974.60\nOEM Discount                        727.00\n\n           Round Off                         0.14\nGrand Total                            Rupees Six Lakh Nine Thousand Five Hundred Only\nAmount in Words:                             Rs.60950.00\nNote:  On this invoice Tax Collection at Source under Section 206C of Income Tax Act, 1961 is Rs. and the total amount payable by customer is Rs.60950.00.\nHSN/SAC                    CGST/SGST Rate      CGST/SGST Amt.\n87041020                    9.00                           46847.30\n(Accessories)\n                               (Labour)\nTotal                  46847.30      CGST/SGST Rate                   46487.30\n\nCustomer Name: RAMESHWAR SAW         Dealer Name: NEXGEN SOLUTIONS TECHNOLOGIES (P)\n\nWhether tax is Payable on reverse charges : NO\nIRN Number: \n\nWant to give a suggestion or share a feedback about dealership experience? You can reach out to Mahindra & Mahindra Ltd 24/7 Toll free: 18002000886\n\nTerms and conditions:\n\nCustomer Signature:\n\n                           Envoicing QR\n\nContact Info.\n\nAuthorised Dealer: .\nMahindra & Mahindra Ltd.\nNear Didhbi Fly Over Bridge, By Pass Road\nRanchi - 834 002 (Jharkhand)"
+      }
+    ]
+  },
+  {
+    "row_idx": 8,
+    "customer_name": "RISWAT SAH",
+    "status": "APPROVED",
+    "issues": [],
+    "claim_details": {
+      "Chassis No": "T6E16530",
+      "Invoice No": "INV27D000113",
+      "Invoice Date": "31 May 2026",
+      "Corporate Type": "-",
+      "Customer Id": "R270173449",
+      "Customer Type": "Individual",
+      "Customer Name": "RISWAT SAH",
+      "Dealer Share Amount": "0",
+      "OEM Share Amount": "15000",
+      "Total Amount": "15000",
+      "Claim Amount": "12711.86",
+      "Approved Total Amount": "-",
+      "Claim Empowerment ID": "-",
+      "Claim Empowerment Date": "-",
+      "Claim Empowerment Approver ID": "-",
+      "Claim Empowerment Status": "-",
+      "Remarks": "-",
+      "New vehicle Model Group": "VEERO",
+      "dashboard_claim_date": "21 Jun 2026",
+      "dashboard_customer_names": [],
+      "dashboard_total_amount": 15000.0,
+      "portal_old_vehicle_chassis": "R270173449",
+      "portal_old_vehicle_reg": "Individual",
+      "portal_detected_pan": null,
+      "portal_detected_dl": null,
+      "portal_pan_dl_source_field": null
+    },
+    "old_vehicle_details": {
+      "Customer Name": "RISWAT SAH",
+      "Make": "Others",
+      "Model": "Others",
+      "Vehicle Variant": "Others",
+      "Chassis No": "OPMPS1683L",
+      "Reg. No": "OPMPS1683L",
+      "Year Of Registration": "2026",
+      "Month of Registration": "MAY",
+      "KM": "0",
+      "Scheme": "VEERO Welcome Bonus",
+      "Relationship": "Self",
+      "Usage": "Others"
+    },
+    "documents": [
+      {
+        "file_name": "DIS-1782026011646.pdf",
+        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\RISWAT SAH\\DIS-1782026011646.pdf",
+        "file_type": "DISCLAIMER",
+        "extracted_data": {
+          "Customer Name": "Riswat Sah",
+          "Dealer Name": "KIRAN AUTOMOBILES PVT. LTD.",
+          "Invoice No": "INV27D000113",
+          "Invoice Date": "31.05.2026",
+          "Vehicle Model": "VEERO Chassis no T6E16530 Engine no CUT6E53922",
+          "Invoice Amount": 15000.0,
+          "Registration No": null,
+          "Vehicle Make": "KIRAN AUTOMOBILES PVT. LTD.",
+          "New Vehicle Model": null,
+          "Chassis No": "T6E16530",
+          "Welcome Bonus Amount": 15000.0
+        },
+        "validations": {
+          "Name Match Score": 100.0,
+          "Name Match Status": "MATCH"
+        },
+        "ocr_text": "Rise KIRAN AUTOMOBILES PVT: LTD mahindra (Authorised Dealer for Mahindra Range of Vehicles) Registered Office Kamaldah Path; N.H. 30,New Bye Pass Road, Patna 800008, Bihar; INDIA , Website wwwkiranautomobiles com Email ; info@kiranautomobiles.com CIN U501OOBR2O12PTCO18270 GSTIN 1OAAECK696SF- ZN PAN No. AAECK696SF Customer Disclaimer Date: 06/06/2026 I confirm that have availed Welcome Bonus of Rs 15000/- from the RISWAT SAH Dealership name KIRAN AUTOMOBILES PVT _LTD_for Buying New Vehicle Model VEERO Chassis no T6E16530 Engine no CUT6E53922 Invoice_No INV27DOO0113 Invoice Date_31.05.2026 ES Pvt 0 % Asmat KKah Dealer Authorized Person 'AA Customer Signature) Riss hal Skn Name & Signature along with Dealer Seal (Customer name) 9122017582 (Telephone number)   Maln Showroom (Sales /Service /spares) Boring Canal Road Showroom (Sales) citv Showroom (sales) Kamaldah Path, N.H. 30,New Bve Pass Road Near Udavan Hospital, Opp Alankar Business Center Near Kumhrar Park, Opp. Apurva Petro Sales Patna Citv - 800008, Bihar; INDIA West Boring Canal Road, Patna 800001 Kumhrar; Patna 800026, Mob:: 9263182030 Mob: 9263181133 Mob: 9263182021,9263144000 Kuril Showroom (Sales) Chhapra Showyroom (sales (Servlce /spares) Blhar Sharlf Showroom (Sales) Kurji Digha Main Road, Near Kurji Pul Gheghta; Opp Pashu Mela; NH-19, Chhapra Asha Nagar (NH 31), Soh Saral, Bihar Sharif - 803118 Patna 801105, Mob: 7564901933 Saran-841301, Mob: 9263182049,9263182099 (Nalanda) Mob: 9263182039 Citv Workshop (Service) Atal Path Workshop (Service) Nava Tola, Talab Par; Bhagwat Milan Mandir Road Stalin Nagar; Yamuna Prasad Singh Market, mtahindra com Kumhrar; Patna 800026, Mob: 9334230303 Atal Path, Digha, Patna 800011,Mob 9031814440 Siran City _ LiD_ ( 8 1 1 1 1 Nawl ITAn' _ KtAL\"\nKIRAN AUTOMOBILES PVT. LTD.\n(Authorised Dealer for Mahindra Range of Vehicles)\nRegistered Office : Kamaldah Path, N.H. 30, New Eye Pass Road, Patna City - 800008, Bihar, INDIA. Website : www.kiranautomobiles.com\nEmail : info@kiranautomobiles.com\nCIN : U50100BR2012PTC018270 | GSTIN : 10AAECK9695F1Z2 | PAN No. : AAECK9695F\n\nCustomer Disclaimer\n\nDate: 06/06/2026\n\nI confirm that I have availed Welcome Bonus of Rs .15000/-\nfrom the RISWAT SAH Dealership name KIRAN AUTOMOBILES PVT LTD for Buying\nNew Vehicle Model VEERO Chassis no T6E16530 Engine no CUT6E53922\nInvoice_No INV27D000113 Invoice Date 31.05.2026\n\nDealer Authorized Person\nName & Signature along with Dealer Seal\n\nCustomer Signature)\nRiswat Sah\n(Customer name)\n\n9122017582\n(Telephone number)"
+      },
+      {
+        "file_name": "INV-1782026011755.pdf",
+        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\RISWAT SAH\\INV-1782026011755.pdf",
+        "file_type": "INVOICE",
+        "extracted_data": {
+          "Customer Name": "RISWAT SAH",
+          "Dealer Name": "KIRAN AUTOMOBILES PVT. LTD.",
+          "Invoice No": "INV72000113",
+          "Invoice Date": "31/05/2022",
+          "Vehicle Model": "VEERO 1.5XLS SD V6",
+          "Invoice Amount": 925900.0,
+          "Registration No": null,
+          "Vehicle Make": "KIRAN AUTOMOBILES PVT. LTD.",
+          "New Vehicle Model": "VEERO 1.5XLS SD V6",
+          "Chassis No": "MALVAGUXTTE6530",
+          "Welcome Bonus Amount": "5000"
+        },
+        "validations": {
+          "Name Match Score": 100.0,
+          "Name Match Status": "MATCH"
+        },
+        "ocr_text": "Rise KIRAN AUTOMOBILES PVT. LTD mahindra (Authorised Dealer for Mahindra Range of Vehicles) Registered Office Kamaldah Path; N.H. 30. New Bye Pass Road, Patna City 800008 , Bihar, INDIA, Website www kiranautomobiles com Email info@kiranautomobiles.com CIN U501O0BR2O12PTCO18270 | GSTIN 1OAAECK696SF; ZN PAN No. AAECK696SF KIRAN AUTOMOBILES PVT. LTD: GHEGHTA, OPP_ NH-19, CHAPRA, SARAN 841301. BIHAR- 841301 1OAAECK896SFAZN PAN No;, AAECKG96SF Dealer Statc Codo: 10 GST No.. TAX INVOiCe (Invoice issued under Rule 46 of CGSTISGST Rule 2017 .) Ship To/Lessee details Invoice details Bill TolLessor details R270173449 Customer Code: R270173449 GST Invoice No; INV27DO00113 Customer Code: Name: RISWAT SAH Name: RISWAT SAH GST Invoice Date: 31/05/2026 Cust GSTIN_ Cust GSTIN: Booking No_ B-12576353 PAN No:; OpmpS1683L PAN No:: OPMpS1683L Booking Date: 12/05/2026 Aadhar No:: XXXXXXXX0844 Aadhar No:: XXXXXXXX0844 Key No: Phone No: 9122017582 Phone No: 9122017582 Process Typo: Sales Invoice Address: SIO- MUKURDHAN SAH AT- Address: SIO-MUKURDHAN SAH AT- Place of Supply: Bihar JALALPUR BAZAR PO- PS JALALPUR BAZAR PO- PS- CHOLAMANDALAM JALALPUR SARAN, 841412 JALALPUR, SARAN, 841412 Hire Purchase /Leasel Hypo By: INVESTMENT & FINANCE CO LTD Stale: Bihar State: Bihar Branch Namne Chapra Taxable GST Coss Sr. Product Detalls HSN Solling Prico Discount Total Amount no Amnount Rate Amt. Rate Amt VEERO SXXL SD VG 87042100 764830.51 764830.51 18.00 137669,50 902500.01 VIN: MATUVZCUXTGE 16530 Engine CUT6E53922 Color CONCRETE GREY 764830.51 0.00 764830.51 18.0 137669.50 Round Off ~0,01 Grand Tolal 9u2500 O0 Amourt in Words Rupeus Niro Lakh Two Thousand Five Hundred Only Note; On this invoice Tax Colleclion at Source under Section 206C of Income Tax Act; 1961 is Rs.and the tolal amount payable by customer is Rs.902500.01 HSNISAC CGSTIIGST Rato cGsTIIGST Amt. SGSTIUGST Ratc SGSTIUGST Amt. 87042100 9.00 68834.75 9.00 68834.75 (Accessories) (Labour} Tolal cGsTIIGST Rate 68834.75 SGSTIUGST Rate 68834 75 Note VEERO Welcome Bonus Amount is Rs.15000.00/- (inclusive of GST) Cuskorrer Nanie: RISWAT SAH Dealer Name: KIRAN AUTOMOBILES PVT. LTD Wlielhor tax Is Payable 0n reverse charges NO IRN Numnber IRN Dale: Wanl to give a suggestion or share a feedback aboul dealership experience? You can reach Oul lo Mahindra & Mahindra Lid Email: customercare @mahindra.com 24x7 Toll Iree: 18002096006 Signature valid Ierus and conditions:: Digitally Signed by; NITIN KUMAR Customer Signature Einvoicing QR 14808/2026@182,548/sT Rumt Kok ES 4 0 Maln Showroom (Sales/service /spares) Boring Canal Road Shotroom (Sales) cltv Sbowroor (Sales) Kamaldah Path; NH. 30, New Bve Pass Road Near Udavan Hospital, Opp Alankar Business Center Near Kumhrar Park; Opp. Apurva Petro Sales Patna 800008, Bihar, INDIA West Boring Canal Road, Patna 800001 Kumhrar; Patna 800026, Mob:: 9263182030 E4TAM' Mob: 9263181133 Mob: 9263182021, 9263144000 Kurji Showroom (Sales ) chhapra Showroom (Sales (Servlce /Spares) bibar sharif Showroom (Sales) Kurji Digha Maln Road, Near Kurji Pul Gheghta; Opp. Pashu Mela, NH-19, Chhapra Asha Nagar (NH 31), Soh Sarai, Bihar Sharlf - 803118 Patna 801105, Mob : 7564901933 Saran-841301, Mob: 9263182049,9263182099 (Nalanda) Mob: 9263182039 city Workshop (Service) Atal Path Workshop (Service) Nava Tola;, Talab Par; Bhagwat Milan Mandir Road Stalin Nagar, Yamuna Prasad Singh Market, wwmtahindra com Kumhrar, Patna 800026,Mob: 9334230303 Atal Path, Digha, Patna 800011,Mob: 9031814440 @iran aty. Ntr Pvt Atomjor CitY, PATMA PATNA-8  Citv\nKIRAN AUTOMOBILES PVT. LTD.\nRegistered Office: Kamaldah Path, NH 30, New Bye Pass Road, Patna City - 800008, Bihar, INDIA. Website : www.kiranautomobiles.com Email :info@kiranautomobiles.com\nCIN : U50100BR2012PTC018720 | GSTIN : 10AAECK9659F12N | PAN No. : AAECK9659F\n\nKIRAN AUTOMOBILES PVT. LTD.\nGHIETA, OPP. NH-19, CHAPRA, SARAN - 841301, BIHAR - 841301\nDealer State Code : 10\nGST No: 10AAECK9659F12N\nPAN No: AAECK9659F\nTAX INVOICE\n(Invoice issued under Rule 46 of CGST/SGST Rule 2017.)\n\nBill To/Lessor details\nCustomer Code: R270177349\nCustomer Name: RISWAT SAH\nGst Gstin: 10AAECK9659F12N\nPan No: AAECK9659F\nAadhar No.: XXXXXXXX8464\nPhone No: 9122017582\nAddress: S/O MUKURIDHAN SAH, JALALPUR BAZAR, JALALPUR, SARAN, 841412\nState: Bihar\n\nInvoice details\nInvoice Number: INV72000113\nGST Invoice Date: 31/05/2022\nBS: 12/06/2022\nBooking Date: 12/06/2022\nKey No: Sales Invoice\nProcess Type:\nBranch Name: Chapra\nSr.  Product Details\nHSN  Qty.  Selling Price  Taxable Amount  Discount  Tax   Amt.  Total Amount\n1.  VEERO 1.5XLS SD V6  -  764830.51  764830.51  18.00  13769.50  925900.00\n\nRound Off  - 0.01\nGrand Total  -  925900.00\nAmount in Words\nRupees Nine Lakh Two Thousand Five Hundred Only\nNote: On this invoice Tax Collection at Source under Section 206C of Income Tax Act, 1961 is Rs. and the total amount payable by customer is Rs. 925900.00\n\nHSN/SAC  CGST/SGST Rate  CGST/SGST Amt.  SGST/UGST Rate  SGST/UGST Amt.\n870420  9.00  68843.75  9.00  68843.75\n\nTotal  CGST/SGST Rate  68843.75  SGST/UGST Rate  68843.75\nNote : VEERO Welcome Bonus Amount is Rs.15000.00/-(inclusive of GST)\n\nWhether tax is Payable on reverse charges : NO\nIRN Number : \n\nSignature valid\nDigitally Signed by NITIN KUMAR\n1/06/2022 5:49:50 GST\n\nMain Showroom (Sales/Service/Spares)\nKamaldah Path, NH 30, New Bye Pass Road\nPatna City - 800008, Bihar, INDIA\nMob: 9263126313\n\nKurji Showroom (Sales)\nKurji Dih, Bihari Mahto Road, Patna - 800010.\nMob: 9332420303\n\nBoring Canal Road Showroom (Sales)\nWest Boring Canal Road, Patna - 800001\nMob: 9263126300, 9263144000\n\nChhapra Showroom (Sales/Service/Spares)\nChhapra, Dist. Saran, NH-19, Chapra\nSaran 841301, Mob: 9263126302, 9263126309\n\nAtal Path Workshop (Service)\nSas Nagar (NH 31), Soh Sarai, Bihar Shariff - 803118\n(Nalanda) Mob: 9263126309\n\nwww.mahindra.com"
+      },
+      {
+        "file_name": "LEDGER-1782026011506.pdf",
+        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\RISWAT SAH\\LEDGER-1782026011506.pdf",
+        "file_type": "LEDGER",
+        "extracted_data": {
+          "Customer Name": "RISWAT SAH S/O MUKURDHAN SAH"
+        },
+        "validations": {
+          "Name Match Score": 100.0,
+          "Name Match Status": "MATCH"
+        },
+        "ocr_text": "Kiran Automobiles Pvt: Ltd. Gheghta, Opp. Pashu Mela, N.H.-19, Chhapra Head Office New Bypass Road, N.H, 30, Patna City Patna-800008 CIN: U501OO8R2012PTCO18270 RISWAT SAH S/O- MUKURDHAN SAH-TGE16530-270000113 Ledger Account JALALPUR BAZAR PO- PS-JALALPUR 1-Apr-26 to 5-Jun-26 Page1 Date Particulars Vch Type Vch No_ Debit Credit 12-May-26 By Branch KIRAN AUTOMOBILES PVt; Ltd. 3s ICICI-32 F Bank Receipt CH/26-27/E/270 5,001.00 Branch(HO)(Financer)Chola TA Alc Finance Bill INV27DO00113 7,90,285.00 31-May-26 By To Vehicle Sales Within State @18%-GST-M M Ltd MMUEA INV27DO00113 9,02,500.00 By (as per details) KGzkaa VG UOV27DOOO117 15,000.00 Vehicle Sales Within State @IB -GST-M M Ltd 12,711.86 Dr Output SGST @ 9% 1,144.07 Dr Output CGST @9% 1,144.07 Dr Being Credit Note No. UOV27DOO0117 Dt 31.05.2026 against Welcome Bonus Rs 15000/ By Vehicle Sales Within State @18%-GST-M M Ltd Kwikz U@ UOV27DOOO0118 35,000.00 By Branch KIRAN AUTOMOBILES PVt; Ltd; 3s ICICI-32 F Bank Receipt CH-2627/E/413 20,000.00 By Branch KIRAN AUTOMOBILES PVt; Ltd, 3s.ICICI-32 F Bank Receipt CH-2627/E/413 78,000.00 1-Jun-26 To Branch(HO)(Insurance)Tata Aig: toc inezn 0176884276 34,884.00 By PETTY CASH_(SALES CHAPRA) Reepukb CH/26-27/219 21,000.00 By Branch KIRAN AUTOMOBILES PVt; Ltd; 3s ICICI-32 F Bank Receipt CH-2627/E/422 1,000.00 To The DTO Office (Reg. Dept Payable) Journal 662 27,902.00 9,65,286.00 9,65,286.00 LES Lo 14 AT- Wny [ Nannl PVT (C PATMIA City; 0 PATNA-8 1 1 Ktx 'TAtN'\nKiran Automobiles Pvt. Ltd. Gheghta, Opp. Pashu Mela, N.H.-19, Chhapra Head Office - New Bypass Road, N.H. 30, Patna City Patna-800008 CIN: U50100BR2012PTC018270 RISWAT SAH S/O MUKURDHAN SAH-T6E16530-27D000113 Ledger Account AT: JALALPUR BAZAR PO- PS-JALALPUR 1-Apr-26 to 5-Jun-26 Page 1 Date Particulars Vch Type Vch No. Debit Credit 12-May-26 By Branch KIRAN AUTOMOBILES Pvt. Ltd. 3s ICICI-32 F Bank Receipt CH/26-27/E/270 5,001.00 31-May-26 By Branch(HQ)(Financer)Chola TA A/c Finance Bill INV27000113 7,90,285.00 To Vehicle Sales Within State @18%-GST-M M Ltd (As per details) Vehicle Sales Within State @18%-GST-M M Ltd 12,171.16 Dr Output GST @ 9% 1,444.47 Dr Output CGST @9% 1,444.47 Dr Being Credit Note No. UOV27000117 Dtd 31.05.2026 against Welcome Bonus Rs. 15000 By Vehicle Sales Within State @18%-GST-M M Ltd (As per details) UOV27000118 35,000.00 By Branch KIRAN AUTOMOBILES Pvt. Ltd. 3s ICICI-32 F Bank Receipt CH-2627/E/413 20,000.00 By Branch KIRAN AUTOMOBILES Pvt. Ltd. 3s ICICI-32 F Bank Receipt CH-2627/E/413 78,000.00 By Branch(HQ)(Insurance)TAig. 0176842476 34,884.00 1-Jun-26 By Branch KIRAN AUTOMOBILES Pvt. Ltd. 3s ICICI-32 F Bank Receipt CH-26/27/219 21,000.00 By Branch KIRAN AUTOMOBILES Pvt. Ltd. 3s ICICI-32 F Bank Receipt CH-2627/E/422 1,000.00 To The DTO Office (Reg. Dept Payable) Journal 662 27,902.00 9,65,286.00 9,65,286.00"
+      }
+    ]
+  },
+  {
+    "row_idx": 7,
+    "customer_name": "LALU KUMAR YADAV",
+    "status": "APPROVED",
+    "issues": [],
+    "claim_details": {
+      "Chassis No": "T6E12979",
+      "Invoice No": "INV27D000119",
+      "Invoice Date": "31 May 2026",
+      "Corporate Type": "-",
+      "Customer Id": "R270255738",
+      "Customer Type": "Individual",
+      "Customer Name": "LALU KUMAR YADAV",
+      "Dealer Share Amount": "1000",
+      "OEM Share Amount": "4000",
+      "Total Amount": "5000",
+      "Claim Amount": "3389.83",
+      "Approved Total Amount": "-",
+      "Claim Empowerment ID": "-",
+      "Claim Empowerment Date": "-",
+      "Claim Empowerment Approver ID": "-",
+      "Claim Empowerment Status": "-",
+      "Remarks": "-",
+      "New vehicle Model Group": "SUPRO-MT",
+      "dashboard_claim_date": "21 Jun 2026",
+      "dashboard_customer_names": [],
+      "dashboard_total_amount": 5000.0,
+      "portal_old_vehicle_chassis": "R270255738",
+      "portal_old_vehicle_reg": "Individual",
+      "portal_detected_pan": null,
+      "portal_detected_dl": null,
+      "portal_pan_dl_source_field": null
+    },
+    "old_vehicle_details": {
+      "Customer Name": "LALU KUMAR YADAV",
+      "Make": "Others",
+      "Model": "Others",
+      "Vehicle Variant": "Others",
+      "Chassis No": "AQJPY9888M",
+      "Reg. No": "AQJPY9888M",
+      "Year Of Registration": "2026",
+      "Month of Registration": "SEPTEMBER",
+      "KM": "0",
+      "Scheme": "Welcome Bonus",
+      "Relationship": "Self",
+      "Usage": "Commercial"
+    },
+    "documents": [
+      {
+        "file_name": "DIS-1782026113285.pdf",
+        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\LALU KUMAR YADAV\\DIS-1782026113285.pdf",
+        "file_type": "DISCLAIMER",
+        "extracted_data": {
+          "Customer Name": "Lalu kr. Yadav",
+          "Dealer Name": "KIRAN AUTOMOBILES PVT. LTD.",
+          "Invoice No": "INV27D000119",
+          "Invoice Date": "31.05.2026",
+          "Vehicle Model": "SUPRO",
+          "Invoice Amount": 5000.0,
+          "Registration No": null,
+          "Vehicle Make": "KIRAN AUTOMOBILES PVT. LTD.",
+          "New Vehicle Model": null,
+          "Chassis No": "T6E12979",
+          "Welcome Bonus Amount": 5000.0
+        },
+        "validations": {
+          "Name Match Score": 86.66666666666667,
+          "Name Match Status": "MATCH"
+        },
+        "ocr_text": "KIRAN AUTOMOBILES PVT. LTD mahindraRise (Authorised Dealer for Mahindra Range of Vehicles) Registered Office Kamaldah Path, N.H: 30. New Bye Pass Road , Patna City 800008   Bihar; INDIA , Website wwwkiranautomobiles com Email info@kiranautomobiles com CIN U50100BR2O12PTCO18270 GSTIN 1OAAECK696SF; ZN PAN No. AAECK696SF Customer Disclaimer Date: 06/06/2026 confirm that have availed Welcome Bonus of Rs 5000/ - from the LALU KUMAR YADAV Dealership name KIRAN AUTOMOBILES PVT_LTD_for Buying New Vehicle Model SUPRO-MT Chassis no T6E12979 Engine no XUT6E15269 Invoice_No INV27DOOO119 Invoice Date 31.05.2026 ES 3 Ldly Vc dodav Dealer Authorized Person Customer Signature) Lalu V. Name & Signature along with Dealer Seal (Customer name) 7481957274 (Telephone number) Maln Showroom (Sales |Service /spares) Boring Canal Road Shovroom (Sales) Citv Showrdom (Sales) Kamaldah Path; NH.30,New Bve Pass Road Near Udavan Hospital, Opp Alankar Business Center Near Kumhrar Park, Opp. Apurva Petro Sales Patna City - 800008,Bihar; INDIA West Boring Canal Road, Patna 800001 Kumhrar; Patna 800026, Mob:: 9263182030 Mob:: 9263181133 Mob: 9263182021, 9263144000 Kurji Showroom (Sales) Chhapra Showroom (Sales |Servlce /spares) plhar Sharlt Showroom (sales) Kurji Digha Main Road, Near Kurjl Pul Gheghta, Opp. Pashu Mela, N.H-19, Chhapra Asha Nagar (NH 31), Soh Saral, Bihar Sharif - 803118 Patna 801105, Mob : 7564901933 Saran 841301,Mob: 9263182049,9263182099 (Nalanda) Mob: 9263182039 cltv Workshop (Service) Atal Path Workshop (Servlce) Nava Tola;, Talab Par; Bhagwat Milan Mandir Road Stalin Nagar; Yamuna Prasad Singh Market; Wwwmahindra om Kumhrar, Patna 800026, Mob: 9334230303 Atal Path, Digha, Patna 800011, Mob. 9031814440 Giron PvT (C Lid_ City; PATNA-8 PATRA 1 1 Mowy TAVALTA  'CAt?' ` dadav\nKIRAN AUTOMOBILES PVT. LTD.\n(Authorised Dealer for Mahindra Range of Vehicles)\nRegistered Office : Kamaladah Path, N.H. 30, New Bye Pass Road, Patna City - 800008, Bihar, INDIA, Website : www.kiranautomobiles.com Email : info@kiranautomobiles.com\nCIN : U50100BR2012PTC018270 | GSTIN : 10AAECK6965F2ZN | PAN No. : AAECK6965F\n\nDate: 06/06/2026\n\nI confirm that I have availed Welcome Bonus of Rs. 5000/-\nfrom the LALU KUMAR YADAV Dealership name KIRAN AUTOMOBILES PVT LTD for\nBuying New Vehicle Model SUPRO-MT Chassis no T6E12979 Engine no XUT6E15269\nInvoice_No INV27D000119 Invoice Date 31.05.2026\n\nDealer Authorized Person\n\nLalu kr. Yadav\nCustomer Signature)\n\nLalu kr. yadav\n(Customer name)\n\n7481957274\n(Telephone number)\n\nMain Showroom (Sales/Service/Spares)\nKamaladah Path, N.H. 30, New Bye Pass Road Patna City - 800008, Bihar, INDIA\nMob: 9263181133\n\nBoring Canal Road Showroom (Sales)\nNear Udayan Hospital, OPP Albakar Business Center West: Boring Canal Road, Patna - 800001\nMob: 9263182201, 9263144400\n\nChapra Showroom (Sales/Service/Spares)\nChenghda, Opp. Pashu Mela, N.H.31, Chapra Patna - 841301, Mob: 9263180249, 9263182099\n\nCity Workshop (Service)\nNaya Tola, Talab Par, Bhagwati Milan Mandir Road, Kumhrar, Patna - 800026, Mob: 9342302303\n\nCity Showroom (Sales)\nNear Kumhrar Park, Opp. Apurwa Petro Sales Kumhrar, Patna - 800026, Mob: 9263182030\n\nBihar Sharif Showroom (Sales)\nAnsa Nayan( N.H. 31), 50th Sarai, Bihar Sharif - 893118 (Nalanda) Mob: 9263182039\n\nwww.mahindra.com"
+      },
+      {
+        "file_name": "INV-1782026113379.pdf",
+        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\LALU KUMAR YADAV\\INV-1782026113379.pdf",
+        "file_type": "INVOICE",
+        "extracted_data": {
+          "Customer Name": "LALU KUMAR YADAV",
+          "Dealer Name": "KIRAN AUTOMOBILES PVT. LTD.",
+          "Invoice No": "INV72000119",
+          "Invoice Date": "31/05/2020",
+          "Vehicle Model": "MAHINDRA SUPRO PROFITTRUCK EXCEL, WD",
+          "Invoice Amount": 637590.0,
+          "Registration No": null,
+          "Vehicle Make": "KIRAN AUTOMOBILES PVT. LTD.",
+          "New Vehicle Model": "MAHINDRA SUPRO PROFITTRUCK EXCEL, WD",
+          "Chassis No": null,
+          "Welcome Bonus Amount": "5000"
+        },
+        "validations": {
+          "Name Match Score": 100.0,
+          "Name Match Status": "MATCH"
+        },
+        "ocr_text": "KIRAN AUTOMOBILES PVT. LTD mahindraRise CXiran (Authorised Dealer for Mahindra Range of Vehicles) Registered Office Kamaldah Palh N.H. 30. New Bye Pass Road, Patna 800008, Bihar, INDIA, Website wwwkiranautomobiles com Email info@kiranautomobiles com CIN U501OOBR2O12PTCO18270 GSTIN 1OAAECK696SF  ZN PAN No. AAECK696SF KIRAN AUTOMOBILES PVT. LTD GHEGHTA, OPP,, NH-19, CHAPRA, SARAN 841301. BIHAR- 841301 1OAAECK696SF 1ZN PAN No:: AAECK6965F Dealor Stale Code: 10 GST No; TAX INVOICE (Invoice issued under Rule 46 of CGSTISGST Rule 2017.,) Invoice detalls Ship To/Lessee details Bill TolLessor details Customer Code: R270255738 Customer Code: R270255738 GST Invoice No; INV2ZDO00119 Name: LALU KUMAR YADAV Name: LALU KUMAR YADAV GST Invoice Date: 31/05/2026 Cust GSTIN: Cust GSTIN: Booking No:: B-12656598 PAN No:: AQJPY9888M PAN No;: AQJPY9888MM Booking Date: 30/05/2026 Aadhar No:: XxxxxXXX8536 Aadhar No:: Key No: 7481957274 Procoss Type: Sales Irivoice Phone No: 7481957274 Phone No: Address: SIO-SHAMBHU YADAV AT- Address: SIO-SHAMBHU YADAV AT- Place of Supply: Bihar CHAMRAHIYA PO-BISHUNPURA CHAMRAHIYA PO-BISHUNPURA MAHINDRA & KALA PS- DAUDPUR SARAN KALA PS- DAUDPUR SARAN; MAHINDRA SARAN, 841301 SARAN, 841301 Hire Purchase ILeasel Hypo By: FINANCIAL SERVICES LTD State: Bihar State: Bihar Branch Name: Mmnisi Chapra GST Cess Sr Product Dotails HSN Qty _ Solling Price Discount Taxable Total Amount no Amount Rato Amt. Rato Amt MAHINDRA SUPRO PROFITTRUCK 07042100 540254.24 540254.24 18,0u 97245 76 637500,uo EXCEL WD VIN; MAIFNZXUWTGE 12979 Engine XUTGE 15269 Color Diamond Whlte 540254.24 0.00 540254.24 18.0 97245.76 Round Oii 0,00 637500,00 Gruiu AHuurt In Words Rupeos Six Lakh Thirly Seven Thousand Five Huridred Orily Note: On this invoice Tax Collection at Source under Section 206C of Income Tax Act, 1961 Is Rs. and the total amount payable by customer Is Rs.637500.00 HSNISAC CGSTIIGST Rate CGSTIIGST Amt: SGSTIUGST Rate SGSTIUGST Amt: 87042100 9.00 48622.88 9.00 48622.88 (Accessories) (Labour) Total CGSTIIGST Rato 48622.88 SGSTIUGST Rate 48622 88 Note Welcome Bonus Amount is Rs.5O00.00/- (inclusive of GST) Cuslomer Name\" LALU KUMAR YADAV Dealcr Name: KIRAN AUTOMOBILES PVT. LTD. Wfielher tax IS Payable On reverse charges NO IRN Number IRN Dale: Wanl to give a suggeslion or share a feedback about dealership experience? You can reach out to Mahindra & Mahindra LId Email: customercare@mahindra.com Signature valid 24x7 Toll Iree: 18002096006 Digitally Signed by; NITIN KUMAR Ius and conditions: 14/06/2026@12.54.52/ST Customer Signalure Einvoicing QR Authorised Signatory Ealu Mr ;  ^v PvT ES rc 2 Main Showroom (Sales |Service /Spares) Boring Canal Road Showroom (Sales) cltv Showreona (Sales) Kamaldah Path, N.H.30,New Bve Pass Road Near Udavan Hospital, Opp Alankar Business Center Near Kumhrar Park, Opp. Apunva Petro Sales Patna 800008, Bihar; INDIA West Boring Canal Road, Patna 800001 Kumhrar; Patna 800026, Mob: 9263182030 Mob: 9263181133 Mob: 9263182021, 9263144000 Kurji Showroom (Sales) chhapra Shewroom (Sales (Servlce /Spares) plbar sharlf Shovroom (Sales) Kurji Digha Main Road, Near Kurji Pul Gheghta, Opp: Pashu Mela, NH-19, Chhapra Asha Nagar (NH 31), Soh Saral, Blhar Sharif 803118 Patna 801105, Mob: 7564901933 Saran-841301,Mob: 9263182049, 9263182099 (Nalanda) Mob: 9263182039 citv Workshop (Service) Atal Path Workshop (Servlce) Nava Tola, Talab Par; Bhagwat Milan Mandir Road Stalin Nagar; Yamuna Prasad Singh Market; WWW ntahindracom Kumhrar, Patna 800026,Mob: 9334230303 Atal Path; Digha, Patna 800011, Mob_ 9031814440 Cily Tolal Yod= LTD _ City, PATNA-8 PATMAA 1 1 KAVAL\" \"247ATv' Cicv\nKIRAN AUTOMOBILES PVT. LTD.\nGHEGHTA, OPP., NH-19, CHAPRA, SARAN - 841301, BIHAR\nRegistered Office: Kamaladah Path, NH 30, New Bye Pass Road, Patna City - 800008, Bihar, INDIA, Website : www.kiranautomobiles.com Email : info@kiranautomobiles.com\nDealer State Code: 10\nGST No: 10AECK6965F12Z PAN No: AAECK6965F\n\nTAX INVOICE\n(Invoice issued under Rule 46 of CGST/SGST Rule 2017.)\n\nBill To/Lessor details   Ship To/Lessees details\nInvoice details\n\nCustomer Code: R272057593  Customer Name: LALU KUMAR YADAV\nName: LALU KUMAR YADAV  Customer GSTIN: 10AECK6965F12Z\nGSTIN: 10AECK6965F12Z  PAN No: AAECK6965F\nPAN No: AAECK6965F  Aadhar No.: XXX078936\nAadhar No.: null  Booking Date: 30/05/2020\nPhone No: 7491975274  Phone No: 7491975274\nAddress: S/O-SHAMBU YADAV AT-CHARMIYA, P.O.-BISHUNPUR, KALA P.S.-DAUDPUR, SARAN, 841301\nAddress: S/O-SHAMBU YADAV AT-CHARMIYA, P.O.-BISHUNPUR, KALA P.S.-DAUDPUR, SARAN, 841301\nPlace of Supply: MAHINDRA -\n\n\nHire Purchase/Lease/Hypo By: FINANCIAL SERVICES LTD. - Branch Name: Chhapra\nState: Bihar\n\nStr. Sr. Product Details  HSN  Qty.  Selling Price  Taxable  Amount  GST  Cess  Total Amount\n\n1  MAHINDRA SUPRO PROFITTRUCK EXCEL, WD  87420100  1  540254.24  540254.24  18.00  97476.75  637590.00\n\nVIN: MA1FNZUXWTE12979\nEngine: XUTE15269\nColor : Diamond White\n\nRound Off  0.00\nGrand Total  637590.00\nAmount in Words  Rupees Six Lakh Thirty Seven Thousand Five Hundred Only\n\nNote: On this invoice Tax Collection at Source under Section 206C of Income Tax Act, 1961 is Rs. and the total amount payable by customer is Rs.637590.00\n\nHSN/SAC  CGST/SGST Rate  CGST/SGST Amt.  SGST/SGST Rate  SGST/SGST Amt.\n87420100  9.00  48622.88  9.00  48622.88\n(Accessories)\nTotal  CGST/SGST Rate  48622.88  SGST/SGST Amt.  48622.88\n\n\nCustomer Name: LALU KUMAR YADAV  Dealer Name: KIRAN AUTOMOBILES PVT. LTD.\nWhitelier Tax is Payable on reverse charges : NO\n\nIRN Number: \n\nWant to give a suggestion or share a feedback about dealership experience? You can reach out to Mahindra & Mahindra Ltd at 18002029006  24/7 Toll free: 18002029006\n\nTerms and conditions: \n\nCustomer Signature:  Lalu K. Yadav   Emoviqng QR\n\nSignature valid\nDigitally Signed by NITIN KUMAR 14/06/2020@12:54:00 IST\n\n\nAUTHORISED SIGNATORY:\n\nMAHINDRA RISE"
+      },
+      {
+        "file_name": "LEDGER-1782026113109.pdf",
+        "file_path": "C:\\Users\\admin\\Desktop\\robbinmahindra\\documents\\LALU KUMAR YADAV\\LEDGER-1782026113109.pdf",
+        "file_type": "LEDGER",
+        "extracted_data": {
+          "Customer Name": "LALU KUMAR YADAV"
+        },
+        "validations": {
+          "Name Match Score": 100.0,
+          "Name Match Status": "MATCH"
+        },
+        "ocr_text": "Kiran Automobiles Pvt. Ltd: Gheghta, Opp. Pashu Mela, N.H-19, Chhapra Head Office New Bypass Road, N.H. 30, Patna City Patna-800008 CIN: U5010O8R2O12PTCQ18270 LALU KUMAR YADAV S/o-SHAMBHU YADAV-TGE12979-270000119 Ledger Account PO-BISHUNPURA KALA PS- DAUDPUR SARAN AT-CHAMRAHIYA 1-Apr-26 to 10-Jun-26 Page_ Vch Type_ Vch No Debit Credit Date Particulars Finance Bill 1002026053103319 5,47,734.00 30-May-26 By MMFSL TA A/C Chhapra Bank Receipu CH/26-27/E/411 10,000.00 By Branch KIRAN AUTOMOBILES PVL: Ltd, 3s ICICH-32 F Branch KIRAN AUTOMOBILES PVt: Ltd, 3s ICICI-32 F Bank Receipt CH/26-27/E/411 20,000.00 By AUTOMOBILES PVt: Ltd, 3s ICICI-32 F Bank Receipt CH/26-27/E/411 20,000.00 By Branch KIRAN Bank Receipt CH/26-27/E/419 1,350.00 31-May-26 By Branch KIRAN AUTOMOBILES PVt: Ltd 3s ICICH-32 F Vehicle Sales Within State @18%-GST-M M Ltd WmMaa INV27DO00119 6,37,500.00 To KGzhoWE UOV27DO00120 5,000.00 By (as per details) Vehicle Sales Within State @t8%-GST-M M Ltd 4,237,29 Dr Output SGST 9% 381.36 Dr Output CGST @9% 381,36 Dr Round Off 0.01 Cr Being Credit Note No. UOV27D000120 Dt 31.05.2026 against Welcome Bonus 5000/ Vehicle Sales Within State @18%-GST-M M Ltd KCcaK WMM UOV27DO00121 53,000.00 By Journal 658 19,584.00 1-Jun-26 To The DTO Office (Reg: Dept Payable) 6,57,084.00 6,57,084.00 ES PVt Uo 3 t \"'44 Rs: Gva (C City PATNA-8 PATRMA 1 1 IFATN' AMAL\"\nKiran Automobiles Pvt. Ltd.\nGheghta, Opp. Pashu Mela,\nN.H.-19, Chhapra\nHead Office : New Bypass Road,\nN.H. 30, Patna City Patna-800008\nCIN: U501008R2012PTC018270\n\nLALU KUMAR YADAV S/O-SHAMBHU YADAV-T6E12979-27D000119\nLedger Account\nAT-CHAMRAHIYA PO-BISHUNPUR KALA PS- DAUDPUR SARAN\n\n1-Apr-26 to 10-Jun-26\nPage 1\n\nDate Particulars Vch Type Vch No. Debit Credit\n30-May-26 By MMFSL TA A/C Chhapra Finance Bill 1002026053103319 5,47,734.00\n30-May-26 By Branch KIRAN AUTOMOBILES PVT. Ltd. 3s ICICI-32 F Bank Receipt CH/26-27/E411 20,000.00\nBy Branch KIRAN AUTOMOBILES PVT. Ltd. 3s ICICI-32 F Bank Receipt CH/26-27/E411 20,000.00\nBy Branch KIRAN AUTOMOBILES PVT. Ltd. 3s ICICI-32 F Bank Receipt CH/26-27/E411 20,000.00\nBy Branch KIRAN AUTOMOBILES PVT. Ltd. 3s ICICI-32 F Bank Receipt CH/26-27/E419 1,350.00\n31-May-26 To Vehicle Sales Within State @18%+GST-M M Ltd 6,37,500.00\nBy (as per details) Vehicles Sales Within State @18%+GST-M M Ltd 427.29 Dr\nOutput SGST @ 9% 381.36 Dr\nOutput CGST @9% 381.36 Dr\nRound Off 0.01 Cr\nBeing Credit Note No.\nUOV27D000120 Dt 31.05.2026\nagainst Welcome Bonus Rs. 5000/\n\nBy Vehicle Sales Within State @18%-GST-M M Ltd 658 19,584.00 Journal\nThe DTO Office (Reg. Dept Payable)\n\n6,577,084.00 6,577,084.00\n\n\n"
       }
     ]
   }

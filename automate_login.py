@@ -1977,6 +1977,7 @@ Note:
 - In "relation_name", extract the name of the father, husband, wife, or relative if present.
 - In "seal_stamp_dealer_name", look carefully for any dealer stamp or company seal in the document. These stamps are commonly circular/round ring shapes with the company name printed along the circular border (curved text around the edge of the circle). They may be blue, purple, or dark ink and may appear faint or overlapping with a signature. Also look for rectangular or oval stamps. Check especially near labels like 'Authorised Signatory', 'Dealer Seal', 'Dealer Authorized Person', or 'Name & Signature along with Dealer Seal'. Read the company/dealership name from inside or around the stamp border carefully. If no ink stamp is present, also check the document letterhead at the very top for a printed dealer/company name. Only return null if absolutely no company or dealer name can be found anywhere.
 - In "welcome_bonus_amount", specifically look for a note like "Note: Welcome Bonus Amount is Rs.5000.00/- (inclusive of GST)" at the bottom of the invoice and extract this exact amount (e.g. 5000). DO NOT extract the grand total, taxable amount, or discount.
+- In "chassis_number" and "invoice_number" (for DISCLAIMER and INVOICE documents): Read these values STRICTLY character by character, left to right, without skipping or reordering any character. Do NOT guess or infer characters. Common mistakes to avoid: do not confuse letter 'E' with digit '2', letter 'O' with digit '0', letter 'I' with digit '1', letter 'B' with digit '8'. Preserve all letters and digits exactly in the exact order they appear.
 - In "full_text", transcribe the entire text content of the document exactly as it appears.
 """
         return prompt_text
@@ -2125,6 +2126,7 @@ Note:
 - In "relation_name", extract the name of the father, husband, wife, or relative if present (e.g. following 'W/O', 'H/O', 'S/O', 'D/O', 'Wife of', 'Husband of').
 - In "seal_stamp_dealer_name", look carefully for any dealer stamp or company seal in the document. These stamps are commonly circular/round ring shapes with the company name printed along the circular border (curved text around the edge of the circle). They may be blue, purple, or dark ink and may appear faint or overlapping with a signature. Also look for rectangular or oval stamps. Check especially near labels like 'Authorised Signatory', 'Dealer Seal', 'Dealer Authorized Person', or 'Name & Signature along with Dealer Seal'. Read the company/dealership name from inside or around the stamp border carefully. If no ink stamp is present, also check the document letterhead at the very top for a printed dealer/company name. Only return null if absolutely no company or dealer name can be found anywhere.
 - In "welcome_bonus_amount", specifically look for a note like "Note: Welcome Bonus Amount is Rs.5000.00/- (inclusive of GST)" at the bottom of the invoice and extract this exact amount (e.g. 5000). DO NOT extract the grand total, taxable amount, or discount.
+- In "chassis_number" and "invoice_number" (for DISCLAIMER and INVOICE documents): Read these values STRICTLY character by character, left to right, without skipping or reordering any character. Do NOT guess or infer characters. Common mistakes to avoid: do not confuse letter 'E' with digit '2', letter 'O' with digit '0', letter 'I' with digit '1', letter 'B' with digit '8'. Preserve all letters and digits exactly in the exact order they appear.
 - In "full_text", transcribe the entire text content of the document exactly as it appears.
 """.replace("{filename_hint}", filename_hint)
 
@@ -6143,7 +6145,6 @@ def validate_disclaimer_doc(
         )
         print(f"  - Disclaimer Extracted Date            : {doc_date or 'Not Found'}")
     else:
-        print(f"  - Disclaimer Extracted Name       : {doc_name or 'Not Found'}")
         print(f"  - Disclaimer Extracted Old Reg No : {doc_reg or 'Not Found'}")
         print(f"  - Disclaimer Extracted Old Make   : {doc_make or 'Not Found'}")
         print(f"  - Disclaimer Extracted Old Model  : {doc_model or 'Not Found'}")
@@ -6178,11 +6179,11 @@ def validate_disclaimer_doc(
     score = validations.get("Name Match Score", 0)
     if validations.get("Name Match Status") == "MATCH":
         print(
-            f"  - Disclaimer Name Match Status    : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}"
+            f"  - Disclaimer Name Check         : Portal [{customer_name}] -> Document [{doc_name or 'Not Found'}] -> {GREEN_TEXT}MATCH ({score:.1f}%){RESET_TEXT}"
         )
     else:
         print(
-            f"  - Disclaimer Name Match Status    : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}"
+            f"  - Disclaimer Name Check         : Portal [{customer_name}] -> Document [{doc_name or 'Not Found'}] -> {RED_TEXT}MISMATCH ({score:.1f}%){RESET_TEXT}"
         )
         issues.append(
             f"Disclaimer [{filename}]: Customer name mismatch ({score:.1f}% similarity)"
@@ -6545,23 +6546,16 @@ def validate_invoice_doc(
     vehicle_model = data.get("Vehicle Model")
     invoice_amount = data.get("Invoice Amount")
 
-    print(f"  - Extracted Name       : {extracted_name or 'Not Found'}")
-    print(f"  - Extracted Dealer     : {dealer_name or 'Not Found'}")
-    print(f"  - Extracted Invoice No : {inv_no or 'Not Found'}")
-    print(f"  - Extracted Date       : {inv_date or 'Not Found'}")
-    print(f"  - Extracted Vehicle    : {vehicle_model or 'Not Found'}")
-    print(f"  - Extracted Amount     : {invoice_amount or 'Not Found'}")
-
     # 2. Customer Name check
     score = validations.get("Name Match Score", 0)
     name_ok = validations.get("Name Match Status") == "MATCH"
     if name_ok:
         print(
-            f"  - Name Match Status    : {GREEN_TEXT}MATCH ({score:.1f}% Similarity){RESET_TEXT}"
+            f"  - Customer Name Check  : Portal [{customer_name}] -> Document [{extracted_name or 'Not Found'}] -> {GREEN_TEXT}MATCH ({score:.1f}%){RESET_TEXT}"
         )
     else:
         print(
-            f"  - Name Match Status    : {RED_TEXT}MISMATCH ({score:.1f}% Similarity){RESET_TEXT}"
+            f"  - Customer Name Check  : Portal [{customer_name}] -> Document [{extracted_name or 'Not Found'}] -> {RED_TEXT}MISMATCH ({score:.1f}%){RESET_TEXT}"
         )
         issues.append(
             f"Invoice [{filename}]: Customer name mismatch ({score:.1f}% similarity)"
@@ -6571,11 +6565,11 @@ def validate_invoice_doc(
     dealer_ok = compare_dealership_names(dealer_name, company_name)
     if dealer_ok:
         print(
-            f"  - Dealer Match Status  : {GREEN_TEXT}MATCH ({dealer_name} vs {company_name}){RESET_TEXT}"
+            f"  - Dealer Name Check    : Portal [{company_name}] -> Document [{dealer_name or 'Not Found'}] -> {GREEN_TEXT}MATCH{RESET_TEXT}"
         )
     else:
         print(
-            f"  - Dealer Match Status  : {RED_TEXT}MISMATCH (Extracted '{dealer_name}' vs expected '{company_name}'){RESET_TEXT}"
+            f"  - Dealer Name Check    : Portal [{company_name}] -> Document [{dealer_name or 'Not Found'}] -> {RED_TEXT}MISMATCH{RESET_TEXT}"
         )
         issues.append(
             f"Invoice [{filename}]: Dealership name mismatch. Extracted: '{dealer_name}', Expected: '{company_name}'"
@@ -6592,18 +6586,18 @@ def validate_invoice_doc(
         inv_no_ok = status_inv_no.startswith("MATCH")
         if inv_no_ok:
             print(
-                f"  - Invoice No Status    : {GREEN_TEXT}MATCH ({inv_no} vs {web_inv_no}){RESET_TEXT}"
+                f"  - Invoice No Check     : Portal [{web_inv_no}] -> Document [{inv_no or 'Not Found'}] -> {GREEN_TEXT}MATCH{RESET_TEXT}"
             )
         else:
             print(
-                f"  - Invoice No Status    : {RED_TEXT}MISMATCH ({inv_no} vs {web_inv_no}){RESET_TEXT}"
+                f"  - Invoice No Check     : Portal [{web_inv_no}] -> Document [{inv_no or 'Not Found'}] -> {RED_TEXT}MISMATCH{RESET_TEXT}"
             )
             issues.append(
                 f"Invoice [{filename}]: Invoice Number mismatch. Extracted: '{inv_no}', Expected: '{web_inv_no}'"
             )
     else:
         print(
-            f"  - Invoice No Status    : {YELLOW_TEXT}SKIPPED (Invoice No not found in dashboard details){RESET_TEXT}"
+            f"  - Invoice No Check     : {YELLOW_TEXT}SKIPPED (Invoice No not found in dashboard details){RESET_TEXT}"
         )
 
     # 5. Invoice Amount check
