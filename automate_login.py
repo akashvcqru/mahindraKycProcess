@@ -9220,14 +9220,16 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None):
 
             if clicked_100:
                 # Wait for the table to reload with the new page size
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(3000)
                 try:
+                    # Increase timeout to 30 seconds for massive "ALL" queries
                     page.wait_for_selector(
-                        ".ant-spin-spinning", state="hidden", timeout=10000
+                        ".ant-spin-spinning", state="hidden", timeout=30000
                     )
                 except Exception:
                     pass
-                page.wait_for_timeout(1000)
+                # Give it extra time to render the DOM elements after spinner disappears
+                page.wait_for_timeout(3000)
                 logging.info("Page size set to 100 rows.")
             else:
                 logging.warning(
