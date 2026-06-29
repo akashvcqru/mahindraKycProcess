@@ -520,6 +520,34 @@ class AppUI(tk.Tk):
         checks_scroll.pack(fill="y", side="right")
         self.checks_text.configure(yscrollcommand=checks_scroll.set)
 
+        # Tab 4: East Welcome Bonus Disclaimer
+        self.tab_east_welcome = tk.Frame(self.details_notebook, bg=CARD_BG_COLOR)
+        self.details_notebook.add(self.tab_east_welcome, text="East Welcome Disclaimer")
+        
+        self.east_top_frame = tk.Frame(self.tab_east_welcome, bg=CARD_BG_COLOR)
+        self.east_top_frame.pack(fill="x", padx=5, pady=5)
+        
+        self.east_analyze_btn = tk.Button(self.east_top_frame, text="Analyze Disclaimer (OpenAI)", bg="#667eea", fg="white", font=("Segoe UI", 10, "bold"), command=self.run_east_disclaimer_analysis)
+        self.east_analyze_btn.pack(side="left")
+        
+        self.east_status_lbl = tk.Label(self.east_top_frame, text="", bg=CARD_BG_COLOR, fg=TEXT_COLOR)
+        self.east_status_lbl.pack(side="left", padx=10)
+
+        self.east_canvas = tk.Canvas(self.tab_east_welcome, bg=CARD_BG_COLOR, highlightthickness=0)
+        self.east_scroll = ttk.Scrollbar(self.tab_east_welcome, orient="vertical", command=self.east_canvas.yview)
+        self.east_scroll.pack(side="right", fill="y")
+        self.east_canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.east_canvas.configure(yscrollcommand=self.east_scroll.set)
+        
+        self.east_frame = tk.Frame(self.east_canvas, bg=CARD_BG_COLOR)
+        self.east_canvas.create_window((0, 0), window=self.east_frame, anchor="nw")
+        
+        def on_east_frame_configure(event):
+            self.east_canvas.configure(scrollregion=self.east_canvas.bbox("all"))
+            
+        self.east_frame.bind("<Configure>", on_east_frame_configure)
+
+
         # Right Interactive Canvas Frame for PDF display
         self.pdf_frame = tk.Frame(self.comparison_split, bg=BG_COLOR)
         self.comparison_split.add(self.pdf_frame)
@@ -1288,6 +1316,72 @@ class AppUI(tk.Tk):
         if self.current_pdf_doc and self.current_zoom > 0.4:
             self.current_zoom -= 0.15
             self.render_pdf_page()
+
+    def run_east_disclaimer_analysis(self):
+        if not hasattr(self, 'current_pdf_path') or not self.current_pdf_path or not os.path.exists(self.current_pdf_path):
+            messagebox.showwarning("No PDF", "Please select a valid disclaimer PDF first.")
+            return
+            
+        self.east_analyze_btn.config(state="disabled")
+        self.east_status_lbl.config(text="Analyzing via OpenAI... please wait.")
+        
+        # Clear existing elements
+        for widget in self.east_frame.winfo_children():
+            widget.destroy()
+            
+        def task():
+            try:
+                import east_welcome_bonus_disclaimer
+                results = east_welcome_bonus_disclaimer.process_east_welcome_bonus_disclaimer(self.current_pdf_path)
+                self.after(0, self.display_east_disclaimer_results, results)
+            except Exception as e:
+                logging.error(f"Error in east disclaimer analysis: {e}")
+                self.after(0, lambda: self.east_status_lbl.config(text=f"Error: {e}"))
+                self.after(0, lambda: self.east_analyze_btn.config(state="normal"))
+                
+        threading.Thread(target=task, daemon=True).start()
+        
+    def display_east_disclaimer_results(self, results):
+        self.east_analyze_btn.config(state="normal")
+        self.east_status_lbl.config(text="Analysis complete.")
+        
+        # Keep references to PhotoImages to prevent garbage collection
+        self.east_photo_images = getattr(self, 'east_photo_images', [])
+        self.east_photo_images.clear()
+        
+        for idx, item in enumerate(results):
+            card = tk.Frame(self.east_frame, bg="#ffffff", bd=1, relief="solid")
+            card.pack(fill="x", pady=5, padx=5)
+            
+            # Header
+            hdr = tk.Frame(card, bg="#f0f0f0")
+            hdr.pack(fill="x", padx=2, pady=2)
+            tk.Label(hdr, text=item.get("field", f"Field {idx+1}"), bg="#f0f0f0", font=("Segoe UI", 9, "bold")).pack(side="left")
+            
+            # Image Crop
+            b64 = item.get("crop_b64")
+            if b64:
+                try:
+                    img_data = base64.b64decode(b64)
+                    pil_img = Image.open(io.BytesIO(img_data))
+                    
+                    # Scale down if too large
+                    max_width = 400
+                    if pil_img.width > max_width:
+                        ratio = max_width / pil_img.width
+                        new_h = int(pil_img.height * ratio)
+                        pil_img = pil_img.resize((max_width, new_h), Image.LANCZOS)
+                        
+                    photo = ImageTk.PhotoImage(pil_img)
+                    self.east_photo_images.append(photo)
+                    tk.Label(card, image=photo, bg="#ffffff").pack(pady=2)
+                except Exception as e:
+                    logging.warning(f"Failed to display crop: {e}")
+            
+            # Value
+            val = item.get("value", "")
+            val_lbl = tk.Message(card, text=val, bg="#ffffff", width=400, font=("Segoe UI", 10))
+            val_lbl.pack(pady=2, padx=5, fill="x")
 
     # Load local history registry
     def load_history_from_file(self):

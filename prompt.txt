@@ -1,35 +1,20 @@
-Looking at both images very carefully...
+You are a document analysis expert. Read this Customer Disclaimer document image line by line from top to bottom.
 
----
+Extract ONLY these 9 fields in exact order:
+1. Dealership Name from the heading/banner at the very top of the document
+2. Document Title (the bold centered heading)
+3. Document Issue Date (shown as "Date:" on the top-left below the title)
+4. Dealership Name as written inside the paragraph body text (after "Dealership name")
+5. New Vehicle Model name (after "Buying New Vehicle Model")
+6. Chassis Number ONLY (after "Chassis no" — do NOT include Engine no)
+7. Invoice Number and Invoice Date (after "Invoice No" and "Invoice Date")
+8. Dealership Stamp and Seal details — name printed, designation, and label at bottom left
+9. Customer Name (printed below signature) and whether a manual handwritten signature is present above it
 
-## 🤯 There IS No Difference — Both Invoices Are Identical!
+Return ONLY a valid JSON array with exactly 9 objects in this format:
+[
+  {"field": "...", "value": "..."},
+  ...
+]
 
-Look at the Note line on **both** invoices:
-
-| | Note on Invoice |
-|---|---|
-| **MUNNA KUMAR** (HOLD ❌) | `Welcome Bonus Amount is Rs.5000.00/-(inclusive of GST)` |
-| **MUKESH KUMAR** (APPROVED ✅) | `Welcome Bonus Amount is Rs.5000.00/-(inclusive of GST)` |
-
-**Word for word — exactly the same.**
-
----
-
-## So Why Did the Script Treat Them Differently?
-
-This is a **bug in the script**. The most likely reason:
-
-**Mukesh Kumar's invoice was named `INVOICE_PAN-...pdf`**
-**MUNNA KUMAR's invoice was named `INV-...pdf`**
-
-The script probably has different handling based on filename — the `INVOICE_PAN` file may have been processed through a different code path that **skipped or passed the amount check**, while `INV-...pdf` went through the path that **actually read and validated the note text** and flagged "inclusive of GST".
-
----
-
-## In Short
-
-- ✅ The documents are **correct and identical**
-- ❌ The script is **wrong** — it's giving different results for the same content
-- MUNNA KUMAR should also be **APPROVED** — it's a false HOLD
-
-**Should I fix the script so it doesn't flag "inclusive of GST" as an error, since both dealers write it the same way?**
+No extra text. No markdown. No explanation. Return only the raw JSON array.
