@@ -5,6 +5,8 @@ import logging
 import io
 import fitz
 import requests
+import re
+from datetime import datetime
 from PIL import Image
 
 def process_east_welcome_bonus_disclaimer(pdf_path):
@@ -67,7 +69,7 @@ No extra text. No markdown. No explanation. Return only the raw JSON array."""
     }
 
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-4o-mini",
         "messages": [
             {
                 "role": "user",
@@ -121,13 +123,66 @@ def generate_mock_response(pil_img):
     ]
     return pair_crops_with_data(pil_img, mock_data)
 
+def perform_date_validation(extracted_data):
+    issue_date = None
+    invoice_date = None
+    
+    def parse_date(date_str):
+        if not date_str:
+            return None
+        formats = [
+            "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
+            "%d/%m/%y", "%d-%m-%y", "%d.%m.%y",
+            "%Y-%m-%d", "%Y/%m/%d",
+            "%d %b %Y", "%d %B %Y", "%d-%b-%Y", "%d-%B-%Y",
+            "%d %b %y", "%d %B %y", "%d-%b-%y", "%d-%B-%y"
+        ]
+        matches = re.findall(r'\b\d{1,4}[/\-\. a-zA-Z]+\d{2,4}\b', date_str)
+        for match in matches:
+            match = re.sub(r'\s+', ' ', match.strip())
+            for fmt in formats:
+                try:
+                    return datetime.strptime(match, fmt)
+                except ValueError:
+                    continue
+        return None
+
+    for item in extracted_data:
+        field = item.get("field", "")
+        val = item.get("value", "")
+        if "3." in field or "Issue Date" in field:
+            issue_date = parse_date(val)
+        elif "7." in field or "Invoice" in field:
+            invoice_date = parse_date(val)
+            
+    if issue_date and invoice_date:
+        if issue_date >= invoice_date:
+            return {"field": "Validation: Date Check", "value": f"MATCH: Disclaimer Issue Date ({issue_date.strftime('%Y-%m-%d')}) is >= Invoice Date ({invoice_date.strftime('%Y-%m-%d')}).", "crop_b64": ""}
+        else:
+            return {"field": "Validation: Date Check", "value": f"MISMATCH: Disclaimer Issue Date ({issue_date.strftime('%Y-%m-%d')}) is BEFORE Invoice Date ({invoice_date.strftime('%Y-%m-%d')})!", "crop_b64": ""}
+    
+    return {"field": "Validation: Date Check", "value": f"WARNING: Could not parse both dates to perform validation. (Issue: {issue_date}, Invoice: {invoice_date})", "crop_b64": ""}
+
 def pair_crops_with_data(pil_img, extracted_data):
     """
-    Slices the image into 9 approximate regions for the UI.
+    Slices the image into 9 approximate regions for the UI, focusing on the particular text area.
     """
+    import numpy as np
+    import easyocr
+    from rapidfuzz import fuzz
+    
     width, height = pil_img.size
     
-    # Approximate vertical regions as percentages (top, bottom)
+    # Run EasyOCR once on the full page image
+    raw_results = []
+    try:
+        reader = easyocr.Reader(['en'], gpu=False)
+        img_np = np.array(pil_img)
+        raw_results = reader.readtext(img_np)
+    except Exception as e:
+        logging.warning(f"Failed to run EasyOCR for crops: {e}")
+    
+    # Approximate vertical regions as percentages (top, bottom) as fallbacks
     crop_regions = [
         (0.00, 0.15),  # 1. Dealership Heading
         (0.10, 0.22),  # 2. Document Title
@@ -142,11 +197,53 @@ def pair_crops_with_data(pil_img, extracted_data):
     
     results = []
     for i, data in enumerate(extracted_data):
-        if i < len(crop_regions):
+        val = data.get("value", "")
+        field = data.get("field", "")
+        
+        crop_img = None
+        
+        # Try to locate the particular text area of the value
+        best_score = 0
+        best_box = None
+        target_clean = "".join([c for c in val.lower() if c.isalnum() or c.isspace()]).strip()
+        
+        if target_clean and len(target_clean) >= 2 and raw_results:
+            for bbox, text, conf in raw_results:
+                text_clean = "".join([c for c in text.lower() if c.isalnum() or c.isspace()]).strip()
+                if not text_clean:
+                    continue
+                score = fuzz.partial_ratio(target_clean, text_clean)
+                if score > best_score:
+                    best_score = score
+                    best_box = bbox
+                    
+        if best_box and best_score > 70:
+            try:
+                x_coords = [p[0] for p in best_box]
+                y_coords = [p[1] for p in best_box]
+                x1 = max(0, min(x_coords) - 15)
+                y1 = max(0, min(y_coords) - 15)
+                x2 = min(width, max(x_coords) + 15)
+                y2 = min(height, max(y_coords) + 15)
+                
+                # Expand signature or stamp crops
+                if "signature" in field.lower() or "stamp" in field.lower() or "seal" in field.lower() or i >= 7:
+                    y1 = max(0, y1 - 80)
+                    y2 = min(height, y2 + 80)
+                    x1 = max(0, x1 - 50)
+                    x2 = min(width, x2 + 50)
+                    
+                crop_img = pil_img.crop((x1, y1, x2, y2))
+            except Exception as crop_err:
+                logging.warning(f"Fuzzy crop failed: {crop_err}")
+                
+        # Fallback to horizontal slice if fuzzy crop is not available
+        if crop_img is None and i < len(crop_regions):
             top_pct, bot_pct = crop_regions[i]
             box = (0, int(height * top_pct), width, int(height * bot_pct))
             crop_img = pil_img.crop(box)
             
+        if crop_img:
             # Encode crop to base64
             buffered = io.BytesIO()
             crop_img.save(buffered, format="PNG")
@@ -155,10 +252,14 @@ def pair_crops_with_data(pil_img, extracted_data):
             crop_b64 = ""
             
         results.append({
-            "field": data.get("field", f"Field {i+1}"),
-            "value": data.get("value", ""),
+            "field": field,
+            "value": val,
             "crop_b64": crop_b64
         })
+        
+    val_res = perform_date_validation(extracted_data)
+    if val_res:
+        results.append(val_res)
         
     return results
 

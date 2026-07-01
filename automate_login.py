@@ -164,7 +164,7 @@ def get_antd_select_trigger(page, container_selector, label_text):
     # Method 1: Check label-based form item
     try:
         label_locator = page.locator(
-            f'div.ant-modal-content form .ant-form-item:has(label:has-text("{label_text}")) .ant-select-selector'
+            f'div.ant-modal-content:visible form .ant-form-item:has(label:has-text("{label_text}")) .ant-select-selector:visible'
         )
         if label_locator.count() > 0:
             return label_locator.first
@@ -173,7 +173,7 @@ def get_antd_select_trigger(page, container_selector, label_text):
 
     try:
         label_locator_alt = page.locator(
-            f'div.ant-modal-content form .ant-form-item:has(label:has-text("{label_text}")) .ant-select-selection-item'
+            f'div.ant-modal-content:visible form .ant-form-item:has(label:has-text("{label_text}")) .ant-select-selection-item:visible'
         )
         if label_locator_alt.count() > 0:
             return label_locator_alt.first
@@ -212,12 +212,20 @@ def select_antd_dropdown_option(
     dropdown_selector = "div.ant-select-dropdown:not(.ant-select-dropdown-hidden)"
     page.wait_for_selector(dropdown_selector, state="visible", timeout=20000)
 
-    # Brief sleep to ensure dynamic contents are populated
-    page.wait_for_timeout(1000)
-
+    # Wait for actual options to appear (up to 5 seconds) to handle network delay
     option_items = page.locator(f"{dropdown_selector} .ant-select-item-option")
-    count = option_items.count()
+    count = 0
+    for _ in range(10):
+        page.wait_for_timeout(500)
+        count = option_items.count()
+        if count > 0:
+            break
+
     if count == 0:
+        # Check if there is an empty/No Data indicator
+        empty_indicator = page.locator(f"{dropdown_selector} .ant-select-item-empty")
+        if empty_indicator.count() > 0:
+            logging.warning(f"Dropdown overlay is visible but reports 'No Data' for field: {field_name}")
         raise Exception(f"No options found in the dropdown for field: {field_name}")
 
     options_data = []
@@ -283,15 +291,22 @@ def fill_antd_date_robust(
 ):
     """Fills a date input field by direct ID/typing, with fallback to calendar popup selection."""
     try:
-        # Method 1: Try direct ID typing
-        page.wait_for_selector(select_id, state="visible", timeout=5000)
-        page.click(select_id)
-        page.locator(select_id).press("Control+A")
-        page.locator(select_id).press("Backspace")
-        page.locator(select_id).fill(date_str)
-        page.locator(select_id).press("Enter")
+        # Method 1: Try direct ID typing or container input
+        input_selector = select_id
+        try:
+            page.wait_for_selector(input_selector, state="visible", timeout=2000)
+        except Exception:
+            input_selector = f"{fallback_container_selector} input"
+            page.wait_for_selector(input_selector, state="visible", timeout=3000)
+
+        # Clear and fill the input
+        page.click(input_selector)
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
+        page.locator(input_selector).fill(date_str)
+        page.locator(input_selector).press("Tab")
         page.wait_for_timeout(500)
-        logging.info(f"Filled date {date_str} in selector {select_id} via typing.")
+        logging.info(f"Filled date {date_str} in selector {input_selector} via typing.")
         return
     except Exception as e:
         logging.info(
@@ -1045,6 +1060,7 @@ def extract_dealer_name_from_drawer(page):
     try:
         # Wildcard selectors to match the dynamic class hashes e.g. app_drawerBodyLeft__8R+hm
         selectors = [
+            "body > div:nth-child(13) > div > div.ant-drawer-content-wrapper > div > div.ant-drawer-body > div > div.ant-col[class*='app_drawerBodyLeft'] > div > div > div.ant-collapse-content.ant-collapse-content-active > div > div:nth-child(3)",
             "body > div:nth-child(11) > div > div.ant-drawer-content-wrapper > div > div.ant-drawer-body > div > div.ant-col[class*='app_drawerBodyLeft__8R+hm'] > div > div > div.ant-collapse-content.ant-collapse-content-active > div > div:nth-child(3)",
             "div.ant-col[class*='app_drawerBodyLeft__8R+hm'] div.ant-collapse-content.ant-collapse-content-active > div > div:nth-child(3)",
             "div[class*='app_drawerBodyLeft'] div.ant-collapse-content.ant-collapse-content-active > div > div:nth-child(3) > span",
@@ -2032,6 +2048,79 @@ Note:
         return prompt_text
 
     @staticmethod
+    def extract_ledger_visual(file_path, extracted_name):
+        """
+        Fallback visual extractor for Ledgers when OpenAI fails.
+        Uses EasyOCR to find the bounding box of the extracted customer name and crops it.
+        """
+        import fitz
+        import numpy as np
+        from PIL import Image
+        import io
+        import base64
+        from rapidfuzz import fuzz
+
+        visual_extractions = {}
+        if not extracted_name or extracted_name == "NOT_FOUND":
+            return visual_extractions
+
+        try:
+            reader = get_ocr_reader()
+            doc = fitz.open(file_path)
+            
+            # Only process first page for ledger name usually
+            page = doc[0]
+            zoom = 3
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+            png_bytes = pix.tobytes("png")
+            img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+            img_np = np.array(img)
+
+            raw_results = reader.readtext(img_np)
+            
+            best_score = 0
+            best_box = None
+            
+            target_name_clean = "".join([c for c in extracted_name.lower() if c.isalnum() or c.isspace()])
+
+            for bbox, text, conf in raw_results:
+                if conf < 0.1:
+                    continue
+                
+                text_clean = "".join([c for c in text.lower() if c.isalnum() or c.isspace()])
+                score = fuzz.partial_ratio(target_name_clean, text_clean)
+                
+                if score > best_score:
+                    best_score = score
+                    best_box = bbox
+
+            if best_box and best_score > 70:
+                x_coords = [p[0] for p in best_box]
+                y_coords = [p[1] for p in best_box]
+                x1 = max(0, min(x_coords) - 15)
+                y1 = max(0, min(y_coords) - 15)
+                x2 = min(img_np.shape[1], max(x_coords) + 15)
+                y2 = min(img_np.shape[0], max(y_coords) + 15)
+                
+                cropped = img.crop((x1, y1, x2, y2))
+                buf = io.BytesIO()
+                cropped.save(buf, format='PNG')
+                b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                
+                visual_extractions["customer_signature"] = {
+                    'value': extracted_name,
+                    'confidence': conf * 100 if conf else 80,
+                    'bbox': [x1, y1, x2, y2],
+                    'image_base64': b64
+                }
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to extract ledger visual crop: {e}")
+            
+        return visual_extractions
+
+    @staticmethod
     def classify_and_extract(
         file_path,
         text,
@@ -2130,6 +2219,18 @@ def extract_details_via_openai(pdf_path, base64_images=None):
                 img_byte_arr = io.BytesIO()
                 pil_img.save(img_byte_arr, format="PNG", optimize=True)
                 png_bytes = img_byte_arr.getvalue()
+                
+                # Save the image locally per user request so ledgers, etc. are visible
+                try:
+                    images_dir = os.path.join(os.path.dirname(pdf_path), "images")
+                    if not os.path.exists(images_dir):
+                        os.makedirs(images_dir)
+                    base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+                    save_path = os.path.join(images_dir, f"{base_name}_page{page_num}.png")
+                    pil_img.save(save_path, format="PNG")
+                    logging.info(f"Saved converted PDF image to: {save_path}")
+                except Exception as save_err:
+                    logging.warning(f"Failed to save image to disk: {save_err}")
 
                 b64_str = base64.b64encode(png_bytes).decode("utf-8")
                 base64_images.append(b64_str)
@@ -2286,7 +2387,7 @@ Note:
         )
 
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-4o-mini",
         "response_format": {"type": "json_object"},
         "messages": [{"role": "user", "content": user_content}],
         "max_tokens": 8192,  # Increased from 4096 to handle complex documents
@@ -2412,8 +2513,13 @@ Note:
                     f"Attempt {retry_attempt + 1} failed for {os.path.basename(pdf_path)}: {e}. Retrying..."
                 )
                 import time
-
-                time.sleep(1)  # Brief delay before retry
+                # Exponential backoff for 429 Too Many Requests
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    backoff_time = 5 * (2 ** retry_attempt) # 5s, 10s
+                    logging.warning(f"Rate limit hit. Waiting {backoff_time}s before retry...")
+                    time.sleep(backoff_time)
+                else:
+                    time.sleep(2)  # Brief delay before retry
 
     return None
 
@@ -3221,6 +3327,7 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
     import numpy as np
     from PIL import Image
     from rapidfuzz import fuzz
+    import base64
 
     expected_welcome_bonus = None
     expected_invoice_no = None
@@ -3278,6 +3385,25 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
             return "NOT_FOUND"
         text_clean = text.lower().strip()
 
+        # Remove common currency/labels so they don't map to digits (e.g. 's' in 'rs' mapping to '5')
+        text_clean = re.sub(r'\b(rs|rupees|rupee|bonus|scheme|welcome|of|is)\b', '', text_clean)
+        # Remove non-alphanumeric except space and question mark
+        text_clean = re.sub(r'[^a-z0-9\s\?]', '', text_clean)
+        
+        # Split and select the numeric-looking word
+        words = text_clean.split()
+        target_word = ""
+        for w in words:
+            has_digit = any(c.isdigit() for c in w)
+            has_mapped = any(c in "oOqQdDiIlttTjsSbgzZf?kK" for c in w)
+            if has_digit or (has_mapped and len(w) >= 3):
+                target_word = w
+                break
+        if not target_word and words:
+            target_word = words[0]
+        if target_word:
+            text_clean = target_word
+
         if expected_welcome_bonus is not None:
             cleaned_letters = re.sub(r"[^a-z0-9\?]", "", text_clean)
             if cleaned_letters in [
@@ -3292,6 +3418,14 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
                 "10000",
                 "150o",
                 "100o",
+                "s000",
+                "sooo",
+                "sooo?",
+                "5ooo",
+                "50oo",
+                "5o00",
+                "s5000",
+                "s5ooo",
             ]:
                 return str(int(expected_welcome_bonus))
 
@@ -3319,8 +3453,12 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
             "k": "1",
             "K": "1",
         }
+        text_to_process = text.lower()
+        for word in ["rupees", "rupee", "rs", "bonus", "scheme", "welcome", "of", "is", "customer", "amount"]:
+            text_to_process = text_to_process.replace(word, "")
+
         cleaned_chars = []
-        for c in text:
+        for c in text_to_process:
             if c.isdigit():
                 cleaned_chars.append(c)
             elif c in char_map:
@@ -3510,6 +3648,8 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
             "name of customer:",
             "name & signature",
             "customer signature",
+            "customer sign",
+            "customer signa",
         ],
         "Registration No": [
             "registration number",
@@ -3541,6 +3681,11 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
             "rvoice no",
             "#rvoice",
             "#rvoice _ no",
+            "invoiceno",
+            "invoice_no",
+            "invoice_nol",
+            "invoicenol",
+            "invoice no.",
         ],
         "Disclaimer Date": ["date:", "date"],
         "Invoice Date": ["invoice date", "invoice date:"],
@@ -3558,7 +3703,9 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
     doc = fitz.open(file_path)
     page_results = []
     full_flat_texts = []
+    pages_data = []
 
+    visual_extractions_dict = {}
     for page in doc:
         # Render at 3x zoom
         zoom = 3
@@ -3581,6 +3728,7 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
             ocr_items.append(parsed)
 
         full_flat_texts.append(" ".join([item["text"] for item in ocr_items]))
+        pages_data.append({"img": img, "ocr_items": ocr_items})
 
         extracted = {}
         used_boxes = set()
@@ -3613,6 +3761,8 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
                 # Ensure Disclaimer Date doesn't match an invoice date label box
                 if field == "Disclaimer Date" and "invoice" in text.lower():
                     continue
+                if field == "Customer Name" and any(x in cleaned for x in ["dealer", "seal", "stamp", "authorized"]):
+                    continue
                 for pat in patterns:
                     clean_pat = clean_label(pat)
                     if clean_pat in cleaned:
@@ -3639,6 +3789,7 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
                             ):
                                 value_parts = [inline_val]
                                 used_boxes.add(idx)
+                                field_used_boxes = {idx}
                                 matched_idx = idx
 
                                 # Scan for subsequent candidates on the same line horizontally
@@ -3706,11 +3857,45 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
                                             continue
                                         value_parts.append(cand["text"])
                                         used_boxes.add(o_idx)
+                                        field_used_boxes.add(o_idx)
                                         prev_x_max = cand["x_max"]
                                     else:
                                         break
 
                                 extracted_val = " ".join(value_parts).strip()
+                                # VISUAL CONFIRMATION: crop inline matches
+                                try:
+                                    x_mins = [ocr_items[i]['x_min'] for i in field_used_boxes if i in range(len(ocr_items))]
+                                    y_mins = [ocr_items[i]['y_min'] for i in field_used_boxes if i in range(len(ocr_items))]
+                                    x_maxs = [ocr_items[i]['x_max'] for i in field_used_boxes if i in range(len(ocr_items))]
+                                    y_maxs = [ocr_items[i]['y_max'] for i in field_used_boxes if i in range(len(ocr_items))]
+                                    if x_mins:
+                                        x1 = max(0, min(x_mins) - 10)
+                                        y1 = max(0, min(y_mins) - 10)
+                                        x2 = min(img_np.shape[1], max(x_maxs) + 10)
+                                        y2 = min(img_np.shape[0], max(y_maxs) + 10)
+                                        cropped = img.crop((x1, y1, x2, y2))
+                                        buf = io.BytesIO()
+                                        cropped.save(buf, format='PNG')
+                                        b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                                        
+                                        # Use standard field keys for UI map
+                                        ui_key = field
+                                        if field == "Vehicle Make": ui_key = "seal_stamp_dealer_name"
+                                        elif field == "Customer Name": ui_key = "customer_signature"
+                                        elif field == "Invoice No": ui_key = "invoice_number"
+                                        elif field == "Chassis No": ui_key = "chassis_number"
+                                        elif field == "Invoice Date": ui_key = "invoice_date"
+                                        elif field == "Registration No": ui_key = "registration_number"
+                                        
+                                        visual_extractions_dict[ui_key] = {
+                                            'value': extracted_val,
+                                            'confidence': 90,
+                                            'bbox': [x1, y1, x2, y2],
+                                            'image_base64': b64
+                                        }
+                                except Exception as e:
+                                    pass
                                 break
                 if matched_idx != -1:
                     break
@@ -3811,6 +3996,39 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
                         if value_parts:
                             extracted_val = " ".join(value_parts).strip()
                             used_boxes.add(best_idx)
+                            # VISUAL CONFIRMATION: crop spatial matches
+                            try:
+                                relevant_idxs = [idx for idx, cand in candidates if cand['text'] in value_parts] + [best_idx]
+                                x_mins = [ocr_items[i]['x_min'] for i in relevant_idxs if i in range(len(ocr_items))]
+                                y_mins = [ocr_items[i]['y_min'] for i in relevant_idxs if i in range(len(ocr_items))]
+                                x_maxs = [ocr_items[i]['x_max'] for i in relevant_idxs if i in range(len(ocr_items))]
+                                y_maxs = [ocr_items[i]['y_max'] for i in relevant_idxs if i in range(len(ocr_items))]
+                                if x_mins:
+                                    x1 = max(0, min(x_mins) - 10)
+                                    y1 = max(0, min(y_mins) - 10)
+                                    x2 = min(img_np.shape[1], max(x_maxs) + 10)
+                                    y2 = min(img_np.shape[0], max(y_maxs) + 10)
+                                    cropped = img.crop((x1, y1, x2, y2))
+                                    buf = io.BytesIO()
+                                    cropped.save(buf, format='PNG')
+                                    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                                    
+                                    ui_key = field
+                                    if field == "Vehicle Make": ui_key = "seal_stamp_dealer_name"
+                                    elif field == "Customer Name": ui_key = "customer_signature"
+                                    elif field == "Invoice No": ui_key = "invoice_number"
+                                    elif field == "Chassis No": ui_key = "chassis_number"
+                                    elif field == "Invoice Date": ui_key = "invoice_date"
+                                    elif field == "Registration No": ui_key = "registration_number"
+
+                                    visual_extractions_dict[ui_key] = {
+                                        'value': extracted_val,
+                                        'confidence': 85,
+                                        'bbox': [x1, y1, x2, y2],
+                                        'image_base64': b64
+                                    }
+                            except Exception as e:
+                                pass
 
             # Post-processing cleans
             if extracted_val != "NOT_FOUND":
@@ -3847,21 +4065,68 @@ def extract_disclaimer_spatial(file_path, claim_customer_name, claim_details=Non
                 break
         final_dict[field] = final_val
 
+    final_dict["visual_extractions"] = visual_extractions_dict
+
     # Secondary check for Customer Name
-    if (
-        final_dict["Customer Name"] == "NOT_FOUND"
-        or len(final_dict["Customer Name"]) < 3
-    ):
+    extracted_name = final_dict["Customer Name"]
+    score = fuzz.token_sort_ratio(extracted_name.lower(), claim_customer_name.lower()) if extracted_name != "NOT_FOUND" else 0
+    if score < 75:
+        # Try to find a better match in full_flat_texts using extract_best_name
         combined_text = " ".join(full_flat_texts)
-        name_match = re.search(
-            r"\b(?:I|1|COD|Bonus through COD)\s*,?\s*([A-Za-z\s\.\-]+)\s*,?\s*residing\b",
-            combined_text,
-            re.IGNORECASE,
-        )
-        if name_match:
-            final_dict["Customer Name"] = clean_extracted_name(name_match.group(1))
+        best_name, best_score = extract_best_name(combined_text, claim_customer_name)
+        if best_score >= 75:
+            final_dict["Customer Name"] = best_name
+            
+            # Try to crop the corrected name to update the customer_signature crop
+            try:
+                found_crop = False
+                for pdata in pages_data:
+                    p_img = pdata["img"]
+                    p_ocr = pdata["ocr_items"]
+                    # Find the ocr item matching best_name
+                    best_match_idx = -1
+                    best_match_score = 0
+                    target_clean = "".join([c for c in best_name.lower() if c.isalnum() or c.isspace()])
+                    
+                    for o_idx, o_item in enumerate(p_ocr):
+                        item_clean = "".join([c for c in o_item["text"].lower() if c.isalnum() or c.isspace()])
+                        m_score = fuzz.ratio(target_clean, item_clean)
+                        if m_score > best_match_score:
+                            best_match_score = m_score
+                            best_match_idx = o_idx
+                            
+                    if best_match_idx != -1 and best_match_score >= 75:
+                        # We found the printed name! Let's crop it.
+                        # Since the signature is usually above the name, let's include the area above it!
+                        matched_item = p_ocr[best_match_idx]
+                        x1 = max(0, matched_item["x_min"] - 50)
+                        # Go up by 150 pixels to cover the handwritten signature
+                        y1 = max(0, matched_item["y_min"] - 150)
+                        x2 = min(p_img.width, matched_item["x_max"] + 50)
+                        # Go down by 50 pixels to cover the printed name fully
+                        y2 = min(p_img.height, matched_item["y_max"] + 50)
+                        
+                        cropped = p_img.crop((x1, y1, x2, y2))
+                        buf = io.BytesIO()
+                        cropped.save(buf, format='PNG')
+                        b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                        
+                        visual_extractions_dict["customer_signature"] = {
+                            'value': best_name,
+                            'confidence': 90,
+                            'bbox': [x1, y1, x2, y2],
+                            'image_base64': b64
+                        }
+                        found_crop = True
+                        break
+                
+                if not found_crop and "customer_signature" in visual_extractions_dict:
+                    visual_extractions_dict["customer_signature"]["value"] = best_name
+            except Exception as e:
+                logging.warning(f"Failed to update signature crop from secondary match: {e}")
 
     return final_dict
+
 
 
 def classify_and_extract(
@@ -5206,6 +5471,9 @@ def classify_and_extract(
             "Chassis No": chassis_no,
             "Welcome Bonus Amount": welcome_bonus,
         }
+
+        if "spatial_data" in locals() and "visual_extractions" in spatial_data:
+            result["extracted_data"]["visual_extractions"] = spatial_data["visual_extractions"]
         result["validations"] = {
             "Name Match Score": name_score,
             "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH",
@@ -5301,6 +5569,32 @@ def classify_and_extract(
             "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH",
             "DL Status": "FOUND" if dl_no else "NOT FOUND",
             "DOB Status": "FOUND" if dob else "NOT FOUND",
+        }
+    elif is_ledger:
+        result["file_type"] = "LEDGER"
+        extracted_name, name_score = extract_best_name(text, claim_customer_name)
+        result["extracted_data"] = {"Customer Name": extracted_name}
+        
+        # Add visual extraction fallback for Ledger
+        try:
+            ledger_visuals = extract_ledger_visual(file_path, extracted_name)
+            if ledger_visuals:
+                result["extracted_data"]["visual_extractions"] = ledger_visuals
+                
+                # If PyMuPDF missed the name but LLM visual extraction found it, use it!
+                llm_cust_name = ledger_visuals.get("customer_name", {}).get("text")
+                if llm_cust_name and llm_cust_name != "Error connecting to LLM":
+                    llm_ext_name, llm_score = extract_best_name(llm_cust_name, claim_customer_name)
+                    if llm_score > name_score:
+                        name_score = llm_score
+                        extracted_name = llm_ext_name
+                        result["extracted_data"]["Customer Name"] = extracted_name
+        except Exception as e:
+            logging.error(f"Error in ledger visual extraction fallback: {e}")
+            
+        result["validations"] = {
+            "Name Match Score": name_score,
+            "Name Match Status": "MATCH" if name_score >= 80 else "MISMATCH",
         }
 
     return result
@@ -5481,16 +5775,23 @@ def find_floats_in_line(line_text):
 
 def check_amount_match(line_text, target_amount):
     floats = find_floats_in_line(line_text)
+    variant_up = target_amount * 1.18
+    variant_down = target_amount / 1.18
+    
     for val in floats:
-        if abs(val - target_amount) < 1.0:
+        if abs(val - target_amount) < 1.5 or abs(val - variant_up) < 1.5 or abs(val - variant_down) < 1.5:
             return True
+            
     cleaned = line_text.lower()
     cleaned = cleaned.replace("(x)", "000").replace("(o)", "000").replace("()", "000")
     cleaned = cleaned.replace("ou", "00").replace("o0", "00").replace("oo", "00")
     digits = "".join(re.findall(r"\d+", cleaned))
-    target_str = str(int(target_amount))
-    if target_str in digits:
-        return True
+    
+    for target in [target_amount, variant_up, variant_down]:
+        target_str = str(int(round(target)))
+        if len(target_str) >= 2 and target_str in digits:
+            return True
+            
     return False
 
 
@@ -5887,7 +6188,7 @@ def verify_ledger_stamp_and_signature(pdf_path, company_name):
                     status_stamp, score_stamp = compare_values_robust(
                         openai_stamp_dealer, variant
                     )
-                    if status_stamp.startswith("MATCH") or score_stamp >= 70:
+                    if status_stamp.startswith("MATCH") or score_stamp >= 60:
                         return (
                             True,
                             f"GOOD (Stamp/Signature verified via OpenAI: '{openai_stamp_dealer}' matches company '{variant}')",
@@ -5937,8 +6238,8 @@ def verify_ledger_stamp_and_signature(pdf_path, company_name):
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
         # 2. Threshold blue/purple color (representing stamp/signature ink)
-        lower_blue = np.array([90, 80, 80])
-        upper_blue = np.array([130, 255, 255])
+        lower_blue = np.array([90, 40, 40])
+        upper_blue = np.array([165, 255, 255])
         mask = cv2.inRange(hsv, lower_blue, upper_blue)
 
         blue_pixels = np.sum(mask > 0)
@@ -6160,7 +6461,7 @@ Be extremely careful not to mark customer signature as present if it's not actua
 """
 
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-4o-mini",
         "response_format": {"type": "json_object"},
         "messages": [
             {
@@ -6354,7 +6655,7 @@ Return a JSON object in this exact format (no other text, no markdown block):
 """
 
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-4o-mini",
         "response_format": {"type": "json_object"},
         "messages": [
             {
@@ -7273,6 +7574,9 @@ def validate_disclaimer_doc(
             "%d/%m/%Y",
             "%d-%m-%Y",
             "%d.%m.%Y",
+            "%d/%m/%y",
+            "%d-%m-%y",
+            "%d.%m.%y",
             "%Y-%m-%d",
             "%Y/%m/%d",
             "%d %b %Y",
@@ -7280,8 +7584,10 @@ def validate_disclaimer_doc(
             "%d/%b/%Y",
             "%d-%b-%y",
             "%d/%b/%y",
+            "%d %b %y",
             "%d %B %Y",
             "%d-%B-%Y",
+            "%d-%B-%y",
         ]
         for fmt in formats:
             try:
@@ -7564,6 +7870,9 @@ def validate_disclaimer_doc(
                 "%d/%m/%Y",
                 "%d-%m-%Y",
                 "%d.%m.%Y",
+                "%d/%m/%y",
+                "%d-%m-%y",
+                "%d.%m.%y",
                 "%Y-%m-%d",
                 "%Y/%m/%d",
                 "%d %b %Y",
@@ -7571,8 +7880,10 @@ def validate_disclaimer_doc(
                 "%d/%b/%Y",
                 "%d-%b-%y",
                 "%d/%b/%y",
+                "%d %b %y",
                 "%d %B %Y",
                 "%d-%B-%Y",
+                "%d-%B-%y",
             ]
             for fmt in formats:
                 try:
@@ -7617,10 +7928,12 @@ def validate_disclaimer_doc(
         model_word_found = False
         model_matched_words = []
         if web_new_model and text:
-            text_upper = text.upper()
+            text_upper = text.upper().replace("PIK UP", "PICK UP").replace("PIKUP", "PICKUP").replace("PIK", "PICK")
+            web_model_upper = web_new_model.upper().replace("PIK UP", "PICK UP").replace("PIKUP", "PICKUP").replace("PIK", "PICK")
+
             model_words = [
-                w.upper()
-                for w in re.sub(r"[^A-Za-z0-9]", " ", web_new_model).split()
+                w
+                for w in re.sub(r"[^A-Za-z0-9]", " ", web_model_upper).split()
                 if len(w) >= 3
             ]
             model_matched_words = [w for w in model_words if w in text_upper]
@@ -8467,7 +8780,11 @@ def common_verify_documents(
 
     import glob
 
-    pdf_files = glob.glob(os.path.join(target_dir, "*.pdf"))
+    pdf_files = []
+    for ext in ["*.pdf", "*.jpg", "*.jpeg", "*.png", "*.img"]:
+        pdf_files.extend(glob.glob(os.path.join(target_dir, ext)))
+        pdf_files.extend(glob.glob(os.path.join(target_dir, ext.upper())))
+    pdf_files = list(dict.fromkeys(pdf_files))
 
     # Run the rigorous relationship validation
     relationship = evaluate_relationship_documents(
@@ -8490,7 +8807,11 @@ def common_verify_documents(
 
     import glob
 
-    pdf_files = glob.glob(os.path.join(target_dir, "*.pdf"))
+    pdf_files = []
+    for ext in ["*.pdf", "*.jpg", "*.jpeg", "*.png", "*.img"]:
+        pdf_files.extend(glob.glob(os.path.join(target_dir, ext)))
+        pdf_files.extend(glob.glob(os.path.join(target_dir, ext.upper())))
+    pdf_files = list(dict.fromkeys(pdf_files))
     # --- PRE-PASS: Pre-extract company name from disclaimer ---
     company_name = dashboard_dealer_name
     if not company_name:
@@ -9581,6 +9902,30 @@ def common_verify_documents(
             for rem in cross_res.get("remarks", []):
                 issues.append(f"Cross-Validation Mismatch: {rem}")
 
+    # East Zone Welcome Bonus: Check if any mandatory document (Invoice, Disclaimer, Ledger) is missing
+    scheme_type = "welcome"
+    if dashboard_scheme_type:
+        scheme_type = dashboard_scheme_type.strip().lower()
+    elif old_vehicle_details:
+        scheme_val = get_val_by_fuzzy_key(old_vehicle_details, ["Scheme", "Scheme Type"])
+        if scheme_val:
+            scheme_type = scheme_val.strip().lower()
+
+    if current_zone_upper == "EAST" and ("welcome" in scheme_type or "loyalty" in scheme_type):
+        found_types = {doc.get("file_type") for doc in CURRENT_ROW_DOCUMENTS if doc.get("file_type")}
+        missing_docs = []
+        if "INVOICE" not in found_types:
+            missing_docs.append("Invoice")
+        if "DISCLAIMER" not in found_types:
+            missing_docs.append("Disclaimer")
+        if "LEDGER" not in found_types:
+            missing_docs.append("Ledger")
+            
+        if missing_docs:
+            issues.append(
+                f"East Zone Welcome Bonus Validation: Missing mandatory document(s): {', '.join(missing_docs)}"
+            )
+
     # Enforce East Zone Old Vehicle Validation against documents
     if current_zone_upper == "EAST":
         # Get portal old vehicle details
@@ -10003,7 +10348,7 @@ def execute_step_with_interaction(page, step_func, step_name):
                 print("  r : Reload / retry this step immediately")
                 print("  q : Quit script but leave the browser open")
 
-                choice = input("Selection (y/n/r/q): ").strip().lower()
+                choice = get_ui_input("Selection (y/n/r/q): ", "dropdown", ["y", "n", "r", "q"]).strip().lower()
                 if choice == "y":
                     logging.info("Terminating browser and exiting.")
                     sys.exit(1)
@@ -10012,8 +10357,9 @@ def execute_step_with_interaction(page, step_func, step_name):
                     print(
                         "You can manually perform any required actions in the browser window now."
                     )
-                    input(
-                        "Press Enter here when you are ready to retry/reload the step..."
+                    get_ui_input(
+                        "Press Enter here when you are ready to retry/reload the step...",
+                        "text"
                     )
                     break  # Break inner loop, retry outer loop
                 elif choice == "r":
@@ -10068,7 +10414,7 @@ def configure_edge_preferences(user_data_path, profile_dir="Default"):
         logging.warning(f"Could not update Edge Preferences file: {pref_err}")
 
 
-def main(use_existing_login=None, target_claim_choice=None, row_limit=None):
+def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date_range_choice="Current Month"):
     print("=== Mahindra Rise Edge Login Automation ===")
 
     # CLEAR OpenAI cache to force fresh extraction with visual confirmations
@@ -10608,7 +10954,11 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None):
         first_of_month = now.replace(day=1).strftime("%d/%m/%Y")
         today_str = now.strftime("%d/%m/%Y")
 
-        if claim_choice == "1":
+        if date_range_choice == "Testing (1 Jun - 30 Jun)":
+            calculated_from = "01/06/2026"
+            calculated_to = "30/06/2026"
+            logging.info(f"Testing Date Range selected. Using date range: {calculated_from} to {calculated_to}")
+        elif claim_choice == "1":
             calculated_from = first_of_month
             calculated_to = today_str
             logging.info(
@@ -10675,19 +11025,27 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None):
             "Fill Claim To Date",
         )
 
-        # Select Claim Status (Always select "Pending with SSKM")
+        # Select Claim Status (Prompt user for Pending vs Hold)
         status_container = (
-            f"{MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
+            f"#a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
         )
+        selected_status = get_ui_input(
+            "Select Claim Status to process:",
+            "dropdown",
+            ["Pending by SSKM", "Hold by SSKM"]
+        )
+        if not selected_status:
+            selected_status = "Pending by SSKM"
+
         execute_step_with_interaction(
             page,
             lambda: select_antd_dropdown_option(
                 page,
                 get_antd_select_trigger(page, status_container, "Claim Status"),
-                option_text="Pending with SSKM",
+                option_text=selected_status,
                 field_name="Claim Status",
             ),
-            "Select Claim Status (Pending with SSKM)",
+            f"Select Claim Status ({selected_status})",
         )
 
         # Apply filters automatically
@@ -11625,12 +11983,7 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None):
                     f"[Excel] Retry {_attempt + 1}/5: {len(unsaved)} row(s) still pending. "
                     f"The file may still be open in Excel."
                 )
-                print(
-                    f"  ▶ Close kyc_process_results.xlsx in Excel, then press Enter to retry: ",
-                    end="",
-                    flush=True,
-                )
-                input()
+                get_ui_input("  ▶ Close kyc_process_results.xlsx in Excel, then press Enter to retry: ", "text")
         else:
             logging.info(
                 "[Excel] All rows were saved immediately — no end-of-run retry needed."

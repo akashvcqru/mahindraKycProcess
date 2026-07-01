@@ -228,20 +228,55 @@ class AppUI(tk.Tk):
         )
         self.fab_toggle_btn.pack(side="right", padx=20, pady=12)
 
-        # 2. Main split panes
-        self.main_pane = tk.PanedWindow(
+        # VS Code style sidebar (width=60)
+        self.sidebar_frame = tk.Frame(self, bg="#1E1E1E", width=60)
+        self.sidebar_frame.pack(side="left", fill="y")
+        self.sidebar_frame.pack_propagate(False)
+
+        # Workspace pane container
+        self.workspace_pane = tk.PanedWindow(
             self, orient="horizontal", bg=BG_COLOR, bd=0, sashwidth=6, sashrelief="flat"
         )
-        self.main_pane.pack(fill="both", expand=True, padx=10, pady=10)
+        self.workspace_pane.pack(side="left", fill="both", expand=True, padx=10, pady=10)
 
-        # Left Panel (Controls & Console log)
-        self.left_panel = tk.Frame(self.main_pane, bg=BG_COLOR, width=450)
-        self.left_panel.pack_propagate(False)
-        self.main_pane.add(self.left_panel)
+        # Sidebar buttons
+        self.panel_states = {
+            "params": True,
+            "console": True,
+            "history": True,
+            "document": True,
+            "visual": True,
+        }
+
+        self.sidebar_buttons = {}
+        button_info = [
+            ("params", "⚙️\nParams"),
+            ("console", "💻\nConsole"),
+            ("history", "📜\nHistory"),
+            ("document", "📑\nDoc"),
+            ("visual", "🔍\nVisual"),
+        ]
+
+        for key, text in button_info:
+            btn = tk.Button(
+                self.sidebar_frame,
+                text=text,
+                bg="#1E1E1E",
+                fg=TEXT_LIGHT_COLOR,
+                activebackground=ACCENT_COLOR,
+                activeforeground="#FFFFFF",
+                relief="flat",
+                font=("Segoe UI", 9, "bold"),
+                bd=0,
+                pady=15,
+                command=lambda k=key: self.toggle_panel(k)
+            )
+            btn.pack(fill="x", pady=2)
+            self.sidebar_buttons[key] = btn
 
         # Start panel controls card
         self.controls_card = tk.LabelFrame(
-            self.left_panel,
+            self,
             text="Automation Parameters",
             bg=CARD_BG_COLOR,
             fg="#60A5FA",
@@ -251,7 +286,6 @@ class AppUI(tk.Tk):
             relief="solid",
             bd=1,
         )
-        self.controls_card.pack(fill="x", side="top", pady=(0, 10))
 
         # Login Choice Option
         tk.Label(
@@ -289,6 +323,24 @@ class AppUI(tk.Tk):
         )
         self.claim_choice_combo.grid(row=1, column=1, sticky="w", padx=10, pady=6)
 
+        # Date Selection Choice
+        tk.Label(
+            self.controls_card,
+            text="Date Range Option:",
+            bg=CARD_BG_COLOR,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 9),
+        ).grid(row=2, column=0, sticky="w", pady=6)
+        self.date_choice_var = tk.StringVar(value="Current Month")
+        self.date_choice_combo = ttk.Combobox(
+            self.controls_card,
+            textvariable=self.date_choice_var,
+            values=["Current Month", "Testing (1 Jun - 30 Jun)"],
+            state="readonly",
+            width=18,
+        )
+        self.date_choice_combo.grid(row=2, column=1, sticky="w", padx=10, pady=6)
+
         # Rows Limit Bounds Option
         tk.Label(
             self.controls_card,
@@ -296,7 +348,7 @@ class AppUI(tk.Tk):
             bg=CARD_BG_COLOR,
             fg=TEXT_COLOR,
             font=("Segoe UI", 9),
-        ).grid(row=2, column=0, sticky="w", pady=6)
+        ).grid(row=3, column=0, sticky="w", pady=6)
         self.row_limit_var = tk.StringVar(value="a")
         self.row_limit_combo = ttk.Combobox(
             self.controls_card,
@@ -305,7 +357,7 @@ class AppUI(tk.Tk):
             state="normal",
             width=18,
         )
-        self.row_limit_combo.grid(row=2, column=1, sticky="w", padx=10, pady=6)
+        self.row_limit_combo.grid(row=3, column=1, sticky="w", padx=10, pady=6)
 
         # Helper text for custom rows
         self.row_helper_lbl = tk.Label(
@@ -315,7 +367,7 @@ class AppUI(tk.Tk):
             fg=TEXT_LIGHT_COLOR,
             font=("Segoe UI", 8, "italic"),
         )
-        self.row_helper_lbl.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        self.row_helper_lbl.grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 4))
 
         # Action Buttons
         self.start_btn = tk.Button(
@@ -331,11 +383,11 @@ class AppUI(tk.Tk):
             bd=0,
             command=self.start_automation,
         )
-        self.start_btn.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        self.start_btn.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
         # Real-time styled terminal console logs log widget
         self.log_card = tk.LabelFrame(
-            self.left_panel,
+            self,
             text="Real-time Execution Console",
             bg=CARD_BG_COLOR,
             fg="#60A5FA",
@@ -343,7 +395,6 @@ class AppUI(tk.Tk):
             relief="solid",
             bd=1,
         )
-        self.log_card.pack(fill="both", expand=True)
 
         self.log_console = tk.Text(
             self.log_card,
@@ -367,22 +418,9 @@ class AppUI(tk.Tk):
         self.log_console.configure(yscrollcommand=log_scroll.set)
 
         # Right Panel (Splits into Processed Treeview list and main Comparison viewer)
-        self.right_panel = tk.Frame(self.main_pane, bg=BG_COLOR)
-        self.main_pane.add(self.right_panel)
-
-        self.right_split = tk.PanedWindow(
-            self.right_panel,
-            orient="horizontal",
-            bg=BG_COLOR,
-            bd=0,
-            sashwidth=6,
-            sashrelief="flat",
-        )
-        self.right_split.pack(fill="both", expand=True)
-
         # Row History Treeview Panel (Left side)
         self.history_frame = tk.LabelFrame(
-            self.right_split,
+            self,
             text="Processed Rows History",
             bg=CARD_BG_COLOR,
             fg="#60A5FA",
@@ -392,7 +430,6 @@ class AppUI(tk.Tk):
             width=280,
         )
         self.history_frame.pack_propagate(False)
-        self.right_split.add(self.history_frame)
 
         self.history_tree = ttk.Treeview(
             self.history_frame,
@@ -423,8 +460,7 @@ class AppUI(tk.Tk):
         self.history_tree.configure(yscrollcommand=hist_scroll.set)
 
         # 3. Main Details card split viewer
-        self.viewer_frame = tk.Frame(self.right_split, bg=BG_COLOR)
-        self.right_split.add(self.viewer_frame)
+        self.viewer_frame = tk.Frame(self, bg=BG_COLOR)
 
         # Placeholder welcome label
         self.placeholder_lbl = tk.Label(
@@ -546,6 +582,61 @@ class AppUI(tk.Tk):
             self.east_canvas.configure(scrollregion=self.east_canvas.bbox("all"))
             
         self.east_frame.bind("<Configure>", on_east_frame_configure)
+
+        # Tab 5: East Welcome Bonus Ledger
+        self.tab_east_ledger = tk.Frame(self.details_notebook, bg=CARD_BG_COLOR)
+        self.details_notebook.add(self.tab_east_ledger, text="East Welcome Ledger")
+        
+        self.east_ledger_top_frame = tk.Frame(self.tab_east_ledger, bg=CARD_BG_COLOR)
+        self.east_ledger_top_frame.pack(fill="x", padx=5, pady=5)
+        
+        self.east_ledger_analyze_btn = tk.Button(self.east_ledger_top_frame, text="Analyze Ledger (OpenAI)", bg="#667eea", fg="white", font=("Segoe UI", 10, "bold"), command=self.run_east_ledger_analysis)
+        self.east_ledger_analyze_btn.pack(side="left")
+        
+        self.east_ledger_status_lbl = tk.Label(self.east_ledger_top_frame, text="", bg=CARD_BG_COLOR, fg=TEXT_COLOR)
+        self.east_ledger_status_lbl.pack(side="left", padx=10)
+
+        self.east_ledger_canvas = tk.Canvas(self.tab_east_ledger, bg=CARD_BG_COLOR, highlightthickness=0)
+        self.east_ledger_scroll = ttk.Scrollbar(self.tab_east_ledger, orient="vertical", command=self.east_ledger_canvas.yview)
+        self.east_ledger_scroll.pack(side="right", fill="y")
+        self.east_ledger_canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.east_ledger_canvas.configure(yscrollcommand=self.east_ledger_scroll.set)
+        
+        self.east_ledger_frame = tk.Frame(self.east_ledger_canvas, bg=CARD_BG_COLOR)
+        self.east_ledger_canvas.create_window((0, 0), window=self.east_ledger_frame, anchor="nw")
+        
+        def on_east_ledger_frame_configure(event):
+            self.east_ledger_canvas.configure(scrollregion=self.east_ledger_canvas.bbox("all"))
+            
+        self.east_ledger_frame.bind("<Configure>", on_east_ledger_frame_configure)
+
+        # Tab 6: East Welcome Bonus Invoice
+        self.tab_east_invoice = tk.Frame(self.details_notebook, bg=CARD_BG_COLOR)
+        self.details_notebook.add(self.tab_east_invoice, text="East Welcome Invoice")
+        
+        self.east_invoice_top_frame = tk.Frame(self.tab_east_invoice, bg=CARD_BG_COLOR)
+        self.east_invoice_top_frame.pack(fill="x", padx=5, pady=5)
+        
+        self.east_invoice_analyze_btn = tk.Button(self.east_invoice_top_frame, text="Analyze Invoice (OpenAI)", bg="#667eea", fg="white", font=("Segoe UI", 10, "bold"), command=self.run_east_invoice_analysis)
+        self.east_invoice_analyze_btn.pack(side="left")
+        
+        self.east_invoice_status_lbl = tk.Label(self.east_invoice_top_frame, text="", bg=CARD_BG_COLOR, fg=TEXT_COLOR)
+        self.east_invoice_status_lbl.pack(side="left", padx=10)
+
+        self.east_invoice_canvas = tk.Canvas(self.tab_east_invoice, bg=CARD_BG_COLOR, highlightthickness=0)
+        self.east_invoice_scroll = ttk.Scrollbar(self.tab_east_invoice, orient="vertical", command=self.east_invoice_canvas.yview)
+        self.east_invoice_scroll.pack(side="right", fill="y")
+        self.east_invoice_canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.east_invoice_canvas.configure(yscrollcommand=self.east_invoice_scroll.set)
+        
+        self.east_invoice_frame = tk.Frame(self.east_invoice_canvas, bg=CARD_BG_COLOR)
+        self.east_invoice_canvas.create_window((0, 0), window=self.east_invoice_frame, anchor="nw")
+        
+        def on_east_invoice_frame_configure(event):
+            self.east_invoice_canvas.configure(scrollregion=self.east_invoice_canvas.bbox("all"))
+            
+        self.east_invoice_frame.bind("<Configure>", on_east_invoice_frame_configure)
+
 
 
         # Right Interactive Canvas Frame for PDF display
@@ -679,7 +770,7 @@ class AppUI(tk.Tk):
         # VISUAL CONFIRMATIONS PANEL (NEW!)
         # ═══════════════════════════════════════════════════════════
         self.visual_panel = tk.LabelFrame(
-            self.right_split,
+            self,
             text="🔍 Visual Confirmations",
             bg=CARD_BG_COLOR,
             fg="#60A5FA",
@@ -689,7 +780,6 @@ class AppUI(tk.Tk):
             width=380,
         )
         self.visual_panel.pack_propagate(False)
-        self.right_split.add(self.visual_panel)
 
         # Scrollable canvas for visual items
         visual_scroll_container = tk.Frame(self.visual_panel, bg=CARD_BG_COLOR)
@@ -738,6 +828,52 @@ class AppUI(tk.Tk):
 
         # Store PhotoImage references
         self.extraction_images = []
+
+        self.panel_widgets = {
+            "params": self.controls_card,
+            "console": self.log_card,
+            "history": self.history_frame,
+            "document": self.viewer_frame,
+            "visual": self.visual_panel,
+        }
+
+        self.update_workspace_layout()
+
+    def toggle_panel(self, key):
+        self.panel_states[key] = not self.panel_states[key]
+        self.update_workspace_layout()
+
+    def update_workspace_layout(self):
+        # 1. Forget all currently active panes
+        for pane in self.workspace_pane.panes():
+            self.workspace_pane.forget(pane)
+
+        # 2. Add active ones in correct order
+        order = ["params", "console", "history", "document", "visual"]
+        minsizes = {
+            "params": 280,
+            "console": 350,
+            "history": 280,
+            "document": 600,
+            "visual": 300
+        }
+
+        for key in order:
+            widget = self.panel_widgets[key]
+            if self.panel_states[key]:
+                try:
+                    widget.pack_forget()
+                    widget.grid_forget()
+                except Exception:
+                    pass
+                self.workspace_pane.add(widget, minsize=minsizes[key])
+
+            # 3. Update button color based on state
+            btn = self.sidebar_buttons[key]
+            if self.panel_states[key]:
+                btn.config(bg=ACCENT_COLOR, fg="#FFFFFF")
+            else:
+                btn.config(bg="#1E1E1E", fg=TEXT_LIGHT_COLOR)
 
     # Mouse drag-to-pan functions
     def start_pan(self, event):
@@ -881,6 +1017,7 @@ class AppUI(tk.Tk):
         )
         self.login_mode_combo.configure(state="disabled")
         self.claim_choice_combo.configure(state="disabled")
+        self.date_choice_combo.configure(state="disabled")
         self.row_limit_combo.configure(state="disabled")
 
         # Clean console log
@@ -903,12 +1040,14 @@ class AppUI(tk.Tk):
         login_choice = self.login_mode_var.get() == "Already Login"
         claim_choice = "1" if self.claim_choice_var.get() == "Loyalty Claims" else "2"
         row_limit = self.row_limit_var.get()
+        date_range_choice = self.date_choice_var.get()
 
         try:
             automate_login.main(
                 use_existing_login=login_choice,
                 target_claim_choice=claim_choice,
                 row_limit=row_limit,
+                date_range_choice=date_range_choice,
             )
             logging.info("Batch automation processing run finished successfully.")
         except Exception as e:
@@ -923,6 +1062,7 @@ class AppUI(tk.Tk):
         )
         self.login_mode_combo.configure(state="readonly")
         self.claim_choice_combo.configure(state="readonly")
+        self.date_choice_combo.configure(state="readonly")
         self.row_limit_combo.configure(state="normal")
 
     # Bridge between threads: automation thread requests UI inputs
@@ -1383,6 +1523,138 @@ class AppUI(tk.Tk):
             val_lbl = tk.Message(card, text=val, bg="#ffffff", width=400, font=("Segoe UI", 10))
             val_lbl.pack(pady=2, padx=5, fill="x")
 
+    def run_east_ledger_analysis(self):
+        if not hasattr(self, 'current_pdf_path') or not self.current_pdf_path or not os.path.exists(self.current_pdf_path):
+            messagebox.showwarning("No PDF", "Please select a valid ledger PDF first.")
+            return
+            
+        self.east_ledger_analyze_btn.config(state="disabled")
+        self.east_ledger_status_lbl.config(text="Analyzing via OpenAI... please wait.")
+        
+        # Clear existing elements
+        for widget in self.east_ledger_frame.winfo_children():
+            widget.destroy()
+            
+        def task():
+            try:
+                import east_welcome_bonus_ledger
+                results = east_welcome_bonus_ledger.process_east_welcome_bonus_ledger(self.current_pdf_path)
+                self.after(0, self.display_east_ledger_results, results)
+            except Exception as e:
+                logging.error(f"Error in east ledger analysis: {e}")
+                self.after(0, lambda: self.east_ledger_status_lbl.config(text=f"Error: {e}"))
+                self.after(0, lambda: self.east_ledger_analyze_btn.config(state="normal"))
+                
+        threading.Thread(target=task, daemon=True).start()
+        
+    def display_east_ledger_results(self, results):
+        self.east_ledger_analyze_btn.config(state="normal")
+        self.east_ledger_status_lbl.config(text="Analysis complete.")
+        
+        # Keep references to PhotoImages to prevent garbage collection
+        self.east_ledger_photo_images = getattr(self, 'east_ledger_photo_images', [])
+        self.east_ledger_photo_images.clear()
+        
+        for idx, item in enumerate(results):
+            card = tk.Frame(self.east_ledger_frame, bg="#ffffff", bd=1, relief="solid")
+            card.pack(fill="x", pady=5, padx=5)
+            
+            # Header
+            hdr = tk.Frame(card, bg="#f0f0f0")
+            hdr.pack(fill="x", padx=2, pady=2)
+            tk.Label(hdr, text=item.get("field", f"Field {idx+1}"), bg="#f0f0f0", font=("Segoe UI", 9, "bold")).pack(side="left")
+            
+            # Image Crop
+            b64 = item.get("crop_b64")
+            if b64:
+                try:
+                    img_data = base64.b64decode(b64)
+                    pil_img = Image.open(io.BytesIO(img_data))
+                    
+                    # Scale down if too large
+                    max_width = 400
+                    if pil_img.width > max_width:
+                        ratio = max_width / pil_img.width
+                        new_h = int(pil_img.height * ratio)
+                        pil_img = pil_img.resize((max_width, new_h), Image.LANCZOS)
+                        
+                    photo = ImageTk.PhotoImage(pil_img)
+                    self.east_ledger_photo_images.append(photo)
+                    tk.Label(card, image=photo, bg="#ffffff").pack(pady=2)
+                except Exception as e:
+                    logging.warning(f"Failed to display crop: {e}")
+            
+            # Value
+            val = item.get("value", "")
+            val_lbl = tk.Message(card, text=val, bg="#ffffff", width=400, font=("Segoe UI", 10))
+            val_lbl.pack(pady=2, padx=5, fill="x")
+
+    def run_east_invoice_analysis(self):
+        if not hasattr(self, 'current_pdf_path') or not self.current_pdf_path or not os.path.exists(self.current_pdf_path):
+            messagebox.showwarning("No PDF", "Please select a valid invoice PDF first.")
+            return
+            
+        self.east_invoice_analyze_btn.config(state="disabled")
+        self.east_invoice_status_lbl.config(text="Analyzing via OpenAI... please wait.")
+        
+        # Clear existing elements
+        for widget in self.east_invoice_frame.winfo_children():
+            widget.destroy()
+            
+        def task():
+            try:
+                import east_welcome_bonus_invoice
+                results = east_welcome_bonus_invoice.process_east_welcome_bonus_invoice(self.current_pdf_path)
+                self.after(0, self.display_east_invoice_results, results)
+            except Exception as e:
+                logging.error(f"Error in east invoice analysis: {e}")
+                self.after(0, lambda: self.east_invoice_status_lbl.config(text=f"Error: {e}"))
+                self.after(0, lambda: self.east_invoice_analyze_btn.config(state="normal"))
+                
+        threading.Thread(target=task, daemon=True).start()
+        
+    def display_east_invoice_results(self, results):
+        self.east_invoice_analyze_btn.config(state="normal")
+        self.east_invoice_status_lbl.config(text="Analysis complete.")
+        
+        # Keep references to PhotoImages to prevent garbage collection
+        self.east_invoice_photo_images = getattr(self, 'east_invoice_photo_images', [])
+        self.east_invoice_photo_images.clear()
+        
+        for idx, item in enumerate(results):
+            card = tk.Frame(self.east_invoice_frame, bg="#ffffff", bd=1, relief="solid")
+            card.pack(fill="x", pady=5, padx=5)
+            
+            # Header
+            hdr = tk.Frame(card, bg="#f0f0f0")
+            hdr.pack(fill="x", padx=2, pady=2)
+            tk.Label(hdr, text=item.get("field", f"Field {idx+1}"), bg="#f0f0f0", font=("Segoe UI", 9, "bold")).pack(side="left")
+            
+            # Image Crop
+            b64 = item.get("crop_b64")
+            if b64:
+                try:
+                    img_data = base64.b64decode(b64)
+                    pil_img = Image.open(io.BytesIO(img_data))
+                    
+                    # Scale down if too large
+                    max_width = 400
+                    if pil_img.width > max_width:
+                        ratio = max_width / pil_img.width
+                        new_h = int(pil_img.height * ratio)
+                        pil_img = pil_img.resize((max_width, new_h), Image.LANCZOS)
+                        
+                    photo = ImageTk.PhotoImage(pil_img)
+                    self.east_invoice_photo_images.append(photo)
+                    tk.Label(card, image=photo, bg="#ffffff").pack(pady=2)
+                except Exception as e:
+                    logging.warning(f"Failed to display crop: {e}")
+            
+            # Value
+            val = item.get("value", "")
+            val_lbl = tk.Message(card, text=val, bg="#ffffff", width=400, font=("Segoe UI", 10))
+            val_lbl.pack(pady=2, padx=5, fill="x")
+
     # Load local history registry
     def load_history_from_file(self):
         history_file = os.path.join(
@@ -1422,8 +1694,67 @@ class AppUI(tk.Tk):
         self.extraction_images = []
 
         extracted_data = doc_dict.get("extracted_data", {})
+        pdf_path = doc_dict.get("file_path", doc_dict.get("path", ""))
+        doc_type = doc_dict.get("file_type", doc_dict.get("doc_type", "")).upper()
+        
+        is_ledger = False
+        fname_lower = os.path.basename(pdf_path).lower()
+        dict_fname_lower = doc_dict.get("file_name", "").lower()
+        if (doc_type == "LEDGER" or 
+            "ledger" in fname_lower or 
+            "ledger" in dict_fname_lower or 
+            fname_lower.startswith("l-") or 
+            dict_fname_lower.startswith("l-")):
+            is_ledger = True
+            
+        if is_ledger and os.path.exists(pdf_path):
+            logging.info(f"[UI] Intercepting LEDGER visual confirmations for {pdf_path}")
+            
+            # Show a loading label
+            loading_lbl = tk.Label(
+                self.visual_frame,
+                text="⏳ Extracting Ledger fields...\nPlease wait (approx 5-10s)",
+                fg=TEXT_LIGHT_COLOR,
+                bg=BG_COLOR,
+                font=("Segoe UI", 10),
+                justify=tk.CENTER,
+            )
+            loading_lbl.pack(pady=40)
+            
+            def ledger_task():
+                try:
+                    import east_welcome_bonus_ledger
+                    ledger_results = east_welcome_bonus_ledger.process_east_welcome_bonus_ledger(pdf_path)
+                    
+                    visual_data = {}
+                    for item in ledger_results:
+                        field = item.get("field", "")
+                        val = item.get("value", "")
+                        crop = item.get("crop_b64", item.get("crop", ""))
+                        if field:
+                            visual_data[field] = {
+                                "value": val,
+                                "confidence": 95,
+                                "image_base64": crop
+                            }
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+                except Exception as e:
+                    logging.error(f"[UI] Ledger specific visual extraction failed: {e}")
+                    # Fallback
+                    visual_data = extracted_data.get("visual_extractions", {})
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+                    
+            import threading
+            threading.Thread(target=ledger_task, daemon=True).start()
+            return
+            
         visual_data = extracted_data.get("visual_extractions", {})
+        self._render_visual_data(visual_data)
 
+    def _render_visual_data(self, visual_data, loading_lbl=None):
+        if loading_lbl:
+            loading_lbl.destroy()
+            
         logging.info(f"[UI] Visual data has {len(visual_data)} fields")
 
         if not visual_data:
