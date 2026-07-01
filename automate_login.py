@@ -9915,7 +9915,8 @@ def common_verify_documents(
         found_types = {doc.get("file_type") for doc in CURRENT_ROW_DOCUMENTS if doc.get("file_type")}
         missing_docs = []
         if "INVOICE" not in found_types:
-            missing_docs.append("Invoice")
+            if "GUWAHATI" not in current_city_upper:
+                missing_docs.append("Invoice")
         if "DISCLAIMER" not in found_types:
             missing_docs.append("Disclaimer")
         if "LEDGER" not in found_types:
