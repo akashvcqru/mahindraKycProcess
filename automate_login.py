@@ -11028,12 +11028,12 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
 
         # Select Claim Status (Prompt user for Pending vs Hold)
         status_container = (
-            f"#a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
+            f"#\\33 6da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
         )
         selected_status = get_ui_input(
             "Select Claim Status to process:",
             "dropdown",
-            ["Pending by SSKM", "Hold by SSKM"]
+            ["Pending by SSKM", "Hold by SSKM", "Pending with AO"]
         )
         if not selected_status:
             selected_status = "Pending by SSKM"
