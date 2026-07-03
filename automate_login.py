@@ -1107,6 +1107,9 @@ def extract_scheme_type_from_old_vehicle_details(page):
     try:
         # 1. Look specifically at row 7 inside the right drawer table
         selectors = [
+            "body > div:nth-child(4) > div > div.ant-drawer-content-wrapper > div > div.ant-drawer-body > div > div.ant-col > div > form > div.ant-row.app_drawerBodyRight > div > div.ant-card > div > div > div > table > tbody > tr:nth-child(8) > td:nth-child(1) > div > span",
+            "body > div:nth-child(4) > div > div.ant-drawer-content-wrapper > div > div.ant-drawer-body > div > div[class*='ant-col'] > div > form > div[class*='app_drawerBodyRight'] > div > div > div > div > div > table > tbody > tr:nth-child(8) > td:nth-child(1) > div > span",
+            "div[class*='app_drawerBodyRight'] table tbody tr:nth-child(8)",
             "div[class*='app_drawerBodyRight'] table tbody tr:nth-child(7)",
             "div[class*='app_drawerBodyRight'] table tbody tr:nth-child(7) th:nth-child(1)",
             "div[class*='app_drawerBodyRight'] table tbody tr:nth-child(7) td:nth-child(1)",
@@ -1171,7 +1174,10 @@ def select_drawer_timeline_tab(page, tab_name):
     if not tab_locator:
         tab_locator = drawer_body.get_by_text(tab_name).first
 
-    tab_locator.wait_for(state="visible", timeout=20000)
+    try:
+        tab_locator.wait_for(state="visible", timeout=3000)
+    except Exception as e:
+        raise Exception(f"Tab '{tab_name}' not visible after 3 seconds: {e}")
 
     logging.info(f"Clicking on details drawer tab: '{tab_name}'")
     tab_locator.scroll_into_view_if_needed()
@@ -1325,6 +1331,15 @@ def download_supporting_documents(page, context, customer_name):
     script_dir = get_exe_dir()
     target_dir = os.path.join(script_dir, "documents", safe_customer_name)
     os.makedirs(target_dir, exist_ok=True)
+    
+    # Clear old files from previous runs so the UI never mixes documents across rows
+    import glob as _glob
+    for _old_file in _glob.glob(os.path.join(target_dir, "*")):
+        try:
+            os.remove(_old_file)
+        except Exception as _rm_err:
+            logging.warning(f"Could not remove old document {_old_file}: {_rm_err}")
+    
     logging.info(f"Target directory for documents: {target_dir}")
 
     # Target data-testid="downloadBtn" directly inside the supporting documents view
@@ -10415,7 +10430,9 @@ def configure_edge_preferences(user_data_path, profile_dir="Default"):
         logging.warning(f"Could not update Edge Preferences file: {pref_err}")
 
 
-def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date_range_choice="Current Month"):
+def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date_range_choice="Current Month", force_scheme=None):
+    global FORCE_SCHEME
+    FORCE_SCHEME = force_scheme
     print("=== Mahindra Rise Edge Login Automation ===")
 
     # CLEAR OpenAI cache to force fresh extraction with visual confirmations
@@ -11026,14 +11043,14 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
             "Fill Claim To Date",
         )
 
-        # Select Claim Status (Prompt user for Pending vs Hold)
+        # Select Claim Status (Prompt user for Pending vs Hold vs Pending with AO)
         status_container = (
-            f"#a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
+            f"#36da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #\\33 6da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
         )
         selected_status = get_ui_input(
             "Select Claim Status to process:",
             "dropdown",
-            ["Pending by SSKM", "Hold by SSKM"]
+            ["Pending by SSKM", "Hold by SSKM", "Pending with AO"]
         )
         if not selected_status:
             selected_status = "Pending by SSKM"
@@ -11250,7 +11267,6 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
             logging.info(f"Snapshotted {len(main_table_snapshots)} main table row(s).")
         except Exception as snap_err:
             logging.warning(f"Could not snapshot main table rows: {snap_err}")
-
         def _get_table_field(row_idx, *possible_keys):
             """Fetch a field from the pre-snapshotted main table row, trying multiple key spellings."""
             rd = main_table_snapshots.get(row_idx, {})
@@ -11262,6 +11278,9 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
 
         # ── Per-row processing loop ─────────────────────────────────────────
         for loop_idx, row_idx in enumerate(rows_to_process):
+            global CURRENT_ROW_DOCUMENTS
+            CURRENT_ROW_DOCUMENTS.clear()
+            
             row_issues = []  # collect issues → determines Hold / Approved
 
             print(f"\n{'=' * 60}")
@@ -11311,6 +11330,18 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
             # Parse claim details table inside drawer
             logging.info("Parsing claim details metadata table...")
             claim_details = parse_drawer_details_table(page)
+
+            # Clear old documents for this customer to prevent processing stale files
+            import shutil
+            cust_name = claim_details.get("Customer Name", "")
+            if cust_name:
+                safe_name = "".join(c for c in cust_name if c.isalnum() or c in (" ", "_", "-")).strip()
+                t_dir = os.path.join(get_exe_dir(), "documents", safe_name)
+                if os.path.exists(t_dir):
+                    try:
+                        shutil.rmtree(t_dir, ignore_errors=True)
+                    except Exception as err:
+                        logging.warning(f"Could not clear documents directory: {err}")
 
             # Extract claim date from drawer left side
             claim_date = extract_claim_date_from_drawer(page)
@@ -11431,10 +11462,21 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                             break
 
             # Final fallback: extract_scheme_type_from_old_vehicle_details
-            if not combined_scheme.strip() or combined_scheme.strip() in [
-                "total amount"
-            ]:
+            needs_fallback = False
+            if not combined_scheme.strip():
+                needs_fallback = True
+            elif "total amount" in combined_scheme:
+                needs_fallback = True
+            elif not any(kw in combined_scheme for kw in ["welcome", "veero", "scrappage"]):
+                needs_fallback = True
+
+            if needs_fallback:
                 try:
+                    # We must switch to the Old Vehicle Details tab to read the scheme
+                    select_drawer_timeline_tab(page, "Old Vehicle Details")
+                    # Small wait to let it render
+                    page.wait_for_timeout(1000)
+                    
                     fallback_scheme = extract_scheme_type_from_old_vehicle_details(page)
                     if fallback_scheme:
                         combined_scheme += " " + fallback_scheme
@@ -11442,6 +11484,8 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                         logging.info(
                             f"Row {row_idx + 1}: Scheme resolved from old vehicle details tab: '{fallback_scheme}'"
                         )
+                    else:
+                        logging.info(f"Row {row_idx + 1}: Scheme could not be found in old vehicle details.")
                 except Exception as fb_err:
                     logging.warning(f"Fallback scheme extraction failed: {fb_err}")
 
@@ -11453,8 +11497,19 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                 any(kw in combined_scheme for kw in ["welcome", "veero"])
                 and not is_scrappage
             )
+            
+            force_scheme_val = globals().get("FORCE_SCHEME")
+            if force_scheme_val:
+                if force_scheme_val == "scrappage" and not is_scrappage:
+                    logging.info(f"Row {row_idx + 1}: Skipping because UI selected Scrappage Bonus, but row is '{scheme_value_text}'")
+                    close_drawer_robust(page)
+                    continue
+                if force_scheme_val == "welcome" and not is_welcome_scheme_detected:
+                    logging.info(f"Row {row_idx + 1}: Skipping because UI selected Welcome Bonus, but row is '{scheme_value_text}'")
+                    close_drawer_robust(page)
+                    continue
 
-            if claim_choice == "1":
+            if claim_choice == "1" and not force_scheme_val:
                 # Loyalty Claims mode: treat all as Welcome Bonus regardless of label
                 is_welcome_scheme = True
                 if is_scrappage:
@@ -11470,6 +11525,92 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                     )
             else:
                 is_welcome_scheme = is_welcome_scheme_detected
+
+            if is_scrappage:
+                logging.info(f"Row {row_idx + 1}: Intercepting for Scrappage Scheme processing.")
+                
+                # Fetch Old Vehicle Details
+                old_vehicle_details = {}
+                try:
+                    select_drawer_timeline_tab(page, "Old Vehicle Details")
+                    old_vehicle_details = parse_drawer_table_general(
+                        page, exclude_keys=["Invoice No", "New vehicle Model Group"], min_non_empty=1
+                    ) or {}
+                except Exception as e:
+                    logging.warning(f"Failed to fetch Old Vehicle Details for Scrappage: {e}")
+                
+                # Download Documents
+                try:
+                    select_drawer_timeline_tab(page, "Supporting Document")
+                    download_supporting_documents(page, context, claim_details.get("Customer Name", ""))
+                    
+                    select_drawer_timeline_tab(page, "Non Mandatory Document")
+                    download_supporting_documents(page, context, claim_details.get("Customer Name", ""))
+                except Exception as docs_err:
+                    logging.warning(f"Failed to fetch Scrappage documents: {docs_err}")
+                
+                # Route to isolated module
+                import scrappage_scheme.processor as scrappage_processor
+                
+                _customer = claim_details.get("Customer Name", _get_table_field(row_idx, "customer", "name"))
+                
+                # Identify target directory where documents were just downloaded
+                _safe_cust = "".join(c for c in _customer if c.isalnum() or c in (" ", "_", "-")).strip() or "Unknown_Customer"
+                _t_dir = os.path.join(get_exe_dir(), "documents", _safe_cust)
+                
+                # POPULATE CURRENT_ROW_DOCUMENTS FOR THE UI
+                import glob
+                for ext in ["*.pdf", "*.jpg", "*.jpeg", "*.png"]:
+                    for f in glob.glob(os.path.join(_t_dir, ext)):
+                        if not any(d.get("file_path") == f for d in CURRENT_ROW_DOCUMENTS):
+                            fname = os.path.basename(f)
+                            CURRENT_ROW_DOCUMENTS.append({
+                                "file_path": f,
+                                "file_name": fname,
+                                "doc_type": fname.split("-")[0].upper() if "-" in fname else "DOCUMENT"
+                            })
+
+                issues = scrappage_processor.process_scrappage(claim_details, old_vehicle_details, _t_dir)
+                
+                # Record to Excel
+                scrappage_status = "HOLD" if issues else "APPROVED"
+                _record = {
+                    "row_num": row_idx + 1,
+                    "claim_no": _get_table_field(row_idx, "claim no", "claim number"),
+                    "claim_date": _get_table_field(row_idx, "claim date"),
+                    "area_office": _get_table_field(row_idx, "area office"),
+                    "customer_name": _customer,
+                    "dealer_name": _get_table_field(row_idx, "dealer name"),
+                    "dealer_branch": _get_table_field(row_idx, "dealer branch", "branch"),
+                    "chassis_no": claim_details.get("Chassis No", ""),
+                    "scheme": "Scrappage Bonus",
+                    "status": scrappage_status,
+                    "hold_reasons": "\n".join(issues) if issues else "",
+                }
+                append_row_to_excel(_record, excel_path)
+                
+                # Hook for UI to display complete row history card
+                row_result = {
+                    "row_idx": row_idx,
+                    "customer_name": _customer,
+                    "status": scrappage_status,
+                    "issues": list(issues),
+                    "claim_details": dict(claim_details) if claim_details else {},
+                    "old_vehicle_details": dict(old_vehicle_details) if old_vehicle_details else {},
+                    "documents": list(CURRENT_ROW_DOCUMENTS),
+                }
+                save_row_to_history(row_result)
+                if UI_ROW_COMPLETE_CALLBACK:
+                    try:
+                        UI_ROW_COMPLETE_CALLBACK(row_result)
+                    except Exception as cb_err:
+                        logging.error(f"UI row complete callback failed: {cb_err}")
+                
+                try:
+                    close_drawer_robust(page)
+                except Exception as close_err:
+                    pass
+                continue
 
             if not is_welcome_scheme:
                 logging.info(

@@ -1,0 +1,161 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "G N Automation LLP",
+            "line": 1,
+            "crop": {
+                "top": 0,
+                "left": 0,
+                "bottom": 5,
+                "right": 30
+            }
+        },
+        "document_type": {
+            "text": "TAX INVOICE",
+            "line": 8,
+            "crop": {
+                "top": 10,
+                "left": 40,
+                "bottom": 15,
+                "right": 60
+            }
+        },
+        "invoice_no_date": {
+            "text": "GST Invoice No: INV2T0800294 GST Invoice Date: 13/05/2026",
+            "line": 14,
+            "crop": {
+                "top": 20,
+                "left": 60,
+                "bottom": 25,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "RAM CHANDRA ORAM",
+            "line": 11,
+            "crop": {
+                "top": 15,
+                "left": 10,
+                "bottom": 20,
+                "right": 40
+            }
+        },
+        "oem_discount": {
+            "text": "Note : Scrappage Bonus Amount is Rs.45000.00/-(Inclusive of GST)",
+            "amount": "45000.00",
+            "line": 40,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 90,
+                "right": 60
+            }
+        },
+        "customer_signature": {
+            "text": "Present",
+            "line": 45,
+            "crop": {
+                "top": 90,
+                "left": 10,
+                "bottom": 95,
+                "right": 30
+            }
+        },
+        "dealer_stamp": {
+            "text": "G N Automation LLP",
+            "line": 45,
+            "crop": {
+                "top": 90,
+                "left": 70,
+                "bottom": 95,
+                "right": 90
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "G N Automation LLP",
+            "line": 1,
+            "crop": {
+                "top": 5,
+                "left": 70,
+                "bottom": 15,
+                "right": 95
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 6,
+            "crop": {
+                "top": 20,
+                "left": 20,
+                "bottom": 25,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "RAM CHANDRA ORAM",
+            "line": 7,
+            "crop": {
+                "top": 25,
+                "left": 5,
+                "bottom": 30,
+                "right": 50
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: AS23CC6401, Vehicle Make: Mahindra, Vehicle Model: Pikup SC",
+            "line": 11,
+            "crop": {
+                "top": 30,
+                "left": 5,
+                "bottom": 40,
+                "right": 95
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: BOL MAXX PUP HD 1.7 LX, Chassis Number: T1D87625, Engine Number: TTT1D15868",
+            "line": 17,
+            "crop": {
+                "top": 40,
+                "left": 5,
+                "bottom": 50,
+                "right": 95
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 45000.0 from the G N AUTONATION LLP",
+            "line": 27,
+            "crop": {
+                "top": 50,
+                "left": 5,
+                "bottom": 55,
+                "right": 95
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: RAM CHANDRA ORAM",
+            "line": 38,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 90,
+                "right": 50
+            }
+        },
+        "dealer_stamp": {
+            "text": "G N AUTONATION LLP, authorised signature present",
+            "line": 38,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 95
+            }
+        }
+    },
+    "ledger": {},
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

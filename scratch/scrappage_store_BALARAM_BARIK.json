@@ -1,0 +1,60 @@
+{
+    "invoice": {},
+    "disclaimer": {},
+    "ledger": {
+        "dealership_name": {
+            "text": "ADITYA CAR AUTOMOTIVES PVT. LTD.",
+            "line": 3,
+            "crop": {
+                "top": 5,
+                "left": 10,
+                "bottom": 10,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "BALARAM BARIK",
+            "line": 6,
+            "crop": {
+                "top": 15,
+                "left": 10,
+                "bottom": 20,
+                "right": 90
+            }
+        },
+        "document_name": {
+            "text": "Ledger Report",
+            "line": 5,
+            "crop": {
+                "top": 10,
+                "left": 10,
+                "bottom": 15,
+                "right": 90
+            }
+        },
+        "scrappage_bonus": {
+            "text": "SCRAPPAGE BONUS",
+            "amount": "5,000.00",
+            "line": 18,
+            "crop": {
+                "top": 40,
+                "left": 10,
+                "bottom": 45,
+                "right": 90
+            }
+        },
+        "seal_stamp": {
+            "text": "ADITYA MOTORS",
+            "line": 30,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 95
+            }
+        }
+    },
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

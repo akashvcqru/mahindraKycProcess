@@ -1,0 +1,60 @@
+{
+    "invoice": {},
+    "disclaimer": {},
+    "ledger": {
+        "dealership_name": {
+            "text": "ADITYA CAR AUTOMOTIVES PVT. LTD.",
+            "line": 3,
+            "crop": {
+                "top": 5,
+                "left": 10,
+                "bottom": 10,
+                "right": 50
+            }
+        },
+        "customer_name": {
+            "text": "SONALI NAYAK-R720238271",
+            "line": 7,
+            "crop": {
+                "top": 15,
+                "left": 10,
+                "bottom": 20,
+                "right": 50
+            }
+        },
+        "document_name": {
+            "text": "Ledger Report",
+            "line": 6,
+            "crop": {
+                "top": 12,
+                "left": 10,
+                "bottom": 15,
+                "right": 50
+            }
+        },
+        "scrappage_bonus": {
+            "text": "WELCOME BONUS",
+            "amount": "5,000.00",
+            "line": 19,
+            "crop": {
+                "top": 40,
+                "left": 10,
+                "bottom": 45,
+                "right": 50
+            }
+        },
+        "seal_stamp": {
+            "text": "ADITYA MOTORS",
+            "line": 30,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 90
+            }
+        }
+    },
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

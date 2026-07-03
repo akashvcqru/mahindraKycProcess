@@ -1,0 +1,60 @@
+{
+    "invoice": {},
+    "disclaimer": {},
+    "ledger": {
+        "dealership_name": {
+            "text": "AUTO CARRIAGE PRIVATE LIMITED",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 5,
+                "bottom": 5,
+                "right": 50
+            }
+        },
+        "customer_name": {
+            "text": "ABIR BHATTACHARYA(MAXX HD 2.0 L SXI)-R270090886",
+            "line": 7,
+            "crop": {
+                "top": 10,
+                "left": 50,
+                "bottom": 15,
+                "right": 95
+            }
+        },
+        "document_name": {
+            "text": "LEDGER REPORT (Without Details)",
+            "line": 13,
+            "crop": {
+                "top": 20,
+                "left": 30,
+                "bottom": 25,
+                "right": 70
+            }
+        },
+        "scrappage_bonus": {
+            "text": "WELCOME BONUS",
+            "amount": "5,000.00",
+            "line": 27,
+            "crop": {
+                "top": 70,
+                "left": 10,
+                "bottom": 75,
+                "right": 90
+            }
+        },
+        "seal_stamp": {
+            "text": "Auto Carriage",
+            "line": 32,
+            "crop": {
+                "top": 85,
+                "left": 40,
+                "bottom": 95,
+                "right": 60
+            }
+        }
+    },
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

@@ -1,0 +1,80 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "G N Automation LLP",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 5,
+                "bottom": 10,
+                "right": 40
+            }
+        },
+        "document_type": {
+            "text": "TAX INVOICE",
+            "line": 8,
+            "crop": {
+                "top": 15,
+                "left": 40,
+                "bottom": 20,
+                "right": 60
+            }
+        },
+        "invoice_no_date": {
+            "text": "GST Invoice No: INV27B000344 GST Invoice Date: 20/05/2026",
+            "line": 13,
+            "crop": {
+                "top": 25,
+                "left": 60,
+                "bottom": 30,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "SUNANDA MAHAPATRA",
+            "line": 15,
+            "crop": {
+                "top": 30,
+                "left": 10,
+                "bottom": 35,
+                "right": 40
+            }
+        },
+        "oem_discount": {
+            "text": "Note : Scrappage Bonus Amount is Rs.20000.00/-(inclusive of GST)",
+            "amount": "20000.00",
+            "line": 40,
+            "crop": {
+                "top": 75,
+                "left": 5,
+                "bottom": 80,
+                "right": 60
+            }
+        },
+        "customer_signature": {
+            "text": "Present",
+            "line": 45,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 90,
+                "right": 30
+            }
+        },
+        "dealer_stamp": {
+            "text": "G N Automation LLP",
+            "line": 48,
+            "crop": {
+                "top": 90,
+                "left": 70,
+                "bottom": 95,
+                "right": 95
+            }
+        }
+    },
+    "disclaimer": {},
+    "ledger": {},
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

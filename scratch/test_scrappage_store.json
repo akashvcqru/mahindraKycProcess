@@ -1,0 +1,89 @@
+{
+    "invoice": {},
+    "disclaimer": {
+        "dealership_name": {
+            "text": "ANANT CARS",
+            "line": 1,
+            "crop": {
+                "top": 5,
+                "left": 5,
+                "bottom": 15,
+                "right": 25
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 6,
+            "crop": {
+                "top": 15,
+                "left": 30,
+                "bottom": 20,
+                "right": 70
+            }
+        },
+        "customer_name": {
+            "text": "G NIVETHA",
+            "line": 8,
+            "crop": {
+                "top": 20,
+                "left": 5,
+                "bottom": 25,
+                "right": 30
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: HR08K1032, Vehicle Make: Maruti, Vehicle Model: Alto",
+            "line": 12,
+            "crop": {
+                "top": 25,
+                "left": 5,
+                "bottom": 35,
+                "right": 70
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: THAR ROXX MX3 DMT RWD STL BLK/BR, Chassis Number: T2E27718, Engine Number: YYT4E53883",
+            "line": 18,
+            "crop": {
+                "top": 35,
+                "left": 5,
+                "bottom": 45,
+                "right": 70
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the ANANTCARS AUTO PVT. LTD.",
+            "line": 28,
+            "crop": {
+                "top": 45,
+                "left": 5,
+                "bottom": 50,
+                "right": 70
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: G NIVETHA",
+            "line": 38,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 90,
+                "right": 30
+            }
+        },
+        "dealer_stamp": {
+            "text": "ANANTCARS AUTO PVT. LTD. | Authorised signature present",
+            "line": 38,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 95
+            }
+        }
+    },
+    "ledger": {},
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

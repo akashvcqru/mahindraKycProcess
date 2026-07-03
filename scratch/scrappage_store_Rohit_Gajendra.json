@@ -1,0 +1,213 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 0,
+                "left": 0,
+                "bottom": 5,
+                "right": 100
+            }
+        },
+        "document_type": {
+            "text": "TAX INVOICE",
+            "line": 10,
+            "crop": {
+                "top": 10,
+                "left": 0,
+                "bottom": 15,
+                "right": 100
+            }
+        },
+        "invoice_no_date": {
+            "text": "INV/27A00216/2022-23 13/05/2022",
+            "line": 16,
+            "crop": {
+                "top": 15,
+                "left": 50,
+                "bottom": 20,
+                "right": 100
+            }
+        },
+        "customer_name": {
+            "text": "CHANDRASHEKHAR SAHU",
+            "line": 14,
+            "crop": {
+                "top": 15,
+                "left": 0,
+                "bottom": 20,
+                "right": 50
+            }
+        },
+        "oem_discount": {
+            "text": "Note : Scrappage Bonus Amount is Rs.20000.00/- (inclusive of GST)",
+            "amount": "20000.00",
+            "line": 40,
+            "crop": {
+                "top": 70,
+                "left": 0,
+                "bottom": 75,
+                "right": 100
+            }
+        },
+        "customer_signature": {
+            "text": "Present",
+            "line": 50,
+            "crop": {
+                "top": 85,
+                "left": 0,
+                "bottom": 90,
+                "right": 50
+            }
+        },
+        "dealer_stamp": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 50,
+            "crop": {
+                "top": 85,
+                "left": 50,
+                "bottom": 90,
+                "right": 100
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 70,
+                "bottom": 10,
+                "right": 95
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 6,
+            "crop": {
+                "top": 15,
+                "left": 20,
+                "bottom": 20,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "Chandrashekhar Sahu",
+            "line": 8,
+            "crop": {
+                "top": 22,
+                "left": 5,
+                "bottom": 28,
+                "right": 40
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: HR43B6163, Vehicle Make: Renault, Vehicle Model: Duster",
+            "line": 13,
+            "crop": {
+                "top": 30,
+                "left": 5,
+                "bottom": 40,
+                "right": 95
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: MAHINDRA BOLERO B6 BS-VI, Chassis Number: T6D23737, Engine Number: TVT6D49262",
+            "line": 19,
+            "crop": {
+                "top": 42,
+                "left": 5,
+                "bottom": 50,
+                "right": 95
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the RALAS AUTOMOBILES",
+            "line": 30,
+            "crop": {
+                "top": 60,
+                "left": 5,
+                "bottom": 65,
+                "right": 95
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: Chandrashekhar Sahu",
+            "line": 38,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 90,
+                "right": 40
+            }
+        },
+        "dealer_stamp": {
+            "text": "RALAS AUTOMOBILES | Authorised signature present",
+            "line": 38,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 95
+            }
+        }
+    },
+    "ledger": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 0,
+                "left": 0,
+                "bottom": 5,
+                "right": 100
+            }
+        },
+        "customer_name": {
+            "text": "CHANDRASHEKHAR SAHU S/O NAJRU RAM SAHU",
+            "line": 8,
+            "crop": {
+                "top": 10,
+                "left": 0,
+                "bottom": 15,
+                "right": 100
+            }
+        },
+        "document_name": {
+            "text": "Ledger Account",
+            "line": 9,
+            "crop": {
+                "top": 15,
+                "left": 0,
+                "bottom": 20,
+                "right": 100
+            }
+        },
+        "scrappage_bonus": {
+            "text": "SCRAPPAGE BONUS",
+            "amount": "20,000.00",
+            "line": 15,
+            "crop": {
+                "top": 30,
+                "left": 50,
+                "bottom": 35,
+                "right": 100
+            }
+        },
+        "seal_stamp": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 30,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 90
+            }
+        }
+    },
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

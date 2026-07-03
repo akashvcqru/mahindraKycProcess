@@ -1,0 +1,60 @@
+{
+    "invoice": {},
+    "disclaimer": {},
+    "ledger": {
+        "dealership_name": {
+            "text": "Minerva Automobiles Pvt.Ltd.",
+            "line": 1,
+            "crop": {
+                "top": 5,
+                "left": 5,
+                "bottom": 10,
+                "right": 50
+            }
+        },
+        "customer_name": {
+            "text": "Siddhanta Digal (T6D24286) S/O - DINURA DIGAL AT- DAPAKIA",
+            "line": 5,
+            "crop": {
+                "top": 15,
+                "left": 5,
+                "bottom": 20,
+                "right": 80
+            }
+        },
+        "document_name": {
+            "text": "Ledger Account",
+            "line": 6,
+            "crop": {
+                "top": 20,
+                "left": 5,
+                "bottom": 25,
+                "right": 30
+            }
+        },
+        "scrappage_bonus": {
+            "text": "Scrappage Bonus",
+            "amount": "20,000.00",
+            "line": 14,
+            "crop": {
+                "top": 40,
+                "left": 5,
+                "bottom": 45,
+                "right": 80
+            }
+        },
+        "seal_stamp": {
+            "text": "Minerva Automobiles Pvt.Ltd.",
+            "line": 20,
+            "crop": {
+                "top": 85,
+                "left": 60,
+                "bottom": 95,
+                "right": 90
+            }
+        }
+    },
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

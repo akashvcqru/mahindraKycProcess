@@ -359,6 +359,24 @@ class AppUI(tk.Tk):
         )
         self.row_limit_combo.grid(row=3, column=1, sticky="w", padx=10, pady=6)
 
+        # Scheme Type Choice
+        tk.Label(
+            self.controls_card,
+            text="Scheme Type Mode:",
+            bg=CARD_BG_COLOR,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 9),
+        ).grid(row=4, column=0, sticky="w", pady=6)
+        self.scheme_type_var = tk.StringVar(value="Welcome Bonus Scheme")
+        self.scheme_type_combo = ttk.Combobox(
+            self.controls_card,
+            textvariable=self.scheme_type_var,
+            values=["Welcome Bonus Scheme", "Scrappage Bonus Scheme"],
+            state="readonly",
+            width=18,
+        )
+        self.scheme_type_combo.grid(row=4, column=1, sticky="w", padx=10, pady=6)
+
         # Helper text for custom rows
         self.row_helper_lbl = tk.Label(
             self.controls_card,
@@ -367,7 +385,7 @@ class AppUI(tk.Tk):
             fg=TEXT_LIGHT_COLOR,
             font=("Segoe UI", 8, "italic"),
         )
-        self.row_helper_lbl.grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        self.row_helper_lbl.grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 4))
 
         # Action Buttons
         self.start_btn = tk.Button(
@@ -383,7 +401,7 @@ class AppUI(tk.Tk):
             bd=0,
             command=self.start_automation,
         )
-        self.start_btn.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        self.start_btn.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
         # Real-time styled terminal console logs log widget
         self.log_card = tk.LabelFrame(
@@ -1019,6 +1037,7 @@ class AppUI(tk.Tk):
         self.claim_choice_combo.configure(state="disabled")
         self.date_choice_combo.configure(state="disabled")
         self.row_limit_combo.configure(state="disabled")
+        self.scheme_type_combo.configure(state="disabled")
 
         # Clean console log
         self.log_console.configure(state="normal")
@@ -1041,6 +1060,7 @@ class AppUI(tk.Tk):
         claim_choice = "1" if self.claim_choice_var.get() == "Loyalty Claims" else "2"
         row_limit = self.row_limit_var.get()
         date_range_choice = self.date_choice_var.get()
+        force_scheme = "scrappage" if self.scheme_type_var.get() == "Scrappage Bonus Scheme" else "welcome"
 
         try:
             automate_login.main(
@@ -1048,6 +1068,7 @@ class AppUI(tk.Tk):
                 target_claim_choice=claim_choice,
                 row_limit=row_limit,
                 date_range_choice=date_range_choice,
+                force_scheme=force_scheme
             )
             logging.info("Batch automation processing run finished successfully.")
         except Exception as e:
@@ -1064,6 +1085,7 @@ class AppUI(tk.Tk):
         self.claim_choice_combo.configure(state="readonly")
         self.date_choice_combo.configure(state="readonly")
         self.row_limit_combo.configure(state="normal")
+        self.scheme_type_combo.configure(state="readonly")
 
     # Bridge between threads: automation thread requests UI inputs
     def ui_input_callback_bridge(self, prompt, prompt_type="text", options=None):
@@ -1700,12 +1722,23 @@ class AppUI(tk.Tk):
         is_ledger = False
         fname_lower = os.path.basename(pdf_path).lower()
         dict_fname_lower = doc_dict.get("file_name", "").lower()
+        _ledger_prefixes = ("l-", "les", "ldgr", "lgr", "ldr", "ldg")
         if (doc_type == "LEDGER" or 
             "ledger" in fname_lower or 
             "ledger" in dict_fname_lower or 
-            fname_lower.startswith("l-") or 
-            dict_fname_lower.startswith("l-")):
+            any(fname_lower.startswith(p) for p in _ledger_prefixes) or
+            any(dict_fname_lower.startswith(p) for p in _ledger_prefixes)):
             is_ledger = True
+
+        is_invoice = False
+        _invoice_prefixes = ("inv",)
+        _invoice_keywords = ("invoice",)
+        if (doc_type == "INVOICE" or
+            any(fname_lower.startswith(p) for p in _invoice_prefixes) or
+            any(dict_fname_lower.startswith(p) for p in _invoice_prefixes) or
+            any(k in fname_lower for k in _invoice_keywords) or
+            any(k in dict_fname_lower for k in _invoice_keywords)):
+            is_invoice = True
             
         if is_ledger and os.path.exists(pdf_path):
             logging.info(f"[UI] Intercepting LEDGER visual confirmations for {pdf_path}")
@@ -1723,8 +1756,13 @@ class AppUI(tk.Tk):
             
             def ledger_task():
                 try:
-                    import east_welcome_bonus_ledger
-                    ledger_results = east_welcome_bonus_ledger.process_east_welcome_bonus_ledger(pdf_path)
+                    current_scheme = self.scheme_type_var.get()
+                    if current_scheme == "Scrappage Bonus Scheme":
+                        import scrappage_scheme.ledger_validation as scrappage_ledger
+                        ledger_results = scrappage_ledger.process_scrappage_ledger_visual(pdf_path)
+                    else:
+                        import east_welcome_bonus_ledger
+                        ledger_results = east_welcome_bonus_ledger.process_east_welcome_bonus_ledger(pdf_path)
                     
                     visual_data = {}
                     for item in ledger_results:
@@ -1747,7 +1785,144 @@ class AppUI(tk.Tk):
             import threading
             threading.Thread(target=ledger_task, daemon=True).start()
             return
-            
+
+        if is_invoice and os.path.exists(pdf_path):
+            logging.info(f"[UI] Intercepting INVOICE visual confirmations for {pdf_path}")
+
+            loading_lbl = tk.Label(
+                self.visual_frame,
+                text="⏳ Extracting Invoice fields...\nPlease wait (approx 5-10s)",
+                fg=TEXT_LIGHT_COLOR,
+                bg=BG_COLOR,
+                font=("Segoe UI", 10),
+                justify=tk.CENTER,
+            )
+            loading_lbl.pack(pady=40)
+
+            def invoice_task():
+                try:
+                    import scrappage_scheme.invoice_validation as inv_mod
+                    invoice_results = inv_mod.process_invoice_visual(pdf_path)
+
+                    visual_data = {}
+                    for item in invoice_results:
+                        field = item.get("field", "")
+                        val   = item.get("value", "")
+                        crop  = item.get("crop_b64", item.get("crop", ""))
+                        if field:
+                            visual_data[field] = {
+                                "value": val,
+                                "confidence": 95,
+                                "image_base64": crop,
+                            }
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+                except Exception as exc:
+                    logging.error(f"[UI] Invoice visual extraction failed: {exc}")
+                    visual_data = extracted_data.get("visual_extractions", {})
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+
+            import threading
+            threading.Thread(target=invoice_task, daemon=True).start()
+            return
+
+        is_oem = False
+        _oem_prefixes = ("cod", "oem")
+        _oem_keywords = ("certificate of deposit", "scrappage certificate", "cod", "oem")
+        if (doc_type in ("COD", "OEM") or
+            any(fname_lower.startswith(p) for p in _oem_prefixes) or
+            any(dict_fname_lower.startswith(p) for p in _oem_prefixes) or
+            any(k in fname_lower for k in _oem_keywords) or
+            any(k in dict_fname_lower for k in _oem_keywords)):
+            is_oem = True
+
+        if is_oem and os.path.exists(pdf_path):
+            logging.info(f"[UI] Intercepting OEM/COD visual confirmations for {pdf_path}")
+
+            loading_lbl = tk.Label(
+                self.visual_frame,
+                text="⏳ Extracting Certificate fields...\nPlease wait (approx 5-10s)",
+                fg=TEXT_LIGHT_COLOR,
+                bg=BG_COLOR,
+                font=("Segoe UI", 10),
+                justify=tk.CENTER,
+            )
+            loading_lbl.pack(pady=40)
+
+            def oem_task():
+                try:
+                    import scrappage_scheme.oem_document_validation as oem_mod
+                    oem_results = oem_mod.process_oem_visual(pdf_path)
+
+                    visual_data = {}
+                    for item in oem_results:
+                        field = item.get("field", "")
+                        val   = item.get("value", "")
+                        crop  = item.get("crop_b64", item.get("crop", ""))
+                        if field:
+                            visual_data[field] = {
+                                "value": val,
+                                "confidence": 95,
+                                "image_base64": crop,
+                            }
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+                except Exception as exc:
+                    logging.error(f"[UI] OEM visual extraction failed: {exc}")
+                    visual_data = extracted_data.get("visual_extractions", {})
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+
+            import threading
+            threading.Thread(target=oem_task, daemon=True).start()
+            return
+
+        is_disclaimer = False
+        _dis_prefixes = ("dis", "dsc", "cd-")
+        _dis_keywords = ("disclaimer",)
+        if (doc_type == "DISCLAIMER" or
+            any(fname_lower.startswith(p) for p in _dis_prefixes) or
+            any(dict_fname_lower.startswith(p) for p in _dis_prefixes) or
+            any(k in fname_lower for k in _dis_keywords) or
+            any(k in dict_fname_lower for k in _dis_keywords)):
+            is_disclaimer = True
+
+        if is_disclaimer and os.path.exists(pdf_path):
+            logging.info(f"[UI] Intercepting DISCLAIMER visual confirmations for {pdf_path}")
+
+            loading_lbl = tk.Label(
+                self.visual_frame,
+                text="⏳ Extracting Disclaimer fields...\nPlease wait (approx 5-10s)",
+                fg=TEXT_LIGHT_COLOR,
+                bg=BG_COLOR,
+                font=("Segoe UI", 10),
+                justify=tk.CENTER,
+            )
+            loading_lbl.pack(pady=40)
+
+            def disclaimer_task():
+                try:
+                    import scrappage_scheme.disclaimer_validation as dis_mod
+                    disclaimer_results = dis_mod.process_disclaimer_visual(pdf_path)
+
+                    visual_data = {}
+                    for item in disclaimer_results:
+                        field = item.get("field", "")
+                        val   = item.get("value", "")
+                        crop  = item.get("crop_b64", item.get("crop", ""))
+                        if field:
+                            visual_data[field] = {
+                                "value": val,
+                                "confidence": 95,
+                                "image_base64": crop,
+                            }
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+                except Exception as exc:
+                    logging.error(f"[UI] Disclaimer visual extraction failed: {exc}")
+                    visual_data = extracted_data.get("visual_extractions", {})
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+
+            import threading
+            threading.Thread(target=disclaimer_task, daemon=True).start()
+            return
+
         visual_data = extracted_data.get("visual_extractions", {})
         self._render_visual_data(visual_data)
 
