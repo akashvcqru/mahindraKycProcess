@@ -1,0 +1,122 @@
+0:00:00 Tab1 PageLoad
+0:00:00 Microsoft.DataDeletionHelper.End_SessionStorage
+0:00:00 Microsoft.DataDeletionHelper.End_SessionStorage
+0:00:00 Microsoft.DataDeletionHelper.End_SessionStorage
+0:00:00 Browser1 Insert inactive Tab2 at 1
+0:00:00 Tab2 StartNav2 #reload
+0:00:00 Microsoft.DataDeletionHelper.End_LocalStorage
+0:00:00 Microsoft.DataDeletionHelper.End_LocalStorage
+0:00:00 Microsoft.DataDeletionHelper.End_LocalStorage
+0:00:00 Microsoft.DataDeletionHelper.End_LocalStorage
+0:00:00 Microsoft.DataDeletionHelper.End_Cookies
+0:00:00 Microsoft.DataDeletionHelper.End_Cookies
+0:00:00 Microsoft.DataDeletionHelper.End_Cookies
+0:00:00 Microsoft.DataDeletionHelper.End_Cookies
+0:00:00 Tab1 StartNav3 #typed
+0:00:00 Tab1 FinishNav3
+0:00:01 Tab1 PageLoad
+0:00:01 Tab1 StartNav4 #renderer-script #link
+0:00:01 Tab1 FinishNav4
+0:00:01 Tab1 StartNav5 #renderer-script #link
+0:00:01 Tab1 FinishNav5
+0:00:01 Tab1 StartNav6 #renderer-script #link
+0:00:01 Tab1 FinishNav6
+0:00:01 Tab2 FinishNav2
+0:00:02 Tab2 PageLoad
+0:00:02 Tab2 StartNav7 #renderer-script #link
+0:00:02 Tab2 FinishNav7
+0:00:02 Microsoft.Autofill.Password.SignIn.NoAutofillSuggestions
+0:00:03 Tab2 StartNav8 #google #renderer-script #auto_subframe
+0:00:03 Tab2 FinishNav8
+0:00:03 Tab2 StartNav9 #renderer-script #auto_subframe
+0:00:03 Tab2 FinishNav9
+0:00:03 Tab2 PageLoad
+0:00:03 Tab2 PageLoad #google
+0:00:04 Tab3 StartNav10 #ntp #link
+0:00:04 Tab1 StartNav11 #renderer-script #link
+0:00:04 Tab1 FinishNav11
+0:00:04 Microsoft.Autofill.Password.SignIn.NoAutofillSuggestions
+0:00:04 Tab3 FinishNav10
+0:00:04 Tab2 StartNav12 #renderer-script #auto_subframe
+0:00:04 Tab2 FinishNav12
+0:00:04 Tab2 StartNav13 #renderer-script #auto_subframe
+0:00:04 Tab2 FinishNav13
+0:00:04 Tab2 PageLoad
+0:00:04 Tab2 PageLoad
+0:00:04 Tab1 StartNav14 #google #renderer-script #auto_subframe
+0:00:04 Tab3 PageLoad #ntp
+0:00:04 Tab1 FinishNav14
+0:00:04 Tab1 PageLoad #google
+0:00:04 Tab1 StartNav15 #renderer-script #auto_subframe
+0:00:04 Tab1 FinishNav15
+0:00:04 Tab1 PageLoad
+0:00:05 Tab1 StartNav16 #renderer-script #auto_subframe
+0:00:05 Tab1 FinishNav16
+0:00:05 Tab1 PageLoad
+0:00:05 Tab1 StartNav17 #renderer-script #auto_subframe
+0:00:05 Tab1 FinishNav17
+0:00:05 Tab1 PageLoad
+0:00:06 Tab1 StartNav18 #renderer-user #link
+0:00:07 Tab1 FinishNav18
+0:00:07 Tab1 StartNav19 #renderer-script #link
+0:00:07 Tab1 PageLoad
+0:00:07 Tab1 FinishNav19
+0:00:07 Tab1 PageLoad
+0:00:07 Tab1 StartNav20 #renderer-script #link
+0:00:08 Tab1 FinishNav20
+0:00:08 Tab1 PageLoad
+0:00:09 Tab1 StartNav21 #renderer-script #form_submit
+0:00:09 Tab1 FinishNav21
+0:00:09 Tab1 PageLoad
+0:00:09 Tab1 StartNav22 #renderer-script #form_submit
+0:00:10 Tab1 FinishNav22
+0:00:10 Tab1 PageLoad
+0:00:10 Tab1 StartNav23 #renderer-script #link
+0:00:10 Tab1 FinishNav23
+0:00:10 Tab1 StartNav24 #renderer-script #link
+0:00:10 Tab1 FinishNav24
+0:00:11 Tab1 StartNav25 #renderer-script #link
+0:00:11 Tab1 FinishNav25
+0:00:11 Tab1 StartNav26 #renderer-script #link
+0:00:11 Tab1 FinishNav26
+0:00:13 Tab1 StartNav27 #renderer-user #link
+0:00:14 Tab1 FinishNav27
+0:00:14 Tab1 PageLoad
+0:00:14 Tab1 StartNav28 #renderer-script #form_submit
+0:00:14 Tab1 FinishNav28
+0:00:14 Tab1 StartNav29 #renderer-script #link
+0:00:14 Tab1 PageLoad
+0:00:14 Tab1 FinishNav29
+0:00:14 Tab1 StartNav30 #renderer-script #link
+0:00:14 Tab1 FinishNav30
+0:00:14 Tab1 PageLoad
+0:00:15 Tab1 StartNav31 #renderer-script #link
+0:00:15 Tab1 FinishNav31
+0:00:15 Tab1 StartNav32 #renderer-script #link
+0:00:15 Tab1 FinishNav32
+0:00:15 Tab1 StartNav33 #renderer-script #link
+0:00:15 Tab1 FinishNav33
+0:00:15 Tab1 StartNav34 #renderer-script #link
+0:00:15 Tab1 FinishNav34
+0:00:15 Tab1 StartNav35 #renderer-script #form_submit
+0:00:16 Tab1 FinishNav35
+0:00:16 Tab1 PageLoad
+0:00:16 Tab1 StartNav36 #renderer-script #link
+0:00:16 Tab1 FinishNav36
+0:00:16 Tab1 StartNav37 #renderer-script #link
+0:00:16 Tab1 StartNav38 #renderer-script #link
+0:00:16 Tab1 FinishNav38
+0:00:16 Tab1 FinishNav37
+0:00:16 Tab1 PageLoad
+0:00:16 Tab1 StartNav39 #renderer-script #link
+0:00:16 Tab1 FinishNav39
+0:00:17 Tab1 StartNav40 #renderer-user #link
+0:00:17 Tab1 FinishNav40
+0:00:18 Tab1 StartNav41 #renderer-user #link
+0:00:18 Tab1 FinishNav41
+0:00:18 Tab1 StartNav42 #renderer-user #link
+0:00:18 Tab1 FinishNav42
+0:00:19 Tab1 StartNav43 #renderer-user #link
+0:00:19 Tab1 FinishNav43
+0:00:29 Widget Closed: StatusBubble
+0:11:48 Microsoft.Shutdown.ExitIgnoreUnloadHandlers

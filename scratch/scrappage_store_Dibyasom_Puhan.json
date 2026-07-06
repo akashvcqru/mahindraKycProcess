@@ -1,0 +1,264 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 1,
+            "crop": {
+                "top": 5,
+                "left": 10,
+                "bottom": 10,
+                "right": 90
+            }
+        },
+        "document_type": {
+            "text": "Tax Invoice",
+            "line": 7,
+            "crop": {
+                "top": 15,
+                "left": 40,
+                "bottom": 20,
+                "right": 60
+            }
+        },
+        "invoice_no_date": {
+            "text": "INV27A000024, Date: 22-MAY-26",
+            "line": 18,
+            "crop": {
+                "top": 25,
+                "left": 70,
+                "bottom": 30,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "Dibyason Puhan",
+            "line": 13,
+            "crop": {
+                "top": 35,
+                "left": 10,
+                "bottom": 40,
+                "right": 30
+            }
+        },
+        "oem_discount": {
+            "text": "Note : OEM Loyalty Discount Amount is Rs.20000/- (inclusive of GST)",
+            "amount": "20000",
+            "line": 50,
+            "crop": {
+                "top": 75,
+                "left": 10,
+                "bottom": 80,
+                "right": 90
+            }
+        },
+        "customer_signature": {
+            "text": "Present, matches customer name",
+            "line": 55,
+            "crop": {
+                "top": 85,
+                "left": 10,
+                "bottom": 90,
+                "right": 30
+            }
+        },
+        "dealer_stamp": {
+            "text": "KRISHNA AUTOMOTIVE, Rourkela",
+            "line": 60,
+            "crop": {
+                "top": 90,
+                "left": 10,
+                "bottom": 95,
+                "right": 30
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 43,
+            "crop": {
+                "top": 85,
+                "left": 10,
+                "bottom": 90,
+                "right": 30
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 5,
+            "crop": {
+                "top": 10,
+                "left": 20,
+                "bottom": 15,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "Dibyason Puhan",
+            "line": 7,
+            "crop": {
+                "top": 15,
+                "left": 5,
+                "bottom": 20,
+                "right": 50
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: DL9CF0176, Vehicle Make: Maruti, Vehicle Model: Wagon R",
+            "line": 11,
+            "crop": {
+                "top": 20,
+                "left": 5,
+                "bottom": 30,
+                "right": 50
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: SCORPIO-N G MT 2WD Z8L 7S WQ, Chassis Number: TE657252, Engine Number: ZCT4D52642",
+            "line": 18,
+            "crop": {
+                "top": 30,
+                "left": 5,
+                "bottom": 40,
+                "right": 50
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the KRISHNA AUTOMOTIVE",
+            "line": 28,
+            "crop": {
+                "top": 40,
+                "left": 5,
+                "bottom": 45,
+                "right": 50
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: Dibyason Puhan",
+            "line": 38,
+            "crop": {
+                "top": 75,
+                "left": 5,
+                "bottom": 80,
+                "right": 50
+            }
+        },
+        "dealer_stamp": {
+            "text": "KRISHNA AUTOMOTIVE | Authorised signature present",
+            "line": 42,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 90,
+                "right": 95
+            }
+        }
+    },
+    "ledger": {
+        "dealership_name": {
+            "text": "KRISHNA AUTOMOTIVE (2025-26)",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 10,
+                "bottom": 6,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "DIBYASOM PUHAN/RKL/25-26/T6E57252",
+            "line": 7,
+            "crop": {
+                "top": 14,
+                "left": 10,
+                "bottom": 18,
+                "right": 90
+            }
+        },
+        "document_name": {
+            "text": "Ledger Account",
+            "line": 8,
+            "crop": {
+                "top": 18,
+                "left": 10,
+                "bottom": 22,
+                "right": 90
+            }
+        },
+        "scrappage_bonus": {
+            "text": "SCRAPPAGE BONOUS",
+            "amount": "20,000.00",
+            "line": 27,
+            "crop": {
+                "top": 60,
+                "left": 10,
+                "bottom": 64,
+                "right": 90
+            }
+        },
+        "seal_stamp": {
+            "text": "KRISHNA AUTOMOTIVE ROURKELA",
+            "line": 40,
+            "crop": {
+                "top": 90,
+                "left": 70,
+                "bottom": 98,
+                "right": 90
+            }
+        }
+    },
+    "cod": {
+        "certificate_no": {
+            "text": "COD20260560DL9CF0176",
+            "line": 2,
+            "crop": {
+                "top": 10,
+                "left": 10,
+                "bottom": 15,
+                "right": 50
+            }
+        },
+        "customer_name": {
+            "text": "DIBYASOM PUHAN",
+            "line": 4,
+            "crop": {
+                "top": 20,
+                "left": 10,
+                "bottom": 25,
+                "right": 50
+            }
+        },
+        "registration_no": {
+            "text": "DL9CF0176",
+            "line": 5,
+            "crop": {
+                "top": 25,
+                "left": 60,
+                "bottom": 30,
+                "right": 80
+            }
+        },
+        "vehicle_make": {
+            "text": "MARUTI SUZUKI INDIA LTD",
+            "line": 8,
+            "crop": {
+                "top": 35,
+                "left": 10,
+                "bottom": 40,
+                "right": 50
+            }
+        },
+        "vehicle_model": {
+            "text": "WAGON R LX",
+            "line": 8,
+            "crop": {
+                "top": 35,
+                "left": 60,
+                "bottom": 40,
+                "right": 80
+            }
+        }
+    },
+    "oem": {},
+    "relational": {}
+}

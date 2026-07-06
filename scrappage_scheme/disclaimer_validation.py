@@ -241,9 +241,11 @@ def check_model_match(portal_model, doc_model):
     matches_all = True
     for pw in pm_words:
         word_found = False
-        # Try direct/substring match first
+        # Try direct/substring match first (with O/0 normalization for vehicle models)
         for dw in dm_words:
-            if pw in dw or dw in pw:
+            pw_norm = pw.replace("O", "0")
+            dw_norm = dw.replace("O", "0")
+            if pw_norm in dw_norm or dw_norm in pw_norm:
                 word_found = True
                 break
         
@@ -312,25 +314,39 @@ def validate_disclaimer(pdf_path, claim_details, old_vehicle_details, data_store
     if not cust_text:
         issues.append("Customer name not found on disclaimer")
     elif claim_name_val:
-        status_cust, score_cust = compare_values_robust(cust_text, claim_name_val)
-        if not status_cust.startswith("MATCH"):
-            # Word-based check
-            c_parts = [p for p in re.sub(r"[^a-zA-Z0-9\s]", "", claim_name_val.lower()).split() if len(p) > 2]
-            name_match = False
-            if c_parts:
-                if all(p in cust_text.lower() for p in c_parts):
-                    name_match = True
-            if not name_match:
-                issues.append(
-                    f"Disclaimer customer name '{cust_text}' does not match claim customer '{claim_name_val}'"
-                )
+        # Clean both names
+        c1 = re.sub(r"[^A-Z0-9\s]", "", cust_text.upper()).strip()
+        c2 = re.sub(r"[^A-Z0-9\s]", "", claim_name_val.upper()).strip()
+        
+        c2_words = [w for w in c2.split() if len(w) >= 3]
+        word_match = False
+        if c2_words and all(w in c1 for w in c2_words):
+            word_match = True
+            
+        import difflib
+        ratio = difflib.SequenceMatcher(None, c1, c2).ratio()
+        
+        if not (c2 in c1 or c1 in c2 or word_match or ratio >= 0.80):
+            issues.append(
+                f"Disclaimer customer name '{cust_text}' does not match claim customer '{claim_name_val}'"
+            )
 
     # 4. Dealership name match
     dealer_name_val = ""
-    for k, v in claim_details.items():
-        if "dealer" in k.lower():
-            dealer_name_val = str(v).strip()
-            break
+    for key in ["Dealer Name", "DealerName", "Dealer_Name", "Dealer"]:
+        if key in claim_details:
+            val = str(claim_details[key]).strip()
+            if val and not val.isdigit() and val != "0":
+                dealer_name_val = val
+                break
+    
+    if not dealer_name_val:
+        for k, v in claim_details.items():
+            if "dealer" in k.lower() and "code" not in k.lower():
+                val = str(v).strip()
+                if val and not val.isdigit() and val != "0":
+                    dealer_name_val = val
+                    break
             
     doc_dealer_name = extracted.get("dealership_name", {}).get("text", "").strip()
     if not doc_dealer_name:

@@ -1365,54 +1365,8 @@ def download_supporting_documents(page, context, customer_name):
 
     logging.info(f"Found active/visible download buttons: {button_count}")
 
-    # Shared list to store files captured by our route interceptor
-    captured_files = []
-
     # Standard event capture fallbacks
     event_result = {"download": None, "new_page": None}
-
-    def intercept_route(route):
-        req = route.request
-        url = req.url
-
-        # Skip static assets
-        if any(url.endswith(ext) for ext in [".js", ".css", ".woff", ".woff2", ".svg"]):
-            route.continue_()
-            return
-
-        try:
-            # Fetch response in background
-            response = route.fetch()
-            headers = response.headers
-            content_type = headers.get("content-type", "").lower()
-            content_disposition = headers.get("content-disposition", "").lower()
-
-            is_file = (
-                "pdf" in content_type
-                or "image/" in content_type
-                or "octet-stream" in content_type
-                or "attachment" in content_disposition
-                or "filename=" in content_disposition
-            )
-
-            if is_file:
-                # Read bytes and append to captured list
-                body = response.body()
-                captured_files.append({"body": body, "headers": headers, "url": url})
-                logging.info(
-                    f"[Debug] Background routing successfully captured file from: {url}"
-                )
-                # Respond with status 200 and empty body so Edge doesn't open native download popup
-                route.fulfill(status=200, body=b"")
-            else:
-                route.fulfill(response=response)
-        except Exception as err:
-            # If routing fails, continue natively (standard download/navigation)
-            logging.info(f"[Debug] Interception bypassed/failed for {url}: {err}")
-            route.continue_()
-
-    # Enable background request interception at BrowserContext level
-    context.route("**/*", intercept_route)
 
     def on_download(d):
         event_result["download"] = d
@@ -1467,7 +1421,6 @@ def download_supporting_documents(page, context, customer_name):
             )
 
             # Reset event and capture results for this iteration
-            captured_files.clear()
             event_result["download"] = None
             event_result["new_page"] = None
 
@@ -1487,27 +1440,6 @@ def download_supporting_documents(page, context, customer_name):
             page_open_time = None
 
             while time.time() - start_time < 10.0:
-                # Path 1: Background Route Interception (No popup)
-                if len(captured_files) > 0:
-                    file_info = captured_files[0]
-                    body = file_info["body"]
-                    headers = file_info["headers"]
-                    url = file_info["url"]
-
-                    filename = get_filename_from_response(headers, url)
-                    if not filename:
-                        ext = get_extension_from_headers(headers)
-                        filename = f"{title}{ext}"
-
-                    target_path = os.path.join(target_dir, filename)
-                    with open(target_path, "wb") as f:
-                        f.write(body)
-                    logging.info(
-                        f"Downloaded (via background intercept): {target_path}"
-                    )
-                    success = True
-                    break
-
                 # Path 2: Playwright Download Event Fallback
                 if event_result["download"] is not None:
                     download = event_result["download"]
@@ -1581,10 +1513,6 @@ def download_supporting_documents(page, context, customer_name):
         # Clean up listeners and route interception
         try:
             context.remove_listener("page", on_page_opened)
-        except Exception:
-            pass
-        try:
-            context.unroute("**/*")
         except Exception:
             pass
         # Ensure the Edge download popup flyout is closed before we proceed
@@ -10541,9 +10469,31 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                 print(f"  Please enter a number between 1 and {len(profiles)}.")
         configure_edge_preferences(user_data_path, profile_dir)
 
+        # Workaround for Chrome/Edge 130+ blocking remote debugging on default User Data directory
+        import shutil
+        playwright_user_data = os.path.join(get_exe_dir(), "Edge_Playwright_Profile")
+        logging.info(f"Copying Edge profile to temporary workspace directory to bypass debugging restrictions...")
+        os.makedirs(playwright_user_data, exist_ok=True)
+        
+        src_local_state = os.path.join(user_data_path, "Local State")
+        dst_local_state = os.path.join(playwright_user_data, "Local State")
+        if os.path.exists(src_local_state):
+            try:
+                shutil.copy2(src_local_state, dst_local_state)
+            except Exception as e:
+                logging.warning(f"Could not copy Local State: {e}")
+                
+        src_profile = os.path.join(user_data_path, profile_dir)
+        dst_profile = os.path.join(playwright_user_data, profile_dir)
+        if os.path.exists(src_profile):
+            try:
+                shutil.copytree(src_profile, dst_profile, dirs_exist_ok=True)
+            except Exception as e:
+                logging.warning(f"Could not copy Profile directory: {e}")
+
         # Launch persistent context with the chosen profile folder
         logging.info(
-            f"Launching Edge with profile path: {user_data_path}, profile directory: {profile_dir}"
+            f"Launching Edge with profile path: {playwright_user_data}, profile directory: {profile_dir}"
         )
         base_docs_dir = os.path.join(get_exe_dir(), "documents")
         os.makedirs(base_docs_dir, exist_ok=True)
@@ -10552,7 +10502,7 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
         for attempt in range(max_retries):
             try:
                 context = p.chromium.launch_persistent_context(
-                    user_data_dir=user_data_path,
+                    user_data_dir=playwright_user_data,
                     channel="msedge",
                     headless=False,
                     args=[
@@ -11090,14 +11040,16 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
 
         # ── Set page size to 100 so all rows are visible ─────────────────────
         try:
-            page_size_trigger = (
-                "#root > div > div > div > div > div > div > div > div > div > div > main > "
-                "div:nth-child(4) > div > div > "
-                "div.ant-row.app_marT20__oMGUn.css-1442l13 > div:nth-child(1) > div > div"
-            )
             logging.info("Setting table page size to 100...")
-            page.wait_for_selector(page_size_trigger, state="visible", timeout=8000)
-            page.click(page_size_trigger)
+            # Try to find the dropdown by looking for the current page size text (usually '10 / page' or '10')
+            # Or by finding the select box inside the specific row container.
+            page_size_trigger = page.locator("div.ant-select:has-text('10 / page'), div.ant-select-selection-item:has-text('10 / page'), div.ant-select-selection-item:has-text('10')").last
+            if page_size_trigger.count() > 0:
+                page_size_trigger.click(timeout=8000)
+            else:
+                # Fallback to a broader class-based approach
+                fallback_trigger = page.locator(".ant-pagination-options-size-changer, .ant-select-selector").last
+                fallback_trigger.click(timeout=8000)
 
             # Wait for the Ant Design dropdown to appear
             page.wait_for_selector(

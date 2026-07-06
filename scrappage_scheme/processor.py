@@ -6,6 +6,7 @@ from .ledger_validation import validate_ledger
 from .invoice_validation import validate_invoice
 from .oem_document_validation import validate_oem
 from .disclaimer_validation import validate_disclaimer
+from .cod_validation import validate_cod
 
 # Prefixes / keywords that identify each document type from the portal filename
 _LEDGER_PREFIXES  = ("LDGR", "LES", "L-", "LGR", "LDR", "LDG")
@@ -20,34 +21,52 @@ _DISCLAIMER_KEYWORDS = ("DISCLAIMER",)
 
 def _is_ledger(filename):
     fn = filename.upper()
-    return (
-        any(fn.startswith(p) for p in _LEDGER_PREFIXES)
-        or any(k in fn for k in _LEDGER_KEYWORDS)
-    )
+    if any(k in fn for k in ("LEDGER", "STMT", "STATEMENT")):
+        return True
+    prefixes = ("LDGR", "LES", "LGR", "LDR", "LDG")
+    if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in prefixes):
+        return True
+    if "-L-" in fn or " L-" in fn or fn.startswith("L-") or "-TL-" in fn or " TL-" in fn or fn.startswith("TL-"):
+        return True
+    return False
 
 
 def _is_invoice(filename):
     fn = filename.upper()
+    if any(k in fn for k in ("INVOICE", "TAX INV", "GST INV")):
+        return True
+    prefixes = ("INV",)
+    if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in prefixes):
+        return True
+    return False
+
+
+def _is_cod(filename):
+    fn = filename.upper()
     return (
-        any(fn.startswith(p) for p in _INVOICE_PREFIXES)
-        or any(k in fn for k in _INVOICE_KEYWORDS)
+        fn.startswith("COD")
+        or "CERTIFICATE OF DEPOSIT" in fn
+        or "COD" in fn
     )
 
 
 def _is_oem(filename):
     fn = filename.upper()
-    return (
-        any(fn.startswith(p) for p in _OEM_PREFIXES)
-        or any(k in fn for k in _OEM_KEYWORDS)
-    )
+    if any(k in fn for k in _OEM_KEYWORDS):
+        return True
+    if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in _OEM_PREFIXES):
+        return True
+    return False
 
 
 def _is_disclaimer(filename):
     fn = filename.upper()
-    return (
-        any(fn.startswith(p) for p in _DISCLAIMER_PREFIXES)
-        or any(k in fn for k in _DISCLAIMER_KEYWORDS)
-    )
+    if "DISCLAIMER" in fn:
+        return True
+    prefixes = ("DIS", "DSC", "CD-")
+    if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in prefixes):
+        return True
+    return False
 
 
 def process_scrappage(claim_details, old_vehicle_details, target_dir):
@@ -83,12 +102,14 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
     else:
         logging.warning(f"Target directory does not exist: {target_dir}")
 
+    processed_files = set()
     for f_path in pdf_files:
         filename = os.path.basename(f_path)
 
         # ── Ledger ───────────────────────────────────────────────────────────
         if _is_ledger(filename):
             found_ledger = True
+            processed_files.add(f_path)
             logging.info(f"Passing Ledger to Scrappage Vision Extractor: {f_path}")
             success, msg = validate_ledger(f_path, claim_details, data_store)
             if not success:
@@ -97,14 +118,25 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
         # ── Invoice ──────────────────────────────────────────────────────────
         elif _is_invoice(filename):
             found_invoice = True
+            processed_files.add(f_path)
             logging.info(f"Passing Invoice to Scrappage Invoice Validator: {f_path}")
             success, msg = validate_invoice(f_path, claim_details, data_store)
             if not success:
                 issues.append(f"Invoice Validation Failed: {msg}")
 
-        # ── COD / OEM Document ───────────────────────────────────────────────
+        # ── COD Document ─────────────────────────────────────────────────────
+        elif _is_cod(filename):
+            found_oem = True
+            processed_files.add(f_path)
+            logging.info(f"Passing COD Document to Scrappage COD Validator: {f_path}")
+            success, msg = validate_cod(f_path, claim_details, old_vehicle_details, data_store)
+            if not success:
+                issues.append(f"COD Document Validation Failed: {msg}")
+
+        # ── OEM Document ─────────────────────────────────────────────────────
         elif _is_oem(filename):
             found_oem = True
+            processed_files.add(f_path)
             logging.info(f"Passing OEM Document to Scrappage OEM Validator: {f_path}")
             success, msg = validate_oem(f_path, claim_details, old_vehicle_details, data_store)
             if not success:
@@ -113,10 +145,31 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
         # ── Disclaimer ───────────────────────────────────────────────────────
         elif _is_disclaimer(filename):
             found_disclaimer = True
+            processed_files.add(f_path)
             logging.info(f"Passing Disclaimer to Scrappage Disclaimer Validator: {f_path}")
             success, msg = validate_disclaimer(f_path, claim_details, old_vehicle_details, data_store)
             if not success:
                 issues.append(f"Disclaimer Validation Failed: {msg}")
+
+    # ── Fallback: Check unmatched PDFs text for COD/OEM ───────────────────────
+    if not found_oem:
+        import fitz
+        for f_path in pdf_files:
+            if f_path in processed_files:
+                continue
+            try:
+                doc = fitz.open(f_path)
+                if len(doc) > 0:
+                    text = doc[0].get_text().upper()
+                    if "CERTIFICATE DEPOSIT" in text or "CERTIFICATE OF DEPOSIT" in text or "COD" in text:
+                        found_oem = True
+                        logging.info(f"Fallback: Identified COD document via text content: {f_path}")
+                        success, msg = validate_cod(f_path, claim_details, old_vehicle_details, data_store)
+                        if not success:
+                            issues.append(f"COD Document Validation Failed: {msg}")
+                        break
+            except Exception as e:
+                logging.warning(f"Fallback check failed for {f_path}: {e}")
 
     # ── Missing document checks ───────────────────────────────────────────────
     if not found_ledger:

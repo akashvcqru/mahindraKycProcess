@@ -1,0 +1,264 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 10,
+                "bottom": 5,
+                "right": 90
+            }
+        },
+        "document_type": {
+            "text": "Tax Invoice",
+            "line": 6,
+            "crop": {
+                "top": 10,
+                "left": 40,
+                "bottom": 12,
+                "right": 60
+            }
+        },
+        "invoice_no_date": {
+            "text": "GST Invoice No : INV27A000187 Date : 18-MAY-26",
+            "line": 20,
+            "crop": {
+                "top": 25,
+                "left": 60,
+                "bottom": 27,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "KONARK EARTHMOVER PRIVATE LIMITED",
+            "line": 13,
+            "crop": {
+                "top": 18,
+                "left": 10,
+                "bottom": 20,
+                "right": 50
+            }
+        },
+        "oem_discount": {
+            "text": "Note : OEM Loyalty Discount Amount is Rs.20000/-(Inclusive of GST)",
+            "amount": "20000",
+            "line": 40,
+            "crop": {
+                "top": 70,
+                "left": 5,
+                "bottom": 72,
+                "right": 95
+            }
+        },
+        "customer_signature": {
+            "text": "Present",
+            "line": 45,
+            "crop": {
+                "top": 75,
+                "left": 10,
+                "bottom": 77,
+                "right": 30
+            }
+        },
+        "dealer_stamp": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 50,
+            "crop": {
+                "top": 85,
+                "left": 10,
+                "bottom": 90,
+                "right": 50
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 1,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 95,
+                "right": 30
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 5,
+            "crop": {
+                "top": 15,
+                "left": 20,
+                "bottom": 20,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "KONARK EARTHMOVER PRIVATE LIMITED",
+            "line": 6,
+            "crop": {
+                "top": 20,
+                "left": 5,
+                "bottom": 25,
+                "right": 95
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: DL7CC5657, Vehicle Make: STELLANTIS INDIA PVT LTD, Vehicle Model: PALIO",
+            "line": 10,
+            "crop": {
+                "top": 25,
+                "left": 5,
+                "bottom": 35,
+                "right": 95
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: MAHINDRA BOLERO B8 BS-VI, Chassis Number: T5A19991, Engine Number: TVT6A18070",
+            "line": 15,
+            "crop": {
+                "top": 35,
+                "left": 5,
+                "bottom": 45,
+                "right": 95
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the KRISHNA AUTOMOTIVE",
+            "line": 20,
+            "crop": {
+                "top": 45,
+                "left": 5,
+                "bottom": 50,
+                "right": 95
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: KONARK EARTHMOVER PRIVATE LIMITED",
+            "line": 30,
+            "crop": {
+                "top": 75,
+                "left": 5,
+                "bottom": 80,
+                "right": 50
+            }
+        },
+        "dealer_stamp": {
+            "text": "KRISHNA AUTOMOTIVE | Authorised signature present",
+            "line": 35,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 95
+            }
+        }
+    },
+    "ledger": {
+        "dealership_name": {
+            "text": "KONARK EARTHMOVERS PRIVATE LIMITED",
+            "line": 6,
+            "crop": {
+                "top": 10,
+                "left": 10,
+                "bottom": 15,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "Pankaj PRAMANIK",
+            "line": 9,
+            "crop": {
+                "top": 15,
+                "left": 10,
+                "bottom": 20,
+                "right": 90
+            }
+        },
+        "document_name": {
+            "text": "Ledger Account",
+            "line": 7,
+            "crop": {
+                "top": 12,
+                "left": 10,
+                "bottom": 15,
+                "right": 90
+            }
+        },
+        "scrappage_bonus": {
+            "text": "SCRAPPAGE BONOUS",
+            "amount": "20,000.00",
+            "line": 17,
+            "crop": {
+                "top": 50,
+                "left": 10,
+                "bottom": 55,
+                "right": 90
+            }
+        },
+        "seal_stamp": {
+            "text": "KRISHNA AUTOMOTIVE ROURKELA",
+            "line": 30,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 90
+            }
+        }
+    },
+    "cod": {
+        "certificate_no": {
+            "text": "COD20260530DL7CC5657",
+            "line": 2,
+            "crop": {
+                "top": 10,
+                "left": 10,
+                "bottom": 12,
+                "right": 50
+            }
+        },
+        "customer_name": {
+            "text": "HARISH KUMAR",
+            "line": 5,
+            "crop": {
+                "top": 20,
+                "left": 10,
+                "bottom": 22,
+                "right": 50
+            }
+        },
+        "registration_no": {
+            "text": "DL7CC5657",
+            "line": 5,
+            "crop": {
+                "top": 20,
+                "left": 60,
+                "bottom": 22,
+                "right": 80
+            }
+        },
+        "vehicle_make": {
+            "text": "STELLANTIS INDIA PVT LTD",
+            "line": 8,
+            "crop": {
+                "top": 30,
+                "left": 10,
+                "bottom": 32,
+                "right": 50
+            }
+        },
+        "vehicle_model": {
+            "text": "PALIO",
+            "line": 8,
+            "crop": {
+                "top": 30,
+                "left": 60,
+                "bottom": 32,
+                "right": 80
+            }
+        }
+    },
+    "oem": {},
+    "relational": {}
+}

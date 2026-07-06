@@ -73,11 +73,22 @@ def _pil_to_b64(pil_img):
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _call_openai(full_b64, max_retries=3):
+def _call_openai(full_b64, old_chassis=None, old_reg=None, new_chassis=None, max_retries=3):
     api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key:
         logging.error("OPENAI_API_KEY not found in environment.")
         return None
+
+    prompt = OEM_PROMPT
+    if old_chassis or old_reg or new_chassis:
+        prompt += "\n\nCRITICAL CONTEXT / TARGET VALUES TO SEARCH FOR IN THE TABLE:\n"
+        if old_chassis:
+            prompt += f"- Target Old Chassis No (Certificate Deposit Number): Search for a value matching or containing \"{old_chassis}\" (e.g. \"{old_chassis}\").\n"
+        if old_reg:
+            prompt += f"- Target Old Registration No: Search for a value containing \"{old_reg}\" (e.g. \"{old_reg}\").\n"
+        if new_chassis:
+            prompt += f"- Target New Chassis No: Search for a value whose last 8 characters match \"{new_chassis[-8:] if len(new_chassis) >= 8 else new_chassis}\" (or matches full chassis \"{new_chassis}\").\n"
+        prompt += "\nIf there is a table or list containing multiple rows, please locate the specific row that matches either the Target Old Chassis/Reg No, or the Target New Chassis No, and extract the fields 'certificate_deposit_no' and 'chassis_no' ONLY from that matching row."
 
     headers = {
         "Content-Type": "application/json",
@@ -89,7 +100,7 @@ def _call_openai(full_b64, max_retries=3):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": OEM_PROMPT},
+                    {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/png;base64,{full_b64}"},
@@ -195,8 +206,19 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
         logging.error(f"Failed to render OEM PDF {pdf_path}: {exc}")
         return False, f"Failed to load image: {exc}"
 
+    old_chassis_web = old_vehicle_details.get("Chassis No", "").strip()
+    old_reg_web = old_vehicle_details.get("Reg. No", old_vehicle_details.get("Reg No", old_vehicle_details.get("Registration No", ""))).strip()
+    if not old_reg_web and claim_details:
+        old_reg_web = claim_details.get("Reg. No", claim_details.get("Reg No", claim_details.get("Registration No", ""))).strip()
+    new_chassis_web = claim_details.get("Chassis No", "").strip()
+
     full_b64 = _pil_to_b64(pil_img)
-    extracted = _call_openai(full_b64)
+    extracted = _call_openai(
+        full_b64,
+        old_chassis=old_chassis_web,
+        old_reg=old_reg_web,
+        new_chassis=new_chassis_web
+    )
 
     if not extracted:
         return False, "LLM Extraction Failed"
@@ -206,18 +228,44 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
 
     issues = []
 
-    # 1. Certificate of Deposit number must match old vehicle Chassis No
+    # 1. Certificate of Deposit number must match old vehicle Chassis No or Reg No if COD prefix is missing
     cert_no = extracted.get("certificate_deposit_no", {}).get("text", "").strip()
-    old_chassis_web = old_vehicle_details.get("Chassis No", "").strip()
 
     if not cert_no:
         issues.append("Certificate of Deposit No not found in document")
-    elif old_chassis_web:
-        status_cert, score_cert = compare_values_robust(cert_no, old_chassis_web)
-        if not status_cert.startswith("MATCH"):
-            issues.append(
-                f"Certificate No mismatch (Document Certificate No: '{cert_no}' does not match old vehicle chassis: '{old_chassis_web}')"
-            )
+    else:
+        # Check if the portal chassis number has the 'COD' prefix
+        has_cod_in_chassis = False
+        if old_chassis_web and "COD" in old_chassis_web.upper():
+            has_cod_in_chassis = True
+            
+        if has_cod_in_chassis:
+            status_cert, score_cert = compare_values_robust(cert_no, old_chassis_web)
+            if not status_cert.startswith("MATCH"):
+                issues.append(
+                    f"Certificate No mismatch (Document Certificate No: '{cert_no}' does not match old vehicle chassis: '{old_chassis_web}')"
+                )
+        else:
+            # Fallback: check Reg. No from old vehicle details against the certificate number in the document
+            old_reg_web = old_vehicle_details.get("Reg. No", old_vehicle_details.get("Reg No", old_vehicle_details.get("Registration No", ""))).strip()
+            if not old_reg_web and claim_details:
+                old_reg_web = claim_details.get("Reg. No", claim_details.get("Reg No", claim_details.get("Registration No", ""))).strip()
+                
+            if old_reg_web:
+                c1 = re.sub(r"[^A-Z0-9]", "", old_reg_web.upper())
+                c2 = re.sub(r"[^A-Z0-9]", "", cert_no.upper())
+                if c1 not in c2 and c2 not in c1:
+                    issues.append(
+                        f"Certificate No mismatch (Document Certificate No: '{cert_no}' does not match old vehicle registration: '{old_reg_web}')"
+                    )
+            else:
+                # If neither chassis with COD nor Reg No is found, fallback to check chassis if available
+                if old_chassis_web:
+                    status_cert, score_cert = compare_values_robust(cert_no, old_chassis_web)
+                    if not status_cert.startswith("MATCH"):
+                        issues.append(
+                            f"Certificate No mismatch (Document Certificate No: '{cert_no}' does not match old vehicle chassis: '{old_chassis_web}')"
+                        )
 
     # 2. Chassis Number in the document (new vehicle chassis) last 8 characters must match dashboard claim details
     doc_chassis = extracted.get("chassis_no", {}).get("text", "").strip()
@@ -247,7 +295,7 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
 
 
 # ── PUBLIC: process_oem_visual (called by app_ui.py) ───────────────────────
-def process_oem_visual(pdf_path):
+def process_oem_visual(pdf_path, old_chassis=None, old_reg=None, new_chassis=None):
     """
     Extracts OEM fields visually and generates cropped images for the UI.
     """
@@ -264,7 +312,12 @@ def process_oem_visual(pdf_path):
         return []
 
     full_b64 = _pil_to_b64(pil_img)
-    extracted = _call_openai(full_b64)
+    extracted = _call_openai(
+        full_b64,
+        old_chassis=old_chassis,
+        old_reg=old_reg,
+        new_chassis=new_chassis
+    )
 
     if not extracted:
         return _generate_mock_response(pil_img)

@@ -1,0 +1,21 @@
+2026/07/04-20:29:59.001 de8 Reusing MANIFEST C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/07/04-20:29:59.003 de8 Recovering log #835
+2026/07/04-20:29:59.004 de8 Level-0 table #838: started
+2026/07/04-20:29:59.007 de8 Level-0 table #838: 208 bytes OK
+2026/07/04-20:29:59.007 de8 Recovering log #853
+2026/07/04-20:29:59.008 de8 Reusing old log C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/000853.log 
+2026/07/04-20:29:59.012 de8 Delete type=0 #835
+2026/07/04-20:29:59.012 de8 Delete type=2 #852
+2026/07/04-20:29:59.012 de8 Delete type=2 #854
+2026/07/04-20:29:59.019 7a10 Compacting 4@0 + 1@1 files
+2026/07/04-20:29:59.026 7a10 Generated table #854@0: 3 keys, 683004 bytes
+2026/07/04-20:29:59.027 7a10 Compacted 4@0 + 1@1 files => 683004 bytes
+2026/07/04-20:29:59.028 7a10 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/07/04-20:29:59.028 7a10 Delete type=2 #827
+2026/07/04-20:29:59.028 7a10 Delete type=2 #830
+2026/07/04-20:29:59.028 7a10 Delete type=2 #833
+2026/07/04-20:29:59.028 7a10 Delete type=2 #836
+2026/07/04-20:29:59.029 7a10 Delete type=2 #838
+2026/07/04-20:29:59.070 7a10 Level-0 table #856: started
+2026/07/04-20:29:59.074 7a10 Level-0 table #856: 683004 bytes OK
+2026/07/04-20:29:59.075 7a10 Delete type=0 #853

@@ -1,0 +1,264 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 10,
+                "bottom": 5,
+                "right": 90
+            }
+        },
+        "document_type": {
+            "text": "Tax Invoice",
+            "line": 6,
+            "crop": {
+                "top": 10,
+                "left": 40,
+                "bottom": 12,
+                "right": 60
+            }
+        },
+        "invoice_no_date": {
+            "text": "INV27A000265 31-MAY-26",
+            "line": 17,
+            "crop": {
+                "top": 20,
+                "left": 70,
+                "bottom": 22,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "Deepak Kumar Verma",
+            "line": 12,
+            "crop": {
+                "top": 15,
+                "left": 10,
+                "bottom": 17,
+                "right": 30
+            }
+        },
+        "oem_discount": {
+            "text": "Note : OEM Loyalty Discount Amount is Rs.20000/-(Inclusive of GST)",
+            "amount": "20000",
+            "line": 45,
+            "crop": {
+                "top": 75,
+                "left": 5,
+                "bottom": 77,
+                "right": 95
+            }
+        },
+        "customer_signature": {
+            "text": "Present",
+            "line": 50,
+            "crop": {
+                "top": 80,
+                "left": 10,
+                "bottom": 82,
+                "right": 30
+            }
+        },
+        "dealer_stamp": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 55,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 90,
+                "right": 90
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 38,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 90,
+                "right": 30
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 5,
+            "crop": {
+                "top": 10,
+                "left": 20,
+                "bottom": 15,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "Deepak Kumar Verma",
+            "line": 6,
+            "crop": {
+                "top": 15,
+                "left": 5,
+                "bottom": 20,
+                "right": 50
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: UP80BR8424, Vehicle Make: Maruti, Vehicle Model: Wagon R",
+            "line": 10,
+            "crop": {
+                "top": 20,
+                "left": 5,
+                "bottom": 30,
+                "right": 50
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: SCORPIO-N D MT 2WD Z8 7S XJ, Chassis Number: TE659092, Engine Number: YDT4E88989",
+            "line": 17,
+            "crop": {
+                "top": 30,
+                "left": 5,
+                "bottom": 40,
+                "right": 50
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the KRISHNA AUTOMOTIVE",
+            "line": 26,
+            "crop": {
+                "top": 40,
+                "left": 5,
+                "bottom": 45,
+                "right": 50
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: Deepak Kumar Verma",
+            "line": 34,
+            "crop": {
+                "top": 75,
+                "left": 5,
+                "bottom": 80,
+                "right": 50
+            }
+        },
+        "dealer_stamp": {
+            "text": "KRISHNA AUTOMOTIVE | Authorised signature present",
+            "line": 38,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 90,
+                "right": 95
+            }
+        }
+    },
+    "ledger": {
+        "dealership_name": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 10,
+                "bottom": 6,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "DEEPAK KUMAR VERMA/RKL/26-27/T6E59092",
+            "line": 7,
+            "crop": {
+                "top": 14,
+                "left": 10,
+                "bottom": 18,
+                "right": 90
+            }
+        },
+        "document_name": {
+            "text": "Ledger Account",
+            "line": 8,
+            "crop": {
+                "top": 18,
+                "left": 10,
+                "bottom": 22,
+                "right": 90
+            }
+        },
+        "scrappage_bonus": {
+            "text": "SCRAPPAGE BONOUS",
+            "amount": "20,000.00",
+            "line": 23,
+            "crop": {
+                "top": 78,
+                "left": 10,
+                "bottom": 82,
+                "right": 90
+            }
+        },
+        "seal_stamp": {
+            "text": "KRISHNA AUTOMOTIVE",
+            "line": 28,
+            "crop": {
+                "top": 90,
+                "left": 70,
+                "bottom": 98,
+                "right": 90
+            }
+        }
+    },
+    "cod": {
+        "certificate_no": {
+            "text": "COD2025114UPB08RB8424",
+            "line": 3,
+            "crop": {
+                "top": 10,
+                "left": 10,
+                "bottom": 12,
+                "right": 40
+            }
+        },
+        "customer_name": {
+            "text": "DEEPAK KUMAR VERMA",
+            "line": 5,
+            "crop": {
+                "top": 15,
+                "left": 20,
+                "bottom": 17,
+                "right": 40
+            }
+        },
+        "registration_no": {
+            "text": "UPB08RB8424",
+            "line": 6,
+            "crop": {
+                "top": 18,
+                "left": 60,
+                "bottom": 20,
+                "right": 80
+            }
+        },
+        "vehicle_make": {
+            "text": "MARUTI SUZUKI INDIA LTD",
+            "line": 10,
+            "crop": {
+                "top": 30,
+                "left": 10,
+                "bottom": 32,
+                "right": 40
+            }
+        },
+        "vehicle_model": {
+            "text": "WAGON-R LXI",
+            "line": 10,
+            "crop": {
+                "top": 30,
+                "left": 50,
+                "bottom": 32,
+                "right": 80
+            }
+        }
+    },
+    "oem": {},
+    "relational": {}
+}

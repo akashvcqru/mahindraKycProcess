@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+import re
 
 import fitz
 import requests
@@ -249,8 +250,19 @@ def validate_invoice(pdf_path, claim_details, data_store):
         issues.append("Customer name not found on invoice")
     else:
         # Cross-check name against claim details (fuzzy match)
-        claim_name = claim_details.get("Customer Name", "").strip().lower()
-        if claim_name and claim_name not in cust_text.lower():
+        claim_name = claim_details.get("Customer Name", "").strip()
+        c1 = re.sub(r"[^A-Z0-9\s]", "", cust_text.upper()).strip()
+        c2 = re.sub(r"[^A-Z0-9\s]", "", claim_name.upper()).strip()
+        
+        c2_words = [w for w in c2.split() if len(w) >= 3]
+        word_match = False
+        if c2_words and all(w in c1 for w in c2_words):
+            word_match = True
+            
+        import difflib
+        ratio = difflib.SequenceMatcher(None, c1, c2).ratio()
+        
+        if c2 and not (c2 in c1 or c1 in c2 or word_match or ratio >= 0.80):
             issues.append(
                 f"Invoice customer name '{cust_text}' does not match claim customer '{claim_name}'"
             )

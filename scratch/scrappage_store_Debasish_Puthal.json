@@ -1,0 +1,213 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "Aditya Motors",
+            "line": 2,
+            "crop": {
+                "top": 5,
+                "left": 20,
+                "bottom": 10,
+                "right": 80
+            }
+        },
+        "document_type": {
+            "text": "TAX INVOICE",
+            "line": 12,
+            "crop": {
+                "top": 20,
+                "left": 40,
+                "bottom": 25,
+                "right": 60
+            }
+        },
+        "invoice_no_date": {
+            "text": "INV27/A000871 28-05-2026",
+            "line": 15,
+            "crop": {
+                "top": 25,
+                "left": 70,
+                "bottom": 30,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "DEBAASISH PUJHARI",
+            "line": 18,
+            "crop": {
+                "top": 30,
+                "left": 20,
+                "bottom": 35,
+                "right": 50
+            }
+        },
+        "oem_discount": {
+            "text": "Note : Scrappage Bonus Amount is Rs.20000.00 (inclusive of GST)",
+            "amount": "20000.00",
+            "line": 45,
+            "crop": {
+                "top": 75,
+                "left": 10,
+                "bottom": 80,
+                "right": 90
+            }
+        },
+        "customer_signature": {
+            "text": "Present",
+            "line": 50,
+            "crop": {
+                "top": 85,
+                "left": 20,
+                "bottom": 90,
+                "right": 50
+            }
+        },
+        "dealer_stamp": {
+            "text": "Aditya Motors, Authorised Dealer",
+            "line": 52,
+            "crop": {
+                "top": 90,
+                "left": 60,
+                "bottom": 95,
+                "right": 90
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "Aditya Motors",
+            "line": 2,
+            "crop": {
+                "top": 5,
+                "left": 60,
+                "bottom": 10,
+                "right": 90
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 6,
+            "crop": {
+                "top": 15,
+                "left": 20,
+                "bottom": 20,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "Debasish Puthal",
+            "line": 7,
+            "crop": {
+                "top": 22,
+                "left": 5,
+                "bottom": 27,
+                "right": 40
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: UP81CJ3167, Vehicle Make: Maruti, Vehicle Model: Swift",
+            "line": 11,
+            "crop": {
+                "top": 30,
+                "left": 5,
+                "bottom": 40,
+                "right": 95
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: THAR ROXX MX1 D MT RWD EWT/BR, Chassis Number: TE227528, Engine Number: YYT4E54482",
+            "line": 16,
+            "crop": {
+                "top": 45,
+                "left": 5,
+                "bottom": 55,
+                "right": 95
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the ADITYA MOTORS",
+            "line": 23,
+            "crop": {
+                "top": 60,
+                "left": 5,
+                "bottom": 65,
+                "right": 95
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: Debasish Puthal",
+            "line": 33,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 90,
+                "right": 40
+            }
+        },
+        "dealer_stamp": {
+            "text": "ADITYA MOTORS, Authorised signature present",
+            "line": 34,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 95
+            }
+        }
+    },
+    "ledger": {
+        "dealership_name": {
+            "text": "ADITYA CAR AUTOMOTIVES PVT. LTD.",
+            "line": 4,
+            "crop": {
+                "top": 5,
+                "left": 10,
+                "bottom": 10,
+                "right": 90
+            }
+        },
+        "customer_name": {
+            "text": "Debasish Puthal-R270154802",
+            "line": 8,
+            "crop": {
+                "top": 10,
+                "left": 10,
+                "bottom": 15,
+                "right": 90
+            }
+        },
+        "document_name": {
+            "text": "Ledger Report",
+            "line": 7,
+            "crop": {
+                "top": 10,
+                "left": 10,
+                "bottom": 15,
+                "right": 90
+            }
+        },
+        "scrappage_bonus": {
+            "text": "SCRAPPAGE BONUS",
+            "amount": "6,980.00",
+            "line": 21,
+            "crop": {
+                "top": 30,
+                "left": 10,
+                "bottom": 35,
+                "right": 90
+            }
+        },
+        "seal_stamp": {
+            "text": "ADITYA MOTORS",
+            "line": 40,
+            "crop": {
+                "top": 85,
+                "left": 70,
+                "bottom": 95,
+                "right": 90
+            }
+        }
+    },
+    "cod": {},
+    "oem": {},
+    "relational": {}
+}

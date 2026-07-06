@@ -1825,10 +1825,59 @@ class AppUI(tk.Tk):
             threading.Thread(target=invoice_task, daemon=True).start()
             return
 
+        is_cod = False
+        _cod_prefixes = ("cod",)
+        _cod_keywords = ("certificate of deposit", "cod")
+        if (doc_type == "COD" or
+            any(fname_lower.startswith(p) for p in _cod_prefixes) or
+            any(dict_fname_lower.startswith(p) for p in _cod_prefixes) or
+            any(k in fname_lower for k in _cod_keywords) or
+            any(k in dict_fname_lower for k in _cod_keywords)):
+            is_cod = True
+
+        if is_cod and os.path.exists(pdf_path):
+            logging.info(f"[UI] Intercepting COD visual confirmations for {pdf_path}")
+
+            loading_lbl = tk.Label(
+                self.visual_frame,
+                text="⏳ Extracting Certificate fields...\nPlease wait (approx 5-10s)",
+                fg=TEXT_LIGHT_COLOR,
+                bg=BG_COLOR,
+                font=("Segoe UI", 10),
+                justify=tk.CENTER,
+            )
+            loading_lbl.pack(pady=40)
+
+            def cod_task():
+                try:
+                    import scrappage_scheme.cod_validation as cod_mod
+                    cod_results = cod_mod.process_cod_visual(pdf_path)
+
+                    visual_data = {}
+                    for item in cod_results:
+                        field = item.get("field", "")
+                        val   = item.get("value", "")
+                        crop  = item.get("crop_b64", item.get("crop", ""))
+                        if field:
+                            visual_data[field] = {
+                                "value": val,
+                                "confidence": 95,
+                                "image_base64": crop,
+                            }
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+                except Exception as exc:
+                    logging.error(f"[UI] COD visual extraction failed: {exc}")
+                    visual_data = extracted_data.get("visual_extractions", {})
+                    self.after(0, self._render_visual_data, visual_data, loading_lbl)
+
+            import threading
+            threading.Thread(target=cod_task, daemon=True).start()
+            return
+
         is_oem = False
-        _oem_prefixes = ("cod", "oem")
-        _oem_keywords = ("certificate of deposit", "scrappage certificate", "cod", "oem")
-        if (doc_type in ("COD", "OEM") or
+        _oem_prefixes = ("oem",)
+        _oem_keywords = ("scrappage certificate", "oem")
+        if (doc_type == "OEM" or
             any(fname_lower.startswith(p) for p in _oem_prefixes) or
             any(dict_fname_lower.startswith(p) for p in _oem_prefixes) or
             any(k in fname_lower for k in _oem_keywords) or
@@ -1836,7 +1885,7 @@ class AppUI(tk.Tk):
             is_oem = True
 
         if is_oem and os.path.exists(pdf_path):
-            logging.info(f"[UI] Intercepting OEM/COD visual confirmations for {pdf_path}")
+            logging.info(f"[UI] Intercepting OEM visual confirmations for {pdf_path}")
 
             loading_lbl = tk.Label(
                 self.visual_frame,
@@ -1851,7 +1900,22 @@ class AppUI(tk.Tk):
             def oem_task():
                 try:
                     import scrappage_scheme.oem_document_validation as oem_mod
-                    oem_results = oem_mod.process_oem_visual(pdf_path)
+                    
+                    claim_details = self.selected_claim.get("claim_details") or {}
+                    old_vehicle_details = self.selected_claim.get("old_vehicle_details") or {}
+                    
+                    old_chassis = old_vehicle_details.get("Chassis No", "").strip()
+                    old_reg = old_vehicle_details.get("Reg. No", old_vehicle_details.get("Reg No", old_vehicle_details.get("Registration No", ""))).strip()
+                    if not old_reg:
+                        old_reg = claim_details.get("Reg. No", claim_details.get("Reg No", claim_details.get("Registration No", ""))).strip()
+                    new_chassis = claim_details.get("Chassis No", "").strip()
+
+                    oem_results = oem_mod.process_oem_visual(
+                        pdf_path,
+                        old_chassis=old_chassis,
+                        old_reg=old_reg,
+                        new_chassis=new_chassis
+                    )
 
                     visual_data = {}
                     for item in oem_results:
