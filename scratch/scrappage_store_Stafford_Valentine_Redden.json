@@ -21,18 +21,18 @@
             }
         },
         "invoice_no_date": {
-            "text": "GST Invoice No: INV2/AA000757 GST Invoice Date: 21/05/2026",
+            "text": "INV/ZA000757 21/05/2026",
             "line": 13,
             "crop": {
                 "top": 20,
-                "left": 60,
+                "left": 70,
                 "bottom": 25,
                 "right": 90
             }
         },
         "customer_name": {
             "text": "STAFFORD VALENTINE REDDEN",
-            "line": 16,
+            "line": 8,
             "crop": {
                 "top": 25,
                 "left": 10,
@@ -43,7 +43,7 @@
         "oem_discount": {
             "text": "Note : Scrappage Bonus Amount is Rs.20000.00/- (inclusive of GST)",
             "amount": "20000.00",
-            "line": 38,
+            "line": 35,
             "crop": {
                 "top": 70,
                 "left": 10,
@@ -53,17 +53,17 @@
         },
         "customer_signature": {
             "text": "Present",
-            "line": 45,
+            "line": 40,
             "crop": {
-                "top": 85,
+                "top": 80,
                 "left": 10,
-                "bottom": 90,
+                "bottom": 85,
                 "right": 30
             }
         },
         "dealer_stamp": {
             "text": "ADITYA MOTORS, Cuttack",
-            "line": 46,
+            "line": 42,
             "crop": {
                 "top": 85,
                 "left": 70,
@@ -127,9 +127,9 @@
             "text": "INR 20000.0 from the ADITYA MOTORS",
             "line": 24,
             "crop": {
-                "top": 42,
+                "top": 48,
                 "left": 5,
-                "bottom": 45,
+                "bottom": 50,
                 "right": 95
             }
         },
@@ -137,19 +137,19 @@
             "text": "Handwritten signature present | Name: Stafford Valentine Redden",
             "line": 34,
             "crop": {
-                "top": 85,
+                "top": 80,
                 "left": 5,
-                "bottom": 90,
-                "right": 40
+                "bottom": 85,
+                "right": 50
             }
         },
         "dealer_stamp": {
             "text": "ADITYA MOTORS | Authorised signature present",
             "line": 36,
             "crop": {
-                "top": 85,
+                "top": 80,
                 "left": 70,
-                "bottom": 95,
+                "bottom": 90,
                 "right": 95
             }
         }
@@ -179,7 +179,7 @@
             "text": "Ledger Report",
             "line": 7,
             "crop": {
-                "top": 10,
+                "top": 12,
                 "left": 10,
                 "bottom": 15,
                 "right": 90
@@ -188,11 +188,11 @@
         "scrappage_bonus": {
             "text": "SCRAPPAGE BONUS",
             "amount": "20,000.00",
-            "line": 15,
+            "line": 20,
             "crop": {
-                "top": 30,
+                "top": 40,
                 "left": 10,
-                "bottom": 35,
+                "bottom": 45,
                 "right": 90
             }
         },

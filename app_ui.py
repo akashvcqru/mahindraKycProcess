@@ -13,6 +13,18 @@ from tkinter import messagebox, ttk
 import fitz  # PyMuPDF
 from PIL import Image, ImageTk
 
+try:
+    from dotenv import load_dotenv
+    import sys
+    import os
+    if getattr(sys, 'frozen', False):
+        application_path = os.path.dirname(sys.executable)
+    else:
+        application_path = os.path.dirname(os.path.abspath(__file__))
+    load_dotenv(os.path.join(application_path, '.env'))
+except ImportError:
+    pass
+
 # Import the backend automation module
 import automate_login
 

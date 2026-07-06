@@ -14,7 +14,7 @@ _LEDGER_KEYWORDS  = ("LEDGER",)
 _INVOICE_PREFIXES = ("INV",)
 _INVOICE_KEYWORDS = ("INVOICE", "TAX INV", "GST INV")
 _OEM_PREFIXES     = ("COD", "OEM")
-_OEM_KEYWORDS     = ("CERTIFICATE OF DEPOSIT", "SCRAPPAGE CERTIFICATE", "COD", "OEM", "VAHAN SCREEN", "VAHAN", "SCREENSHOT", "SCREEN SHORT")
+_OEM_KEYWORDS     = ("CERTIFICATE OF DEPOSIT", "CERTIFICATE DEPOSIT", "SCRAPPAGE CERTIFICATE", "COD", "OEM", "VAHAN SCREEN", "VAHAN", "SCREENSHOT", "SCREEN SHORT", "OEM SCRAPPING", "OEM SCRAPPING INCENTIVE")
 _DISCLAIMER_PREFIXES = ("DIS", "DSC", "CD-")
 _DISCLAIMER_KEYWORDS = ("DISCLAIMER",)
 
@@ -46,6 +46,7 @@ def _is_cod(filename):
     return (
         fn.startswith("COD")
         or "CERTIFICATE OF DEPOSIT" in fn
+        or "CERTIFICATE DEPOSIT" in fn
         or "COD" in fn
     )
 
@@ -161,12 +162,41 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
                 doc = fitz.open(f_path)
                 if len(doc) > 0:
                     text = doc[0].get_text().upper()
-                    if "CERTIFICATE DEPOSIT" in text or "CERTIFICATE OF DEPOSIT" in text or "COD" in text:
+                    import re
+                    clean_text = re.sub(r'\s+', ' ', text)
+                    
+                    if len(clean_text.strip()) < 10:
+                        logging.info(f"PDF {f_path} has no embedded text. Attempting OCR fallback...")
+                        try:
+                            import easyocr
+                            import numpy as np
+                            from PIL import Image
+                            import io
+                            
+                            reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+                            pix = doc[0].get_pixmap(dpi=150)
+                            png_bytes = pix.tobytes("png")
+                            pil_img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+                            img_array = np.array(pil_img)
+                            
+                            ocr_results = reader.readtext(img_array, detail=0)
+                            ocr_text = " ".join(ocr_results).upper()
+                            clean_text = re.sub(r'\s+', ' ', ocr_text)
+                        except Exception as ocr_err:
+                            logging.warning(f"OCR fallback failed for {f_path}: {ocr_err}")
+
+                    if any(k in clean_text for k in ["CERTIFICATE DEPOSIT", "CERTIFICATE OF DEPOSIT", "COD", "OEM SCRAPPING"]):
                         found_oem = True
-                        logging.info(f"Fallback: Identified COD document via text content: {f_path}")
-                        success, msg = validate_cod(f_path, claim_details, old_vehicle_details, data_store)
-                        if not success:
-                            issues.append(f"COD Document Validation Failed: {msg}")
+                        if "OEM SCRAPPING" in clean_text or ("CERTIFICATE DEPOSIT" in clean_text and "TRANSFER" not in clean_text):
+                            logging.info(f"Fallback: Identified OEM document via text content: {f_path}")
+                            success, msg = validate_oem(f_path, claim_details, old_vehicle_details, data_store)
+                            if not success:
+                                issues.append(f"OEM Document Validation Failed: {msg}")
+                        else:
+                            logging.info(f"Fallback: Identified COD document via text content: {f_path}")
+                            success, msg = validate_cod(f_path, claim_details, old_vehicle_details, data_store)
+                            if not success:
+                                issues.append(f"COD Document Validation Failed: {msg}")
                         break
             except Exception as e:
                 logging.warning(f"Fallback check failed for {f_path}: {e}")

@@ -1,6 +1,3 @@
-2026/07/04-11:51:55.729 75d4 Reusing MANIFEST C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\Sync Data\LevelDB/MANIFEST-000001
-2026/07/04-11:51:55.734 75d4 Recovering log #36
-2026/07/04-11:51:55.737 75d4 Reusing old log C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\Sync Data\LevelDB/000036.log 
-2026/07/04-11:53:01.054 4b28 Level-0 table #40: started
-2026/07/04-11:53:01.064 4b28 Level-0 table #40: 224322 bytes OK
-2026/07/04-11:53:01.067 4b28 Delete type=0 #36
+2026/07/04-20:42:00.597 4900 Reusing MANIFEST C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\Sync Data\LevelDB/MANIFEST-000001
+2026/07/04-20:42:00.600 4900 Recovering log #39
+2026/07/04-20:42:00.601 4900 Reusing old log C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\Sync Data\LevelDB/000039.log 

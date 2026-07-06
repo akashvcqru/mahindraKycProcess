@@ -37,8 +37,10 @@ except ImportError:
 
 
 # Avoid charmap codec errors on Windows when printing Unicode/block characters
-sys.stdout.reconfigure(encoding="utf-8")
-sys.stderr.reconfigure(encoding="utf-8")
+if sys.stdout is not None:
+    sys.stdout.reconfigure(encoding="utf-8")
+if sys.stderr is not None:
+    sys.stderr.reconfigure(encoding="utf-8")
 
 
 # Configure logging to console

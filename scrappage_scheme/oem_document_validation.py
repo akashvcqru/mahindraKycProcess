@@ -77,7 +77,7 @@ def _call_openai(full_b64, old_chassis=None, old_reg=None, new_chassis=None, max
     api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key:
         logging.error("OPENAI_API_KEY not found in environment.")
-        return None
+        return None, "OPENAI_API_KEY not found in environment."
 
     prompt = OEM_PROMPT
     if old_chassis or old_reg or new_chassis:
@@ -122,14 +122,18 @@ def _call_openai(full_b64, old_chassis=None, old_reg=None, new_chassis=None, max
             )
             resp.raise_for_status()
             content = resp.json()["choices"][0]["message"]["content"]
-            content = content.replace("```json", "").replace("```", "").strip()
-            return json.loads(content)
+            try:
+                content = content.replace("```json", "").replace("```", "").strip()
+                return json.loads(content), None
+            except json.JSONDecodeError:
+                logging.error(f"Failed to parse JSON. Raw content: {content}")
+                return None, f"JSONDecodeError: OpenAI returned non-JSON text: {content[:100]}..."
         except Exception as exc:
             if attempt == max_retries - 1:
                 logging.error(f"OpenAI OEM call failed: {exc}")
-                return None
+                return None, f"OpenAI Error: {exc}"
             time.sleep(2)
-    return None
+    return None, "Max retries exceeded."
 
 
 FIELD_MAPPING = {
@@ -213,7 +217,7 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
     new_chassis_web = claim_details.get("Chassis No", "").strip()
 
     full_b64 = _pil_to_b64(pil_img)
-    extracted = _call_openai(
+    extracted, err_msg = _call_openai(
         full_b64,
         old_chassis=old_chassis_web,
         old_reg=old_reg_web,
@@ -221,7 +225,7 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
     )
 
     if not extracted:
-        return False, "LLM Extraction Failed"
+        return False, err_msg or "LLM Extraction Failed"
 
     if data_store:
         data_store.update_doc_data("oem_document", extracted)
@@ -312,7 +316,7 @@ def process_oem_visual(pdf_path, old_chassis=None, old_reg=None, new_chassis=Non
         return []
 
     full_b64 = _pil_to_b64(pil_img)
-    extracted = _call_openai(
+    extracted, err_msg = _call_openai(
         full_b64,
         old_chassis=old_chassis,
         old_reg=old_reg,
