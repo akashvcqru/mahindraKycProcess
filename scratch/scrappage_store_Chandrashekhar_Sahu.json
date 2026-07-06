@@ -1,0 +1,264 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 1,
+                "left": 20,
+                "bottom": 8,
+                "right": 80
+            }
+        },
+        "document_type": {
+            "text": "TAX INVOICE",
+            "line": 18,
+            "crop": {
+                "top": 17,
+                "left": 30,
+                "bottom": 21,
+                "right": 70
+            }
+        },
+        "invoice_no_date": {
+            "text": "GST Invoice No: INV27A000161, GST Invoice Date: 13/05/2026",
+            "line": 24,
+            "crop": {
+                "top": 22,
+                "left": 60,
+                "bottom": 30,
+                "right": 100
+            }
+        },
+        "customer_name": {
+            "text": "CHANDRASHEKHAR SAHU",
+            "line": 26,
+            "crop": {
+                "top": 25,
+                "left": 10,
+                "bottom": 30,
+                "right": 55
+            }
+        },
+        "oem_discount": {
+            "text": "Note : Scrappage Bonus Amount is Rs.20000.00/- (Inclusive of GST)",
+            "amount": "20000.00",
+            "line": 72,
+            "crop": {
+                "top": 70,
+                "left": 5,
+                "bottom": 74,
+                "right": 75
+            }
+        },
+        "customer_signature": {
+            "text": "Present - signature appears on the Customer Signature line above terms and conditions, associated with CHANDRASHEKHAR SAHU",
+            "line": 92,
+            "crop": {
+                "top": 88,
+                "left": 5,
+                "bottom": 96,
+                "right": 40
+            }
+        },
+        "dealer_stamp": {
+            "text": "Present - Circular stamp reading RALAS AUTOMOBILES with phone number 07722-233700, 233800 and Mahindra Rise logo; Authorised Signatory designation noted",
+            "line": 90,
+            "crop": {
+                "top": 83,
+                "left": 60,
+                "bottom": 97,
+                "right": 90
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 1,
+                "left": 2,
+                "bottom": 10,
+                "right": 45
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 10,
+            "crop": {
+                "top": 11,
+                "left": 15,
+                "bottom": 15,
+                "right": 85
+            }
+        },
+        "customer_name": {
+            "text": "Chandrashekhar Sahu",
+            "line": 12,
+            "crop": {
+                "top": 14,
+                "left": 2,
+                "bottom": 18,
+                "right": 60
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: HR43B6163 | Vehicle Make: Renault | Vehicle Model: Duster",
+            "line": 18,
+            "crop": {
+                "top": 20,
+                "left": 10,
+                "bottom": 32,
+                "right": 75
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: MAHINDRA BOLERO B6 BS-VI | Chassis Number: T6D23737 | Engine Number: TVT6D49262",
+            "line": 33,
+            "crop": {
+                "top": 34,
+                "left": 10,
+                "bottom": 44,
+                "right": 75
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the RALAS AUTOMOBILES",
+            "line": 54,
+            "crop": {
+                "top": 55,
+                "left": 2,
+                "bottom": 60,
+                "right": 85
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: Chandrashekhar Sahu",
+            "line": 72,
+            "crop": {
+                "top": 70,
+                "left": 2,
+                "bottom": 82,
+                "right": 45
+            }
+        },
+        "dealer_stamp": {
+            "text": "Circular stamp present with company name: RALAS AUTOMOBILES | Authorised signature present near stamp",
+            "line": 74,
+            "crop": {
+                "top": 70,
+                "left": 55,
+                "bottom": 88,
+                "right": 95
+            }
+        }
+    },
+    "ledger": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 5,
+                "left": 20,
+                "bottom": 10,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "CHANDRASHEKHAR SAHU S/O NAJRU RAM SAHU",
+            "line": 9,
+            "crop": {
+                "top": 17,
+                "left": 15,
+                "bottom": 22,
+                "right": 85
+            }
+        },
+        "document_name": {
+            "text": "Ledger Account",
+            "line": 10,
+            "crop": {
+                "top": 21,
+                "left": 35,
+                "bottom": 25,
+                "right": 65
+            }
+        },
+        "scrappage_bonus": {
+            "text": "LOYALTY CLAIM M&M VEH / SCRAPPAGE BONUS",
+            "amount": "20,000.00",
+            "line": 18,
+            "crop": {
+                "top": 37,
+                "left": 10,
+                "bottom": 43,
+                "right": 100
+            }
+        },
+        "seal_stamp": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 52,
+            "crop": {
+                "top": 78,
+                "left": 40,
+                "bottom": 93,
+                "right": 75
+            }
+        }
+    },
+    "cod": {
+        "certificate_no": {
+            "text": "COD20260520HR43B6163",
+            "line": 5,
+            "crop": {
+                "top": 11,
+                "left": 10,
+                "bottom": 14,
+                "right": 55
+            }
+        },
+        "customer_name": {
+            "text": "CHANDRASHEKHAR SAHU",
+            "line": 18,
+            "crop": {
+                "top": 28,
+                "left": 10,
+                "bottom": 33,
+                "right": 90
+            }
+        },
+        "registration_no": {
+            "text": "HR43B6163",
+            "line": 20,
+            "crop": {
+                "top": 31,
+                "left": 10,
+                "bottom": 36,
+                "right": 60
+            }
+        },
+        "vehicle_make": {
+            "text": "RENAULT INDIA PVT LTD",
+            "line": 28,
+            "crop": {
+                "top": 43,
+                "left": 10,
+                "bottom": 47,
+                "right": 48
+            }
+        },
+        "vehicle_model": {
+            "text": "RENAULT DUSTER",
+            "line": 28,
+            "crop": {
+                "top": 43,
+                "left": 52,
+                "bottom": 47,
+                "right": 92
+            }
+        }
+    },
+    "oem": {},
+    "relational": {}
+}

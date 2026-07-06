@@ -2,154 +2,154 @@
     "invoice": {
         "dealership_name": {
             "text": "Aditya Motors",
-            "line": 2,
+            "line": 3,
             "crop": {
-                "top": 5,
-                "left": 10,
-                "bottom": 10,
-                "right": 50
+                "top": 6,
+                "left": 25,
+                "bottom": 13,
+                "right": 75
             }
         },
         "document_type": {
             "text": "TAX INVOICE",
-            "line": 10,
+            "line": 11,
             "crop": {
-                "top": 15,
-                "left": 40,
-                "bottom": 20,
-                "right": 60
+                "top": 20,
+                "left": 35,
+                "bottom": 23,
+                "right": 65
             }
         },
         "invoice_no_date": {
-            "text": "INV27A000587 12/05/2026",
-            "line": 14,
+            "text": "GST Invoice No: INV27A000587, GST Invoice Date: 12/05/2026",
+            "line": 15,
             "crop": {
-                "top": 20,
+                "top": 25,
                 "left": 60,
-                "bottom": 25,
-                "right": 80
+                "bottom": 31,
+                "right": 98
             }
         },
         "customer_name": {
             "text": "BIBHUTI BHUSANA PRADHAN",
-            "line": 18,
+            "line": 17,
             "crop": {
-                "top": 25,
-                "left": 10,
-                "bottom": 30,
-                "right": 50
+                "top": 28,
+                "left": 15,
+                "bottom": 31,
+                "right": 55
             }
         },
         "oem_discount": {
-            "text": "Note : Scrappage Bonus Amount is Rs.30000.00/- (Inclusive of GST)",
+            "text": "Note : Scrappage Bonus Amount is Rs.30000.00/-(inclusive of GST)",
             "amount": "30000.00",
-            "line": 50,
+            "line": 72,
             "crop": {
-                "top": 70,
-                "left": 10,
-                "bottom": 75,
-                "right": 90
+                "top": 74,
+                "left": 5,
+                "bottom": 77,
+                "right": 70
             }
         },
         "customer_signature": {
-            "text": "Present",
-            "line": 60,
+            "text": "Present - Handwritten signature 'Bibhuti Bhusana Pradhan' present at Customer Signature line, appears to match the customer name",
+            "line": 90,
             "crop": {
-                "top": 80,
-                "left": 10,
-                "bottom": 85,
+                "top": 87,
+                "left": 5,
+                "bottom": 93,
                 "right": 50
             }
         },
         "dealer_stamp": {
-            "text": "ADITYA MOTORS, Authorised Dealer: Mahindra & Mahindra Limited",
-            "line": 65,
+            "text": "Present - Circular stamp of ADITYA MOTORS with 'Authorised Signatory' designation visible; digital signature note 'Digitally Signed by: MANOJ KUMAR RATH 27/05/2026' and 'Signature Not Verified' text present; reverse charge note states 'Whether tax is Payable on reverse charges: NO'",
+            "line": 88,
             "crop": {
-                "top": 85,
-                "left": 10,
-                "bottom": 90,
-                "right": 90
+                "top": 82,
+                "left": 60,
+                "bottom": 97,
+                "right": 98
             }
         }
     },
     "disclaimer": {
         "dealership_name": {
-            "text": "Aditya Motors",
-            "line": 2,
+            "text": "Aditya Motors (Unit of Aditya Car Automotives (P) Ltd.)",
+            "line": 3,
             "crop": {
-                "top": 5,
-                "left": 70,
-                "bottom": 10,
-                "right": 95
+                "top": 6,
+                "left": 25,
+                "bottom": 18,
+                "right": 75
             }
         },
         "document_title": {
             "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
-            "line": 5,
+            "line": 8,
             "crop": {
-                "top": 15,
-                "left": 20,
-                "bottom": 20,
-                "right": 80
+                "top": 19,
+                "left": 15,
+                "bottom": 22,
+                "right": 85
             }
         },
         "customer_name": {
             "text": "Bibhuti Bhusana Pradhan",
-            "line": 6,
+            "line": 9,
             "crop": {
                 "top": 22,
-                "left": 5,
-                "bottom": 27,
-                "right": 50
+                "left": 8,
+                "bottom": 26,
+                "right": 92
             }
         },
         "old_vehicle_details": {
-            "text": "Registration Number: DL9CE2985, Vehicle Make: Maruti, Vehicle Model: Maruti 800",
-            "line": 10,
+            "text": "Registration Number: DL9CE2985 | Vehicle Make: Maruti | Vehicle Model: Maruti 800",
+            "line": 13,
             "crop": {
                 "top": 30,
-                "left": 5,
-                "bottom": 40,
-                "right": 95
+                "left": 12,
+                "bottom": 42,
+                "right": 88
             }
         },
         "new_vehicle_details": {
-            "text": "New Vehicle Model: XUV3X0 AX5 PM MT RQ, Chassis Number: T2C60084, Engine Number: NPTZC74195",
-            "line": 15,
+            "text": "New Vehicle Model: XUV3XO AX5 PM MT RQ | Chassis Number: T2C60084 | Engine Number: NPTZC74195",
+            "line": 22,
             "crop": {
-                "top": 45,
-                "left": 5,
-                "bottom": 55,
-                "right": 95
+                "top": 47,
+                "left": 12,
+                "bottom": 56,
+                "right": 88
             }
         },
         "benefit_amount": {
             "text": "INR 30000.0 from the ADITYA MOTORS",
-            "line": 20,
+            "line": 32,
             "crop": {
-                "top": 60,
-                "left": 5,
-                "bottom": 65,
-                "right": 95
+                "top": 68,
+                "left": 8,
+                "bottom": 73,
+                "right": 92
             }
         },
         "customer_signature": {
             "text": "Handwritten signature present | Name: Bibhuti Bhusana Pradhan",
-            "line": 30,
+            "line": 40,
             "crop": {
-                "top": 85,
+                "top": 78,
                 "left": 5,
-                "bottom": 90,
-                "right": 50
+                "bottom": 88,
+                "right": 55
             }
         },
         "dealer_stamp": {
-            "text": "ADITYA MOTORS | Authorised signature present",
-            "line": 35,
+            "text": "Circular stamp present with company name: ADITYA MOTORS / Aditya Car Automotives Pvt. Ltd., Cuttack | Authorised signature present on/near the stamp",
+            "line": 41,
             "crop": {
-                "top": 85,
-                "left": 70,
-                "bottom": 95,
+                "top": 77,
+                "left": 60,
+                "bottom": 92,
                 "right": 95
             }
         }
@@ -157,53 +157,53 @@
     "ledger": {
         "dealership_name": {
             "text": "ADITYA CAR AUTOMOTIVES PVT. LTD.",
-            "line": 4,
+            "line": 5,
             "crop": {
-                "top": 5,
-                "left": 10,
+                "top": 7,
+                "left": 25,
                 "bottom": 10,
-                "right": 90
+                "right": 75
             }
         },
         "customer_name": {
             "text": "Bibhuti Bhusana Pradhan-R270151340",
-            "line": 8,
+            "line": 10,
             "crop": {
-                "top": 10,
-                "left": 10,
+                "top": 12,
+                "left": 25,
                 "bottom": 15,
-                "right": 90
+                "right": 75
             }
         },
         "document_name": {
             "text": "Ledger Report",
-            "line": 7,
+            "line": 9,
             "crop": {
                 "top": 10,
-                "left": 10,
-                "bottom": 15,
-                "right": 90
+                "left": 30,
+                "bottom": 13,
+                "right": 70
             }
         },
         "scrappage_bonus": {
             "text": "SCRAPPAGE BONUS",
             "amount": "30,000.00",
-            "line": 21,
+            "line": 38,
             "crop": {
-                "top": 40,
-                "left": 10,
-                "bottom": 45,
-                "right": 90
+                "top": 36,
+                "left": 25,
+                "bottom": 42,
+                "right": 85
             }
         },
         "seal_stamp": {
-            "text": "ADITYA MOTORS",
-            "line": 38,
+            "text": "ADITYA MOTORS Cuttack (A Unit of Aditya Car Automotives Pvt Ltd.)",
+            "line": 72,
             "crop": {
-                "top": 85,
-                "left": 70,
-                "bottom": 95,
-                "right": 90
+                "top": 62,
+                "left": 62,
+                "bottom": 82,
+                "right": 85
             }
         }
     },

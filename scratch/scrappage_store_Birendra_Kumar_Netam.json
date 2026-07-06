@@ -1,0 +1,264 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 2,
+            "crop": {
+                "top": 3,
+                "left": 25,
+                "bottom": 12,
+                "right": 75
+            }
+        },
+        "document_type": {
+            "text": "TAX INVOICE",
+            "line": 18,
+            "crop": {
+                "top": 21,
+                "left": 35,
+                "bottom": 25,
+                "right": 65
+            }
+        },
+        "invoice_no_date": {
+            "text": "GST Invoice No: INV27A000177 | GST Invoice Date: 15/05/2026",
+            "line": 26,
+            "crop": {
+                "top": 28,
+                "left": 55,
+                "bottom": 35,
+                "right": 100
+            }
+        },
+        "customer_name": {
+            "text": "BIRENDRA KUMAR NETAM",
+            "line": 29,
+            "crop": {
+                "top": 30,
+                "left": 5,
+                "bottom": 35,
+                "right": 50
+            }
+        },
+        "oem_discount": {
+            "text": "Note : Scrappage Bonus Amount is Rs.20000.00/- (Inclusive of GST)",
+            "amount": "20000.00",
+            "line": 72,
+            "crop": {
+                "top": 70,
+                "left": 5,
+                "bottom": 75,
+                "right": 75
+            }
+        },
+        "customer_signature": {
+            "text": "Customer Signature: Present - handwritten signature appears near the Customer Name line at the bottom left",
+            "line": 88,
+            "crop": {
+                "top": 85,
+                "left": 5,
+                "bottom": 93,
+                "right": 35
+            }
+        },
+        "dealer_stamp": {
+            "text": "Present - Circular stamp reading 'RALAS AUTOMOBILES' with phone numbers 07722-233700, 233800 and butterfly logo; Authorised Signatory signature present; dealer name 'RALAS AUTOMOBILES' printed on Customer Name line",
+            "line": 87,
+            "crop": {
+                "top": 82,
+                "left": 58,
+                "bottom": 96,
+                "right": 95
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 3,
+                "bottom": 10,
+                "right": 45
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 12,
+            "crop": {
+                "top": 14,
+                "left": 15,
+                "bottom": 18,
+                "right": 85
+            }
+        },
+        "customer_name": {
+            "text": "Birendra Kumar Netam",
+            "line": 13,
+            "crop": {
+                "top": 18,
+                "left": 3,
+                "bottom": 22,
+                "right": 70
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: DL3CBR4368 | Vehicle Make: Hyundai | Vehicle Model: Santro",
+            "line": 17,
+            "crop": {
+                "top": 26,
+                "left": 10,
+                "bottom": 37,
+                "right": 75
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: MAHINDRA BOLERO B8 BS-VI | Chassis Number: S6L23814 | Engine Number: TVS6L12279",
+            "line": 28,
+            "crop": {
+                "top": 45,
+                "left": 10,
+                "bottom": 55,
+                "right": 80
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the RALAS AUTOMOBILES",
+            "line": 47,
+            "crop": {
+                "top": 68,
+                "left": 3,
+                "bottom": 73,
+                "right": 85
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: Birendra Kumar Netam",
+            "line": 56,
+            "crop": {
+                "top": 82,
+                "left": 3,
+                "bottom": 92,
+                "right": 45
+            }
+        },
+        "dealer_stamp": {
+            "text": "Circular stamp with 'RALAS AUTOMOBILES' printed on it; authorised signature present on/near the stamp",
+            "line": 56,
+            "crop": {
+                "top": 80,
+                "left": 55,
+                "bottom": 95,
+                "right": 90
+            }
+        }
+    },
+    "ledger": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 5,
+                "left": 20,
+                "bottom": 10,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "BIRENDRA KUMAR NETAM S/O RAMDAS NETAM",
+            "line": 10,
+            "crop": {
+                "top": 18,
+                "left": 20,
+                "bottom": 22,
+                "right": 80
+            }
+        },
+        "document_name": {
+            "text": "Ledger Account",
+            "line": 11,
+            "crop": {
+                "top": 21,
+                "left": 35,
+                "bottom": 25,
+                "right": 65
+            }
+        },
+        "scrappage_bonus": {
+            "text": "LOYALTY CLAIM M&M VEH / SCRAPPAGE BONUS",
+            "amount": "20,000.00",
+            "line": 38,
+            "crop": {
+                "top": 63,
+                "left": 10,
+                "bottom": 68,
+                "right": 100
+            }
+        },
+        "seal_stamp": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 50,
+            "crop": {
+                "top": 75,
+                "left": 45,
+                "bottom": 92,
+                "right": 75
+            }
+        }
+    },
+    "cod": {
+        "certificate_no": {
+            "text": "COD2026036DL3CBR4368",
+            "line": 5,
+            "crop": {
+                "top": 11,
+                "left": 10,
+                "bottom": 14,
+                "right": 55
+            }
+        },
+        "customer_name": {
+            "text": "BIRENDRA KUMAR NETAM",
+            "line": 18,
+            "crop": {
+                "top": 28,
+                "left": 10,
+                "bottom": 33,
+                "right": 90
+            }
+        },
+        "registration_no": {
+            "text": "DL3CBR4368",
+            "line": 20,
+            "crop": {
+                "top": 31,
+                "left": 10,
+                "bottom": 36,
+                "right": 70
+            }
+        },
+        "vehicle_make": {
+            "text": "HYUNDAI MOTOR INDIA LTD",
+            "line": 26,
+            "crop": {
+                "top": 43,
+                "left": 10,
+                "bottom": 47,
+                "right": 50
+            }
+        },
+        "vehicle_model": {
+            "text": "Santro GL Met BS-1V",
+            "line": 26,
+            "crop": {
+                "top": 43,
+                "left": 52,
+                "bottom": 47,
+                "right": 95
+            }
+        }
+    },
+    "oem": {},
+    "relational": {}
+}

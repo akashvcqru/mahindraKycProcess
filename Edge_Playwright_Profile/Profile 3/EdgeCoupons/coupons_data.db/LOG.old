@@ -1,15 +1,6 @@
-2026/07/04-20:42:05.012 6ff4 Reusing MANIFEST C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/07/04-20:42:05.014 6ff4 Recovering log #835
-2026/07/04-20:42:05.015 6ff4 Reusing old log C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\EdgeCoupons/coupons_data.db/000835.log 
-2026/07/04-20:42:05.147 54ac Level-0 table #839: started
-2026/07/04-20:42:05.151 54ac Level-0 table #839: 683004 bytes OK
-2026/07/04-20:42:05.153 54ac Delete type=0 #835
-2026/07/04-20:42:05.153 17d0 Compacting 4@0 + 1@1 files
-2026/07/04-20:42:05.159 17d0 Generated table #840@0: 3 keys, 683004 bytes
-2026/07/04-20:42:05.160 17d0 Compacted 4@0 + 1@1 files => 683004 bytes
-2026/07/04-20:42:05.160 17d0 compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/07/04-20:42:05.161 17d0 Delete type=2 #827
-2026/07/04-20:42:05.162 17d0 Delete type=2 #830
-2026/07/04-20:42:05.162 17d0 Delete type=2 #833
-2026/07/04-20:42:05.162 17d0 Delete type=2 #836
-2026/07/04-20:42:05.162 17d0 Delete type=2 #839
+2026/07/06-14:09:07.404 66f0 Reusing MANIFEST C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/07/06-14:09:07.405 66f0 Recovering log #838
+2026/07/06-14:09:07.406 66f0 Reusing old log C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\EdgeCoupons/coupons_data.db/000838.log 
+2026/07/06-14:09:07.546 89d0 Level-0 table #843: started
+2026/07/06-14:09:07.550 89d0 Level-0 table #843: 683004 bytes OK
+2026/07/06-14:09:07.551 89d0 Delete type=0 #838

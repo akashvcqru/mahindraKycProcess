@@ -1,12 +1,11 @@
-2026/07/06-12:48:32.293 887c Reusing MANIFEST C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/07/06-12:48:32.295 887c Recovering log #838
-2026/07/06-12:48:32.295 887c Level-0 table #842: started
-2026/07/06-12:48:32.298 887c Level-0 table #842: 208 bytes OK
-2026/07/06-12:48:32.299 887c Recovering log #855
-2026/07/06-12:48:32.301 887c Reusing old log C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/000855.log 
-2026/07/06-12:48:32.303 887c Delete type=0 #838
-2026/07/06-12:48:32.304 887c Delete type=2 #854
-2026/07/06-12:48:32.304 887c Delete type=2 #856
-2026/07/06-12:48:32.337 1b68 Level-0 table #857: started
-2026/07/06-12:48:32.341 1b68 Level-0 table #857: 683004 bytes OK
-2026/07/06-12:48:32.342 1b68 Delete type=0 #855
+2026/07/06-16:58:42.768 9110 Reusing MANIFEST C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/07/06-16:58:42.772 9110 Recovering log #842
+2026/07/06-16:58:42.772 9110 Level-0 table #845: started
+2026/07/06-16:58:42.778 9110 Level-0 table #845: 208 bytes OK
+2026/07/06-16:58:42.779 9110 Recovering log #857
+2026/07/06-16:58:42.780 9110 Reusing old log C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/000857.log 
+2026/07/06-16:58:42.786 9110 Delete type=0 #842
+2026/07/06-16:58:42.786 9110 Delete type=2 #858
+2026/07/06-16:58:44.095 76c0 Level-0 table #859: started
+2026/07/06-16:58:44.112 76c0 Level-0 table #859: 683004 bytes OK
+2026/07/06-16:58:44.118 76c0 Delete type=0 #857

@@ -1,0 +1,264 @@
+{
+    "invoice": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 1,
+                "left": 20,
+                "bottom": 8,
+                "right": 80
+            }
+        },
+        "document_type": {
+            "text": "TAX INVOICE",
+            "line": 14,
+            "crop": {
+                "top": 13,
+                "left": 30,
+                "bottom": 16,
+                "right": 70
+            }
+        },
+        "invoice_no_date": {
+            "text": "GST Invoice No: INV27A000190 | GST Invoice Date: 16/05/2026",
+            "line": 22,
+            "crop": {
+                "top": 19,
+                "left": 60,
+                "bottom": 24,
+                "right": 99
+            }
+        },
+        "customer_name": {
+            "text": "AHMED RAMEEZ RAZA",
+            "line": 23,
+            "crop": {
+                "top": 21,
+                "left": 5,
+                "bottom": 24,
+                "right": 55
+            }
+        },
+        "oem_discount": {
+            "text": "Note : Scrappage Bonus Amount is Rs.20000.00/- (Inclusive of GST)",
+            "amount": "20000.00",
+            "line": 68,
+            "crop": {
+                "top": 64,
+                "left": 3,
+                "bottom": 67,
+                "right": 75
+            }
+        },
+        "customer_signature": {
+            "text": "Present - signature appears on the Customer Signature line near bottom left of document",
+            "line": 95,
+            "crop": {
+                "top": 91,
+                "left": 3,
+                "bottom": 97,
+                "right": 35
+            }
+        },
+        "dealer_stamp": {
+            "text": "Present - Circular stamp reads 'RALAS AUTOMOBILES' with Mahindra Rise logo; Authorised Signatory designation visible; 'Whether tax is Payable on reverse charges: NO' printed on document",
+            "line": 88,
+            "crop": {
+                "top": 82,
+                "left": 60,
+                "bottom": 97,
+                "right": 95
+            }
+        }
+    },
+    "disclaimer": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 2,
+                "left": 3,
+                "bottom": 8,
+                "right": 45
+            }
+        },
+        "document_title": {
+            "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
+            "line": 10,
+            "crop": {
+                "top": 14,
+                "left": 15,
+                "bottom": 18,
+                "right": 85
+            }
+        },
+        "customer_name": {
+            "text": "Ahmed Rameez Raza",
+            "line": 11,
+            "crop": {
+                "top": 18,
+                "left": 3,
+                "bottom": 22,
+                "right": 50
+            }
+        },
+        "old_vehicle_details": {
+            "text": "Registration Number: UP14AD1900 | Vehicle Make: Maruti | Vehicle Model: Esteem",
+            "line": 16,
+            "crop": {
+                "top": 26,
+                "left": 8,
+                "bottom": 38,
+                "right": 90
+            }
+        },
+        "new_vehicle_details": {
+            "text": "New Vehicle Model: THAR ROXX STAR EDN D AT RWD STL BLK/BR | Chassis Number: T2A19904 | Engine Number: KYT4A64901",
+            "line": 31,
+            "crop": {
+                "top": 49,
+                "left": 8,
+                "bottom": 59,
+                "right": 90
+            }
+        },
+        "benefit_amount": {
+            "text": "INR 20000.0 from the RALAS AUTOMOBILES",
+            "line": 45,
+            "crop": {
+                "top": 69,
+                "left": 3,
+                "bottom": 73,
+                "right": 80
+            }
+        },
+        "customer_signature": {
+            "text": "Handwritten signature present | Name: Ahmed Rameez Raza",
+            "line": 55,
+            "crop": {
+                "top": 82,
+                "left": 3,
+                "bottom": 91,
+                "right": 45
+            }
+        },
+        "dealer_stamp": {
+            "text": "Circular stamp present with company name RALAS AUTOMOBILES and phone numbers 07722-233700/233800; authorised signature present near/on the stamp",
+            "line": 55,
+            "crop": {
+                "top": 80,
+                "left": 50,
+                "bottom": 94,
+                "right": 85
+            }
+        }
+    },
+    "ledger": {
+        "dealership_name": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 1,
+            "crop": {
+                "top": 4,
+                "left": 20,
+                "bottom": 9,
+                "right": 80
+            }
+        },
+        "customer_name": {
+            "text": "AHMED RAMEEZ RAZA S/O MOHAMMAD YUSUF RAZA",
+            "line": 10,
+            "crop": {
+                "top": 19,
+                "left": 15,
+                "bottom": 23,
+                "right": 85
+            }
+        },
+        "document_name": {
+            "text": "Ledger Account",
+            "line": 11,
+            "crop": {
+                "top": 22,
+                "left": 35,
+                "bottom": 26,
+                "right": 65
+            }
+        },
+        "scrappage_bonus": {
+            "text": "By LOYALTY CLAIM M&M VEH Journal SCRAPPAGE BONUS",
+            "amount": "20,000.00",
+            "line": 22,
+            "crop": {
+                "top": 46,
+                "left": 5,
+                "bottom": 50,
+                "right": 100
+            }
+        },
+        "seal_stamp": {
+            "text": "RALAS AUTOMOBILES",
+            "line": 38,
+            "crop": {
+                "top": 68,
+                "left": 45,
+                "bottom": 85,
+                "right": 80
+            }
+        }
+    },
+    "cod": {
+        "certificate_no": {
+            "text": "COD2026058UP14AD1900",
+            "line": 5,
+            "crop": {
+                "top": 11,
+                "left": 10,
+                "bottom": 14,
+                "right": 55
+            }
+        },
+        "customer_name": {
+            "text": "AHMED RAMEEZ RAZA",
+            "line": 15,
+            "crop": {
+                "top": 22,
+                "left": 35,
+                "bottom": 26,
+                "right": 75
+            }
+        },
+        "registration_no": {
+            "text": "UP14AD1900",
+            "line": 16,
+            "crop": {
+                "top": 25,
+                "left": 55,
+                "bottom": 29,
+                "right": 80
+            }
+        },
+        "vehicle_make": {
+            "text": "MARUTI SUZUKI INDIA LTD",
+            "line": 22,
+            "crop": {
+                "top": 37,
+                "left": 10,
+                "bottom": 41,
+                "right": 50
+            }
+        },
+        "vehicle_model": {
+            "text": "ESTEEM",
+            "line": 22,
+            "crop": {
+                "top": 37,
+                "left": 52,
+                "bottom": 41,
+                "right": 85
+            }
+        }
+    },
+    "oem": {},
+    "relational": {}
+}

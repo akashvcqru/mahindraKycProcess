@@ -1,3 +1,6 @@
-2026/07/04-20:42:00.804 3078 Reusing MANIFEST C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\Local Storage\leveldb/MANIFEST-000001
-2026/07/04-20:42:00.822 3078 Recovering log #180
-2026/07/04-20:42:00.826 3078 Reusing old log C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\Local Storage\leveldb/000180.log 
+2026/07/06-14:08:53.693 35ec Reusing MANIFEST C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\Local Storage\leveldb/MANIFEST-000001
+2026/07/06-14:08:53.704 35ec Recovering log #180
+2026/07/06-14:08:53.714 35ec Reusing old log C:\Users\admin\AppData\Local\Microsoft\Edge\User Data\Profile 3\Local Storage\leveldb/000180.log 
+2026/07/06-14:09:53.729 7b08 Level-0 table #185: started
+2026/07/06-14:09:53.733 7b08 Level-0 table #185: 18727 bytes OK
+2026/07/06-14:09:53.734 7b08 Delete type=0 #180

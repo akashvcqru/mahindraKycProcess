@@ -2,154 +2,154 @@
     "invoice": {
         "dealership_name": {
             "text": "Aditya Motors",
-            "line": 2,
+            "line": 3,
             "crop": {
-                "top": 5,
-                "left": 10,
-                "bottom": 10,
-                "right": 50
+                "top": 6,
+                "left": 25,
+                "bottom": 13,
+                "right": 75
             }
         },
         "document_type": {
             "text": "GST INVOICE",
-            "line": 10,
+            "line": 12,
             "crop": {
-                "top": 15,
-                "left": 40,
-                "bottom": 20,
-                "right": 60
+                "top": 19,
+                "left": 35,
+                "bottom": 22,
+                "right": 65
             }
         },
         "invoice_no_date": {
-            "text": "INV2740000911 30/05/2026",
+            "text": "GST Invoice No: INV27A000941, GST Invoice Date: 30/05/2026",
             "line": 16,
             "crop": {
-                "top": 20,
-                "left": 60,
-                "bottom": 25,
-                "right": 80
+                "top": 23,
+                "left": 62,
+                "bottom": 29,
+                "right": 98
             }
         },
         "customer_name": {
             "text": "ALOK PRADHAN",
-            "line": 13,
+            "line": 18,
             "crop": {
                 "top": 25,
-                "left": 10,
-                "bottom": 30,
-                "right": 30
+                "left": 15,
+                "bottom": 28,
+                "right": 55
             }
         },
         "oem_discount": {
             "text": "Note : Scrappage Bonus Amount is Rs.20000.00/-(inclusive of GST)",
             "amount": "20000.00",
-            "line": 40,
+            "line": 62,
             "crop": {
-                "top": 70,
-                "left": 10,
+                "top": 72,
+                "left": 8,
                 "bottom": 75,
-                "right": 90
+                "right": 75
             }
         },
         "customer_signature": {
-            "text": "Present",
-            "line": 50,
+            "text": "Present - Signature appears as 'Alok Pradhan' in cursive, consistent with customer name ALOK PRADHAN",
+            "line": 78,
             "crop": {
-                "top": 80,
-                "left": 10,
-                "bottom": 85,
-                "right": 30
+                "top": 88,
+                "left": 8,
+                "bottom": 93,
+                "right": 38
             }
         },
         "dealer_stamp": {
-            "text": "ADITYA MOTORS, Cuttack",
-            "line": 55,
+            "text": "Present - Circular stamp reads 'ADITYA Motors / Aditya Car Automotives Pvt. Ltd. / Cuttack'; Authorised Signatory digitally signed by MANOJ KUMAR RATH on 30/05/2026 @ 16:20:44 IST; 'Signature Not Verified' noted; no explicit reverse charge note on stamp",
+            "line": 80,
             "crop": {
                 "top": 85,
-                "left": 60,
-                "bottom": 90,
-                "right": 80
+                "left": 62,
+                "bottom": 97,
+                "right": 95
             }
         }
     },
     "disclaimer": {
         "dealership_name": {
-            "text": "Aditya Motors",
-            "line": 2,
+            "text": "Aditya Motors (Unit of Aditya Car Automotives (P) Ltd.)",
+            "line": 3,
             "crop": {
-                "top": 5,
-                "left": 70,
-                "bottom": 10,
-                "right": 95
+                "top": 7,
+                "left": 25,
+                "bottom": 22,
+                "right": 75
             }
         },
         "document_title": {
             "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
-            "line": 6,
+            "line": 8,
             "crop": {
-                "top": 15,
-                "left": 20,
-                "bottom": 20,
-                "right": 80
+                "top": 22,
+                "left": 15,
+                "bottom": 26,
+                "right": 85
             }
         },
         "customer_name": {
             "text": "ALOK PRADHAN",
-            "line": 7,
+            "line": 9,
             "crop": {
-                "top": 22,
-                "left": 5,
-                "bottom": 27,
-                "right": 30
+                "top": 26,
+                "left": 10,
+                "bottom": 32,
+                "right": 90
             }
         },
         "old_vehicle_details": {
-            "text": "Registration Number: GJ05CB4766, Vehicle Make: Maruti, Vehicle Model: WAGON-R LXI",
-            "line": 11,
+            "text": "Registration Number: GJ05CB4766 | Vehicle Make: Maruti | Vehicle Model: WAGON R LXI",
+            "line": 13,
             "crop": {
-                "top": 30,
-                "left": 5,
-                "bottom": 40,
-                "right": 95
+                "top": 33,
+                "left": 10,
+                "bottom": 44,
+                "right": 90
             }
         },
         "new_vehicle_details": {
-            "text": "New Vehicle Model: SCORPIO-N D MT 2WD Z8L 7S XJ, Chassis Number: T6E60743, Engine Number: YDTAE75711",
-            "line": 16,
+            "text": "New Vehicle Model: SCORPIO-N D MT 2WD Z8L 7S XJ | Chassis Number: T6E60743 | Engine Number: YDT4E75711",
+            "line": 20,
             "crop": {
-                "top": 42,
-                "left": 5,
-                "bottom": 50,
-                "right": 95
+                "top": 48,
+                "left": 10,
+                "bottom": 58,
+                "right": 90
             }
         },
         "benefit_amount": {
             "text": "INR 20000.0 from the ADITYA MOTORS",
-            "line": 24,
+            "line": 28,
             "crop": {
-                "top": 55,
-                "left": 5,
-                "bottom": 60,
-                "right": 95
+                "top": 66,
+                "left": 10,
+                "bottom": 71,
+                "right": 90
             }
         },
         "customer_signature": {
             "text": "Handwritten signature present | Name: ALOK PRADHAN",
-            "line": 34,
+            "line": 38,
             "crop": {
-                "top": 85,
+                "top": 79,
                 "left": 5,
-                "bottom": 90,
-                "right": 40
+                "bottom": 88,
+                "right": 50
             }
         },
         "dealer_stamp": {
-            "text": "ADITYA MOTORS | Authorised signature present",
-            "line": 36,
+            "text": "Circular stamp present with text: ADITYA MOTORS, Unit of Aditya Car Automotives Pvt. Ltd., Cuttack | Authorised signature present on/near the stamp",
+            "line": 39,
             "crop": {
-                "top": 85,
-                "left": 70,
-                "bottom": 95,
+                "top": 79,
+                "left": 55,
+                "bottom": 93,
                 "right": 95
             }
         }
@@ -157,53 +157,53 @@
     "ledger": {
         "dealership_name": {
             "text": "ADITYA CAR AUTOMOTIVES PVT. LTD.",
-            "line": 4,
+            "line": 6,
             "crop": {
-                "top": 5,
-                "left": 10,
+                "top": 7,
+                "left": 25,
                 "bottom": 10,
-                "right": 90
+                "right": 75
             }
         },
         "customer_name": {
-            "text": "ALOK PRADHAN-R270177976",
-            "line": 8,
+            "text": "ALOK PRADHAN-R270217976",
+            "line": 10,
             "crop": {
-                "top": 10,
-                "left": 10,
-                "bottom": 15,
-                "right": 90
+                "top": 11,
+                "left": 25,
+                "bottom": 13,
+                "right": 75
             }
         },
         "document_name": {
             "text": "Ledger Report",
-            "line": 7,
+            "line": 9,
             "crop": {
-                "top": 10,
-                "left": 10,
-                "bottom": 15,
-                "right": 90
+                "top": 9,
+                "left": 25,
+                "bottom": 11,
+                "right": 75
             }
         },
         "scrappage_bonus": {
-            "text": "SCRAPPA GE BONUS",
-            "amount": "20,000.00",
-            "line": 23,
+            "text": "GE BONUS (SCRAPPA GE BONUS)",
+            "amount": "Not found",
+            "line": 38,
             "crop": {
-                "top": 40,
-                "left": 10,
-                "bottom": 45,
-                "right": 90
+                "top": 34,
+                "left": 25,
+                "bottom": 40,
+                "right": 75
             }
         },
         "seal_stamp": {
-            "text": "ADITYA MOTORS CUTTACK",
-            "line": 40,
+            "text": "ADITYA MOTORS Cuttack (A Unit of Aditya Car Automotives Pvt Ltd)",
+            "line": 72,
             "crop": {
-                "top": 85,
-                "left": 70,
-                "bottom": 95,
-                "right": 95
+                "top": 68,
+                "left": 55,
+                "bottom": 85,
+                "right": 80
             }
         }
     },

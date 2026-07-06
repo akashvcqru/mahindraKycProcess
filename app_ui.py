@@ -25,6 +25,180 @@ try:
 except ImportError:
     pass
 
+# Monkeypatch requests to support Claude as a drop-in replacement for OpenAI
+import requests
+import json
+import time
+
+original_post = requests.post
+
+def transform_openai_to_claude(openai_json):
+    claude_messages = []
+    messages = openai_json.get("messages", [])
+    system_text = None
+    
+    for msg in messages:
+        role = msg.get("role", "user")
+        content_in = msg.get("content")
+        
+        if role == "system":
+            if isinstance(content_in, str):
+                system_text = (system_text + "\n" + content_in) if system_text else content_in
+            elif isinstance(content_in, list):
+                text_parts = [p.get("text", "") for p in content_in if p.get("type") == "text"]
+                combined = " ".join(text_parts)
+                system_text = (system_text + "\n" + combined) if system_text else combined
+            continue
+            
+        claude_content = []
+        if isinstance(content_in, list):
+            for part in content_in:
+                if part.get("type") == "text":
+                    claude_content.append({
+                        "type": "text",
+                        "text": part.get("text")
+                    })
+                elif part.get("type") == "image_url":
+                    img_url = part.get("image_url", {}).get("url", "")
+                    if img_url.startswith("data:image/"):
+                        try:
+                            header, base64_data = img_url.split(",", 1)
+                            media_type = header.split(";")[0].replace("data:", "")
+                        except Exception:
+                            base64_data = img_url
+                            media_type = "image/jpeg"
+                    else:
+                        base64_data = img_url
+                        media_type = "image/jpeg"
+                    
+                    claude_content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": base64_data
+                        }
+                    })
+        elif isinstance(content_in, str):
+            claude_content = content_in
+            
+        claude_messages.append({
+            "role": role,
+            "content": claude_content
+        })
+        
+    claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+    claude_payload = {
+        "model": claude_model,
+        "max_tokens": openai_json.get("max_tokens", 4096),
+        "messages": claude_messages
+    }
+    if system_text:
+        claude_payload["system"] = system_text
+        
+    return claude_payload
+
+def transform_claude_to_openai(claude_json):
+    text_content = ""
+    for part in claude_json.get("content", []):
+        if part.get("type") == "text":
+            text_content += part.get("text", "")
+            
+    # Extract JSON if present to conform with OpenAI strict JSON format expectations
+    clean_content = text_content.strip()
+    if '{' in clean_content or '[' in clean_content:
+        start_brace = clean_content.find('{')
+        start_bracket = clean_content.find('[')
+        
+        start = -1
+        end = -1
+        
+        if start_brace != -1 and (start_bracket == -1 or start_brace < start_bracket):
+            start = start_brace
+            end = clean_content.rfind('}')
+        elif start_bracket != -1:
+            start = start_bracket
+            end = clean_content.rfind(']')
+            
+        if start != -1 and end != -1 and end > start:
+            json_candidate = clean_content[start:end+1]
+            try:
+                # Validate it's parseable JSON
+                json.loads(json_candidate)
+                text_content = json_candidate
+            except json.JSONDecodeError:
+                pass
+            
+    openai_json = {
+        "id": claude_json.get("id", "chatcmpl-mock"),
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": claude_json.get("model", "gpt-4o"),
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": text_content
+                },
+                "finish_reason": "stop"
+            }
+        ],
+        "usage": {
+            "prompt_tokens": claude_json.get("usage", {}).get("input_tokens", 0),
+            "completion_tokens": claude_json.get("usage", {}).get("output_tokens", 0),
+            "total_tokens": claude_json.get("usage", {}).get("input_tokens", 0) + claude_json.get("usage", {}).get("output_tokens", 0)
+        }
+    }
+    return openai_json
+
+def custom_post(url, *args, **kwargs):
+    if url == "https://api.openai.com/v1/chat/completions":
+        provider = os.getenv("AI_PROVIDER", "OpenAI")
+        if provider == "Claude":
+            claude_key = os.getenv("CLAUDE_API_KEY", "")
+            headers = {
+                "x-api-key": claude_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
+            openai_payload = kwargs.get("json", {})
+            claude_payload = transform_openai_to_claude(openai_payload)
+            timeout = kwargs.get("timeout", 60)
+            
+            logging.info("Routing request to Claude API...")
+            claude_resp = original_post(
+                "https://api.anthropic.com/v1/messages",
+                headers=headers,
+                json=claude_payload,
+                timeout=timeout
+            )
+            
+            resp = requests.Response()
+            resp.status_code = claude_resp.status_code
+            resp.headers = dict(claude_resp.headers)
+            resp.reason = claude_resp.reason
+            resp.url = claude_resp.url
+            resp.request = claude_resp.request
+            
+            if claude_resp.status_code == 200:
+                try:
+                    claude_json = claude_resp.json()
+                    openai_json = transform_claude_to_openai(claude_json)
+                    resp._content = json.dumps(openai_json).encode("utf-8")
+                except Exception as e:
+                    logging.error(f"Error parsing Claude response: {e}")
+                    resp._content = claude_resp.content
+            else:
+                logging.error(f"Claude API request failed ({claude_resp.status_code}): {claude_resp.text}")
+                resp._content = claude_resp.content
+                
+            return resp
+            
+    return original_post(url, *args, **kwargs)
+
+requests.post = custom_post
+
 # Import the backend automation module
 import automate_login
 
@@ -399,6 +573,71 @@ class AppUI(tk.Tk):
         )
         self.row_helper_lbl.grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 4))
 
+        # AI Provider selection variable and UI (NEW!)
+        self.ai_provider_var = tk.StringVar(value=os.getenv("AI_PROVIDER", "OpenAI"))
+        self.openai_key_var = tk.StringVar(value=os.getenv("OPENAI_API_KEY", ""))
+        self.claude_key_var = tk.StringVar(value=os.getenv("CLAUDE_API_KEY", ""))
+
+        tk.Label(
+            self.controls_card,
+            text="AI Provider Selector:",
+            bg=CARD_BG_COLOR,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 9),
+        ).grid(row=6, column=0, sticky="w", pady=6)
+        self.ai_provider_combo = ttk.Combobox(
+            self.controls_card,
+            textvariable=self.ai_provider_var,
+            values=["OpenAI", "Claude"],
+            state="readonly",
+            width=18,
+        )
+        self.ai_provider_combo.grid(row=6, column=1, sticky="w", padx=10, pady=6)
+
+        # OpenAI API Key field
+        tk.Label(
+            self.controls_card,
+            text="OpenAI API Key:",
+            bg=CARD_BG_COLOR,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 9),
+        ).grid(row=7, column=0, sticky="w", pady=6)
+        self.openai_key_entry = tk.Entry(
+            self.controls_card,
+            textvariable=self.openai_key_var,
+            show="*",
+            bg="#2A2A2A",
+            fg=TEXT_COLOR,
+            insertbackground=TEXT_COLOR,
+            font=("Segoe UI", 9),
+            relief="flat",
+            bd=1,
+            width=21,
+        )
+        self.openai_key_entry.grid(row=7, column=1, sticky="w", padx=10, pady=6)
+
+        # Claude API Key field
+        tk.Label(
+            self.controls_card,
+            text="Claude API Key:",
+            bg=CARD_BG_COLOR,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 9),
+        ).grid(row=8, column=0, sticky="w", pady=6)
+        self.claude_key_entry = tk.Entry(
+            self.controls_card,
+            textvariable=self.claude_key_var,
+            show="*",
+            bg="#2A2A2A",
+            fg=TEXT_COLOR,
+            insertbackground=TEXT_COLOR,
+            font=("Segoe UI", 9),
+            relief="flat",
+            bd=1,
+            width=21,
+        )
+        self.claude_key_entry.grid(row=8, column=1, sticky="w", padx=10, pady=6)
+
         # Action Buttons
         self.start_btn = tk.Button(
             self.controls_card,
@@ -413,7 +652,7 @@ class AppUI(tk.Tk):
             bd=0,
             command=self.start_automation,
         )
-        self.start_btn.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        self.start_btn.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
         # Real-time styled terminal console logs log widget
         self.log_card = tk.LabelFrame(
@@ -1036,9 +1275,80 @@ class AppUI(tk.Tk):
             pass
 
     # Start Playwright automation thread
+    def update_env_keys(self):
+        provider = self.ai_provider_var.get()
+        openai_key = self.openai_key_var.get().strip()
+        claude_key = self.claude_key_var.get().strip()
+        
+        os.environ["AI_PROVIDER"] = provider
+        os.environ["OPENAI_API_KEY"] = openai_key
+        os.environ["CLAUDE_API_KEY"] = claude_key
+        
+        # Save to .env file
+        try:
+            if getattr(sys, 'frozen', False):
+                application_path = os.path.dirname(sys.executable)
+            else:
+                application_path = os.path.dirname(os.path.abspath(__file__))
+            env_path = os.path.join(application_path, '.env')
+            
+            lines = []
+            if os.path.exists(env_path):
+                with open(env_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+            
+            new_lines = []
+            updated = {"AI_PROVIDER": False, "OPENAI_API_KEY": False, "CLAUDE_API_KEY": False}
+            for line in lines:
+                striped = line.strip()
+                if not striped or striped.startswith('#'):
+                    new_lines.append(line)
+                    continue
+                if '=' in striped:
+                    k, v = striped.split('=', 1)
+                    k = k.strip()
+                    if k in updated:
+                        if k == "AI_PROVIDER":
+                            new_lines.append(f"AI_PROVIDER={provider}\n")
+                        elif k == "OPENAI_API_KEY":
+                            new_lines.append(f"OPENAI_API_KEY={openai_key}\n")
+                        elif k == "CLAUDE_API_KEY":
+                            new_lines.append(f"CLAUDE_API_KEY={claude_key}\n")
+                        updated[k] = True
+                    else:
+                        new_lines.append(line)
+                else:
+                    new_lines.append(line)
+            
+            if not updated["AI_PROVIDER"]:
+                new_lines.append(f"AI_PROVIDER={provider}\n")
+            if not updated["OPENAI_API_KEY"]:
+                new_lines.append(f"OPENAI_API_KEY={openai_key}\n")
+            if not updated["CLAUDE_API_KEY"]:
+                new_lines.append(f"CLAUDE_API_KEY={claude_key}\n")
+                
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+        except Exception as e:
+            logging.error(f"Failed to save .env file: {e}")
+
+    def check_keys(self):
+        self.update_env_keys()
+        provider = self.ai_provider_var.get()
+        if provider == "OpenAI" and not self.openai_key_var.get().strip():
+            messagebox.showerror("Error", "OpenAI API Key is required.")
+            return False
+        elif provider == "Claude" and not self.claude_key_var.get().strip():
+            messagebox.showerror("Error", "Claude API Key is required.")
+            return False
+        return True
+
     def start_automation(self):
         if self.automation_thread and self.automation_thread.is_alive():
             messagebox.showwarning("Running", "Automation is already in progress.")
+            return
+
+        if not self.check_keys():
             return
 
         # Disable controls during run
@@ -1050,6 +1360,9 @@ class AppUI(tk.Tk):
         self.date_choice_combo.configure(state="disabled")
         self.row_limit_combo.configure(state="disabled")
         self.scheme_type_combo.configure(state="disabled")
+        self.ai_provider_combo.configure(state="disabled")
+        self.openai_key_entry.configure(state="disabled")
+        self.claude_key_entry.configure(state="disabled")
 
         # Clean console log
         self.log_console.configure(state="normal")
@@ -1098,6 +1411,9 @@ class AppUI(tk.Tk):
         self.date_choice_combo.configure(state="readonly")
         self.row_limit_combo.configure(state="normal")
         self.scheme_type_combo.configure(state="readonly")
+        self.ai_provider_combo.configure(state="readonly")
+        self.openai_key_entry.configure(state="normal")
+        self.claude_key_entry.configure(state="normal")
 
     # Bridge between threads: automation thread requests UI inputs
     def ui_input_callback_bridge(self, prompt, prompt_type="text", options=None):
@@ -1495,9 +1811,12 @@ class AppUI(tk.Tk):
         if not hasattr(self, 'current_pdf_path') or not self.current_pdf_path or not os.path.exists(self.current_pdf_path):
             messagebox.showwarning("No PDF", "Please select a valid disclaimer PDF first.")
             return
+
+        if not self.check_keys():
+            return
             
         self.east_analyze_btn.config(state="disabled")
-        self.east_status_lbl.config(text="Analyzing via OpenAI... please wait.")
+        self.east_status_lbl.config(text=f"Analyzing via {self.ai_provider_var.get()}... please wait.")
         
         # Clear existing elements
         for widget in self.east_frame.winfo_children():
@@ -1561,9 +1880,12 @@ class AppUI(tk.Tk):
         if not hasattr(self, 'current_pdf_path') or not self.current_pdf_path or not os.path.exists(self.current_pdf_path):
             messagebox.showwarning("No PDF", "Please select a valid ledger PDF first.")
             return
+
+        if not self.check_keys():
+            return
             
         self.east_ledger_analyze_btn.config(state="disabled")
-        self.east_ledger_status_lbl.config(text="Analyzing via OpenAI... please wait.")
+        self.east_ledger_status_lbl.config(text=f"Analyzing via {self.ai_provider_var.get()}... please wait.")
         
         # Clear existing elements
         for widget in self.east_ledger_frame.winfo_children():
@@ -1627,9 +1949,12 @@ class AppUI(tk.Tk):
         if not hasattr(self, 'current_pdf_path') or not self.current_pdf_path or not os.path.exists(self.current_pdf_path):
             messagebox.showwarning("No PDF", "Please select a valid invoice PDF first.")
             return
+
+        if not self.check_keys():
+            return
             
         self.east_invoice_analyze_btn.config(state="disabled")
-        self.east_invoice_status_lbl.config(text="Analyzing via OpenAI... please wait.")
+        self.east_invoice_status_lbl.config(text=f"Analyzing via {self.ai_provider_var.get()}... please wait.")
         
         # Clear existing elements
         for widget in self.east_invoice_frame.winfo_children():
