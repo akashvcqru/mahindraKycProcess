@@ -23,7 +23,7 @@ def _is_ledger(filename):
     fn = filename.upper()
     if any(k in fn for k in ("LEDGER", "STMT", "STATEMENT")):
         return True
-    prefixes = ("LDGR", "LES", "LGR", "LDR", "LDG")
+    prefixes = ("LDGR", "LES", "LGR", "LDR", "LDG", "LED")
     if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in prefixes):
         return True
     if "-L-" in fn or " L-" in fn or fn.startswith("L-") or "-TL-" in fn or " TL-" in fn or fn.startswith("TL-"):
@@ -62,9 +62,9 @@ def _is_oem(filename):
 
 def _is_disclaimer(filename):
     fn = filename.upper()
-    if "DISCLAIMER" in fn:
+    if "DISCLAIMER" in fn or "DESCLAIMER" in fn:
         return True
-    prefixes = ("DIS", "DSC", "CD-")
+    prefixes = ("DIS", "DSC", "CD-", "DES")
     if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in prefixes):
         return True
     return False

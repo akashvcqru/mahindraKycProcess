@@ -6,7 +6,7 @@
             "crop": {
                 "top": 1,
                 "left": 20,
-                "bottom": 8,
+                "bottom": 9,
                 "right": 80
             }
         },
@@ -24,9 +24,9 @@
             "text": "GST Invoice No: INV27A00131 | GST Invoice Date: 04/05/2026",
             "line": 22,
             "crop": {
-                "top": 22,
+                "top": 26,
                 "left": 55,
-                "bottom": 27,
+                "bottom": 31,
                 "right": 100
             }
         },
@@ -34,40 +34,40 @@
             "text": "MOHANISH KUMAR SINHA",
             "line": 24,
             "crop": {
-                "top": 24,
+                "top": 28,
                 "left": 10,
-                "bottom": 27,
+                "bottom": 32,
                 "right": 55
             }
         },
         "oem_discount": {
             "text": "Note : Scrappage Bonus Amount is Rs.20000.00/-(inclusive of GST)",
             "amount": "20000.00",
-            "line": 72,
+            "line": 68,
             "crop": {
-                "top": 70,
+                "top": 67,
                 "left": 5,
-                "bottom": 73,
+                "bottom": 70,
                 "right": 75
             }
         },
         "customer_signature": {
-            "text": "Present - signature appears on the Customer Signature line near bottom, consistent with customer name MOHANISH KUMAR SINHA",
+            "text": "Present - signature appears on the Customer Signature line near bottom, appears handwritten above printed name line 'MOHANISH KUMAR SINHA'",
             "line": 88,
             "crop": {
                 "top": 85,
                 "left": 5,
-                "bottom": 91,
+                "bottom": 92,
                 "right": 45
             }
         },
         "dealer_stamp": {
-            "text": "Present - Circular stamp reading 'RALAS AUTOMOBILES' with Mahindra butterfly logo and 'Authorised Signatory' designation; signature of authorised signatory present alongside stamp",
-            "line": 87,
+            "text": "Present - Circular stamp reading 'RALAS AUTOMOBILES' with Mahindra butterfly logo, 'Authorised Signatory' designation visible, and handwritten signature above stamp. 'Whether tax is Payable on reverse charges: NO' also noted on document.",
+            "line": 86,
             "crop": {
-                "top": 82,
+                "top": 80,
                 "left": 60,
-                "bottom": 95,
+                "bottom": 96,
                 "right": 95
             }
         }
@@ -78,7 +78,7 @@
             "line": 1,
             "crop": {
                 "top": 2,
-                "left": 3,
+                "left": 5,
                 "bottom": 8,
                 "right": 45
             }
@@ -105,52 +105,52 @@
         },
         "old_vehicle_details": {
             "text": "Registration Number: UP16A3090 | Vehicle Make: Others | Vehicle Model: Others",
-            "line": 17,
+            "line": 18,
             "crop": {
                 "top": 27,
                 "left": 10,
-                "bottom": 37,
-                "right": 85
+                "bottom": 38,
+                "right": 80
             }
         },
         "new_vehicle_details": {
             "text": "New Vehicle Model: SCORPIO CLASSIC S MT 9S | Chassis Number: T2D86537 | Engine Number: YST4D46081",
-            "line": 28,
+            "line": 30,
             "crop": {
-                "top": 44,
+                "top": 43,
                 "left": 10,
-                "bottom": 54,
-                "right": 85
+                "bottom": 53,
+                "right": 80
             }
         },
         "benefit_amount": {
             "text": "INR 20000.0 from the RALAS AUTOMOBILES",
-            "line": 43,
+            "line": 47,
             "crop": {
-                "top": 66,
+                "top": 63,
                 "left": 5,
-                "bottom": 71,
-                "right": 90
+                "bottom": 68,
+                "right": 85
             }
         },
         "customer_signature": {
             "text": "Handwritten signature present | Name: Mohanish Kumar Sinha",
-            "line": 55,
+            "line": 56,
             "crop": {
-                "top": 80,
+                "top": 77,
                 "left": 5,
-                "bottom": 91,
+                "bottom": 87,
                 "right": 50
             }
         },
         "dealer_stamp": {
-            "text": "Circular stamp present with company name RALAS AUTOMOBILES and phone numbers (0722) 233700, 233800; authorised signature present on/near the stamp",
-            "line": 55,
+            "text": "Circular stamp present with company name RALAS AUTOMOBILES and phone numbers (0722)233700, 233800 visible; authorised handwritten signature present on/near the stamp",
+            "line": 56,
             "crop": {
-                "top": 78,
+                "top": 75,
                 "left": 55,
-                "bottom": 93,
-                "right": 90
+                "bottom": 90,
+                "right": 85
             }
         }
     },
@@ -161,48 +161,48 @@
             "crop": {
                 "top": 4,
                 "left": 20,
-                "bottom": 8,
+                "bottom": 9,
                 "right": 80
             }
         },
         "customer_name": {
             "text": "MOHNISH KUMAR SINHA S/O VISHNU RAM SINHA",
-            "line": 12,
+            "line": 11,
             "crop": {
                 "top": 18,
                 "left": 15,
-                "bottom": 22,
+                "bottom": 23,
                 "right": 85
             }
         },
         "document_name": {
             "text": "Ledger Account",
-            "line": 13,
+            "line": 12,
             "crop": {
-                "top": 21,
+                "top": 22,
                 "left": 35,
-                "bottom": 24,
+                "bottom": 26,
                 "right": 65
             }
         },
         "scrappage_bonus": {
             "text": "SCRAPPAGE BONUS",
             "amount": "20,000.00",
-            "line": 28,
+            "line": 20,
             "crop": {
-                "top": 32,
+                "top": 34,
                 "left": 10,
-                "bottom": 36,
+                "bottom": 39,
                 "right": 100
             }
         },
         "seal_stamp": {
             "text": "RALAS AUTOMOBILES",
-            "line": 75,
+            "line": 65,
             "crop": {
-                "top": 70,
+                "top": 77,
                 "left": 55,
-                "bottom": 88,
+                "bottom": 93,
                 "right": 85
             }
         }
@@ -242,9 +242,9 @@
             "text": "MARUTI SUZUKI INDIA LTD",
             "line": 26,
             "crop": {
-                "top": 42,
+                "top": 43,
                 "left": 8,
-                "bottom": 46,
+                "bottom": 47,
                 "right": 50
             }
         },
@@ -252,9 +252,9 @@
             "text": "MARUTI 800 STD",
             "line": 26,
             "crop": {
-                "top": 42,
+                "top": 43,
                 "left": 52,
-                "bottom": 46,
+                "bottom": 47,
                 "right": 92
             }
         }

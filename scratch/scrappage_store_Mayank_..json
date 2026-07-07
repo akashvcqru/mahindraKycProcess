@@ -4,9 +4,9 @@
             "text": "B R BALAJI LLP",
             "line": 1,
             "crop": {
-                "top": 13,
+                "top": 11,
                 "left": 30,
-                "bottom": 17,
+                "bottom": 14,
                 "right": 70
             }
         },
@@ -14,19 +14,19 @@
             "text": "TAX INVOICE",
             "line": 6,
             "crop": {
-                "top": 21,
+                "top": 17,
                 "left": 35,
-                "bottom": 24,
+                "bottom": 20,
                 "right": 65
             }
         },
         "invoice_no_date": {
-            "text": "GST Invoice No: INV27A000171, GST Invoice Date: 09/05/2026",
+            "text": "GST Invoice No: INV27A000171 | GST Invoice Date: 09/05/2026",
             "line": 12,
             "crop": {
-                "top": 27,
-                "left": 62,
-                "bottom": 34,
+                "top": 22,
+                "left": 60,
+                "bottom": 28,
                 "right": 98
             }
         },
@@ -34,40 +34,40 @@
             "text": "MAYANK",
             "line": 13,
             "crop": {
-                "top": 29,
+                "top": 23,
                 "left": 25,
-                "bottom": 32,
+                "bottom": 26,
                 "right": 60
             }
         },
         "oem_discount": {
             "text": "Note : Scrappage Bonus Amount is Rs.20000.00/- (inclusive of GST)",
             "amount": "20000.00",
-            "line": 72,
+            "line": 58,
             "crop": {
-                "top": 71,
+                "top": 74,
                 "left": 5,
-                "bottom": 75,
-                "right": 70
+                "bottom": 77,
+                "right": 65
             }
         },
         "customer_signature": {
-            "text": "Present - signature reads 'Mayank', appears to match the customer name MAYANK",
-            "line": 95,
+            "text": "Present - Signature reads 'Mayank', appears to match customer name MAYANK",
+            "line": 78,
             "crop": {
-                "top": 92,
+                "top": 90,
                 "left": 5,
-                "bottom": 97,
+                "bottom": 95,
                 "right": 40
             }
         },
         "dealer_stamp": {
-            "text": "Present - Circular stamp with 'BR BALAJI' and 'JAGDALPUR' text visible, along with Authorised Signatory designation",
-            "line": 95,
+            "text": "Present - Circular stamp with 'BR BALAJI' and 'JAGDALPUR' visible, along with Authorised Signatory designation; Dealer Name printed as 'B R BALAJI LLP'",
+            "line": 78,
             "crop": {
-                "top": 90,
-                "left": 68,
-                "bottom": 99,
+                "top": 88,
+                "left": 70,
+                "bottom": 98,
                 "right": 95
             }
         }
@@ -79,29 +79,29 @@
             "line": 1,
             "crop": {
                 "top": 7,
-                "left": 40,
+                "left": 5,
                 "bottom": 11,
-                "right": 85
+                "right": 55
             }
         },
         "customer_name": {
-            "text": "Mayank - CHASSIS NO T2D85723",
+            "text": "Mayank - CHASSIS NO T2DB5723",
             "line": 8,
             "crop": {
-                "top": 18,
-                "left": 25,
-                "bottom": 22,
-                "right": 80
+                "top": 17,
+                "left": 5,
+                "bottom": 21,
+                "right": 65
             }
         },
         "document_name": {
             "text": "Ledger Account",
             "line": 9,
             "crop": {
-                "top": 21,
-                "left": 25,
-                "bottom": 24,
-                "right": 65
+                "top": 20,
+                "left": 5,
+                "bottom": 23,
+                "right": 45
             }
         },
         "scrappage_bonus": {
@@ -110,9 +110,9 @@
             "line": 28,
             "crop": {
                 "top": 55,
-                "left": 10,
+                "left": 5,
                 "bottom": 60,
-                "right": 95
+                "right": 100
             }
         },
         "seal_stamp": {
@@ -131,9 +131,9 @@
             "text": "COD20260520DL9CE6099",
             "line": 5,
             "crop": {
-                "top": 11,
-                "left": 10,
-                "bottom": 14,
+                "top": 10,
+                "left": 8,
+                "bottom": 13,
                 "right": 55
             }
         },
@@ -141,10 +141,10 @@
             "text": "MAYANK",
             "line": 18,
             "crop": {
-                "top": 22,
-                "left": 10,
+                "top": 21,
+                "left": 8,
                 "bottom": 26,
-                "right": 90
+                "right": 92
             }
         },
         "registration_no": {
@@ -152,9 +152,9 @@
             "line": 19,
             "crop": {
                 "top": 24,
-                "left": 10,
-                "bottom": 28,
-                "right": 90
+                "left": 8,
+                "bottom": 29,
+                "right": 92
             }
         },
         "vehicle_make": {
@@ -162,9 +162,9 @@
             "line": 25,
             "crop": {
                 "top": 37,
-                "left": 10,
-                "bottom": 40,
-                "right": 50
+                "left": 8,
+                "bottom": 41,
+                "right": 52
             }
         },
         "vehicle_model": {
@@ -173,8 +173,8 @@
             "crop": {
                 "top": 37,
                 "left": 52,
-                "bottom": 40,
-                "right": 92
+                "bottom": 41,
+                "right": 95
             }
         }
     },

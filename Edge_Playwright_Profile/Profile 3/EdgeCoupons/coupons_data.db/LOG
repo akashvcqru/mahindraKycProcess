@@ -1,11 +1,20 @@
-2026/07/06-16:58:42.768 9110 Reusing MANIFEST C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/07/06-16:58:42.772 9110 Recovering log #842
-2026/07/06-16:58:42.772 9110 Level-0 table #845: started
-2026/07/06-16:58:42.778 9110 Level-0 table #845: 208 bytes OK
-2026/07/06-16:58:42.779 9110 Recovering log #857
-2026/07/06-16:58:42.780 9110 Reusing old log C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/000857.log 
-2026/07/06-16:58:42.786 9110 Delete type=0 #842
-2026/07/06-16:58:42.786 9110 Delete type=2 #858
-2026/07/06-16:58:44.095 76c0 Level-0 table #859: started
-2026/07/06-16:58:44.112 76c0 Level-0 table #859: 683004 bytes OK
-2026/07/06-16:58:44.118 76c0 Delete type=0 #857
+2026/07/06-20:13:27.349 4144 Reusing MANIFEST C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/07/06-20:13:27.352 4144 Recovering log #861
+2026/07/06-20:13:27.353 4144 Level-0 table #864: started
+2026/07/06-20:13:27.360 4144 Level-0 table #864: 208 bytes OK
+2026/07/06-20:13:27.361 4144 Recovering log #875
+2026/07/06-20:13:27.363 4144 Reusing old log C:\Users\admin\Desktop\robbinmahindra\Edge_Playwright_Profile\Profile 3\EdgeCoupons/coupons_data.db/000875.log 
+2026/07/06-20:13:27.368 4144 Delete type=0 #861
+2026/07/06-20:13:27.368 4144 Delete type=2 #877
+2026/07/06-20:13:27.370 6334 Compacting 4@0 + 1@1 files
+2026/07/06-20:13:27.384 6334 Generated table #876@0: 3 keys, 683004 bytes
+2026/07/06-20:13:27.384 6334 Compacted 4@0 + 1@1 files => 683004 bytes
+2026/07/06-20:13:27.386 6334 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/07/06-20:13:27.387 6334 Delete type=2 #853
+2026/07/06-20:13:27.387 6334 Delete type=2 #856
+2026/07/06-20:13:27.388 6334 Delete type=2 #859
+2026/07/06-20:13:27.388 6334 Delete type=2 #862
+2026/07/06-20:13:27.388 6334 Delete type=2 #864
+2026/07/06-20:13:28.811 6334 Level-0 table #878: started
+2026/07/06-20:13:28.821 6334 Level-0 table #878: 683004 bytes OK
+2026/07/06-20:13:28.824 6334 Delete type=0 #875

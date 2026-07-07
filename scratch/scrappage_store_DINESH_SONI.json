@@ -21,7 +21,7 @@
             }
         },
         "invoice_no_date": {
-            "text": "GST Invoice No: INV27A00227, GST Invoice Date: 28/05/2026",
+            "text": "GST Invoice No.: INV27A00227 | GST Invoice Date: 28/05/2026",
             "line": 20,
             "crop": {
                 "top": 18,
@@ -37,7 +37,7 @@
                 "top": 21,
                 "left": 5,
                 "bottom": 24,
-                "right": 55
+                "right": 45
             }
         },
         "oem_discount": {
@@ -48,24 +48,24 @@
                 "top": 75,
                 "left": 5,
                 "bottom": 78,
-                "right": 75
+                "right": 70
             }
         },
         "customer_signature": {
-            "text": "Customer Signature present, appears to read 'Dihesh' near customer name line DINESH SONI",
+            "text": "Customer Signature present - appears as handwritten signature near 'Dihesh' matching customer name DINESH SONI",
             "line": 95,
             "crop": {
                 "top": 92,
                 "left": 5,
-                "bottom": 97,
-                "right": 35
+                "bottom": 98,
+                "right": 30
             }
         },
         "dealer_stamp": {
-            "text": "Present - Circular stamp reads 'RALAS AUTOMOBILES' with Mahindra Rise logo watermark; Authorised Signatory signature present at bottom right",
+            "text": "Present - Circular stamp reading 'RALAS AUTOMOBILES' with Mahindra logo; Authorised Signatory signature present; 'Whether tax is Payable on reverse charges: NO' noted on document",
             "line": 90,
             "crop": {
-                "top": 83,
+                "top": 82,
                 "left": 60,
                 "bottom": 97,
                 "right": 95
@@ -85,7 +85,7 @@
         },
         "document_title": {
             "text": "Customer Disclaimer for Loyalty/Scrappage Bonus through COD",
-            "line": 10,
+            "line": 12,
             "crop": {
                 "top": 13,
                 "left": 15,
@@ -95,29 +95,29 @@
         },
         "customer_name": {
             "text": "DINESH SONI",
-            "line": 12,
+            "line": 13,
             "crop": {
                 "top": 17,
                 "left": 5,
                 "bottom": 21,
-                "right": 70
+                "right": 60
             }
         },
         "old_vehicle_details": {
             "text": "Registration Number: DL4CJ0353 | Vehicle Make: Hyundai | Vehicle Model: Santro",
-            "line": 16,
+            "line": 18,
             "crop": {
-                "top": 24,
+                "top": 25,
                 "left": 10,
-                "bottom": 35,
+                "bottom": 36,
                 "right": 80
             }
         },
         "new_vehicle_details": {
             "text": "New Vehicle Model: SCORPIO-N D MT 2WD Z8 S 7S WQ | Chassis Number: T6E56018 | Engine Number: YDT4D85156",
-            "line": 26,
+            "line": 28,
             "crop": {
-                "top": 40,
+                "top": 39,
                 "left": 10,
                 "bottom": 50,
                 "right": 85
@@ -125,32 +125,32 @@
         },
         "benefit_amount": {
             "text": "INR 20000.0 from the RALAS AUTOMOBILES",
-            "line": 44,
+            "line": 42,
             "crop": {
-                "top": 63,
+                "top": 57,
                 "left": 5,
-                "bottom": 68,
+                "bottom": 63,
                 "right": 90
             }
         },
         "customer_signature": {
             "text": "Handwritten signature present | Name: DINESH SONI",
-            "line": 56,
+            "line": 55,
             "crop": {
                 "top": 80,
                 "left": 5,
-                "bottom": 90,
+                "bottom": 92,
                 "right": 45
             }
         },
         "dealer_stamp": {
-            "text": "Circular stamp present with company name: RALAS AUTOMOBILES | Authorised signature present on/near stamp",
+            "text": "Circular stamp present with company name: RALAS AUTOMOBILES | Authorised signature present on/near the stamp",
             "line": 55,
             "crop": {
                 "top": 78,
-                "left": 55,
-                "bottom": 93,
-                "right": 90
+                "left": 58,
+                "bottom": 95,
+                "right": 92
             }
         }
     },
@@ -160,18 +160,18 @@
             "line": 1,
             "crop": {
                 "top": 4,
-                "left": 20,
+                "left": 15,
                 "bottom": 9,
-                "right": 80
+                "right": 85
             }
         },
         "customer_name": {
             "text": "DINESH SONI S/O MEGHRAJ",
             "line": 10,
             "crop": {
-                "top": 18,
+                "top": 19,
                 "left": 25,
-                "bottom": 22,
+                "bottom": 23,
                 "right": 75
             }
         },
@@ -179,10 +179,10 @@
             "text": "Ledger Account",
             "line": 11,
             "crop": {
-                "top": 21,
-                "left": 30,
-                "bottom": 24,
-                "right": 70
+                "top": 22,
+                "left": 35,
+                "bottom": 26,
+                "right": 65
             }
         },
         "scrappage_bonus": {
@@ -191,18 +191,18 @@
             "line": 22,
             "crop": {
                 "top": 40,
-                "left": 10,
-                "bottom": 44,
-                "right": 100
+                "left": 15,
+                "bottom": 45,
+                "right": 95
             }
         },
         "seal_stamp": {
             "text": "RALAS AUTOMOBILES",
-            "line": 55,
+            "line": 45,
             "crop": {
-                "top": 68,
+                "top": 72,
                 "left": 35,
-                "bottom": 82,
+                "bottom": 88,
                 "right": 75
             }
         }
@@ -215,16 +215,16 @@
                 "top": 11,
                 "left": 8,
                 "bottom": 14,
-                "right": 45
+                "right": 55
             }
         },
         "customer_name": {
             "text": "DINESH SONI / ASHOK KUMAR",
             "line": 18,
             "crop": {
-                "top": 26,
+                "top": 27,
                 "left": 8,
-                "bottom": 31,
+                "bottom": 33,
                 "right": 92
             }
         },
@@ -232,9 +232,9 @@
             "text": "DL4CJ0353",
             "line": 19,
             "crop": {
-                "top": 28,
+                "top": 30,
                 "left": 55,
-                "bottom": 32,
+                "bottom": 34,
                 "right": 80
             }
         },
@@ -242,9 +242,9 @@
             "text": "HYUNDAI MOTOR INDIA LTD",
             "line": 24,
             "crop": {
-                "top": 38,
+                "top": 40,
                 "left": 8,
-                "bottom": 41,
+                "bottom": 44,
                 "right": 50
             }
         },
@@ -252,9 +252,9 @@
             "text": "SANTRO",
             "line": 24,
             "crop": {
-                "top": 38,
+                "top": 40,
                 "left": 52,
-                "bottom": 41,
+                "bottom": 44,
                 "right": 92
             }
         }

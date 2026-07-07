@@ -224,12 +224,46 @@ def check_substring_match(val1, val2):
     return c1 in c2 or c2 in c1
 
 
+_PDF_TEXT_CACHE = {}
+
+def get_pdf_text(pdf_path):
+    if pdf_path in _PDF_TEXT_CACHE:
+        return _PDF_TEXT_CACHE[pdf_path]
+        
+    text = ""
+    try:
+        doc = fitz.open(pdf_path)
+        text = "".join(page.get_text() for page in doc)
+        if len(text.strip()) < 10:
+            logging.info(f"PDF {pdf_path} has no embedded text. Running OCR for fallback verification...")
+            try:
+                import easyocr
+                import numpy as np
+                from PIL import Image
+                import io
+                
+                reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+                pix = doc[0].get_pixmap(dpi=150)
+                png_bytes = pix.tobytes("png")
+                pil_img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+                img_array = np.array(pil_img)
+                
+                ocr_results = reader.readtext(img_array, detail=0)
+                text = " ".join(ocr_results)
+            except Exception as ocr_err:
+                logging.warning(f"OCR failed for {pdf_path} in helper: {ocr_err}")
+    except Exception as e:
+        logging.error(f"Error reading PDF {pdf_path}: {e}")
+        
+    _PDF_TEXT_CACHE[pdf_path] = text
+    return text
+
+
 def check_value_in_pdf(pdf_path, expected_value, keep_spaces=False):
     if not expected_value:
         return False
     try:
-        doc = fitz.open(pdf_path)
-        full_text = "".join(page.get_text() for page in doc)
+        full_text = get_pdf_text(pdf_path)
         if keep_spaces:
             full_text_clean = re.sub(r"[^A-Z0-9\s]", "", full_text.upper())
             val_clean = re.sub(r"[^A-Z0-9\s]", "", str(expected_value).upper())
@@ -274,51 +308,36 @@ def validate_cod(pdf_path, claim_details, old_vehicle_details, data_store):
 
     issues = []
 
-    # 1. Certificate No Check (Verify it matches old vehicle Chassis Number or Reg No if COD prefix is missing)
+    # 1. Certificate No Check (Verify it matches old vehicle Chassis Number / COD certificate number from portal)
     extracted_cert = extracted.get("certificate_no", {}).get("text", "").strip()
     web_old_chassis = get_val_by_fuzzy_key(old_vehicle_details, ["Chassis No", "Chassis Number"]) or \
                       get_val_by_fuzzy_key(claim_details, ["Chassis No", "Chassis Number"])
     
-    # Check if the portal chassis number has the 'COD' prefix
-    has_cod_in_chassis = False
-    if web_old_chassis and "COD" in web_old_chassis.upper():
-        has_cod_in_chassis = True
-
-    if not extracted_cert:
-        if has_cod_in_chassis and check_value_in_pdf(pdf_path, web_old_chassis):
-            pass
+    if web_old_chassis and web_old_chassis.upper().strip() not in ("OTHERS", "OTHER", "ANY OTHER"):
+        if not extracted_cert:
+            if not check_value_in_pdf(pdf_path, web_old_chassis):
+                issues.append(
+                    f"COD Certificate No '{web_old_chassis}' not found in COD document"
+                )
         else:
-            web_old_reg = get_val_by_fuzzy_key(old_vehicle_details, ["Reg. No", "Reg No", "Registration No", "Registration"]) or \
-                          get_val_by_fuzzy_key(claim_details, ["Reg. No", "Reg No", "Registration No", "Registration"])
-            if web_old_reg and check_value_in_pdf(pdf_path, web_old_reg):
-                pass
-            elif web_old_chassis and check_value_in_pdf(pdf_path, web_old_chassis):
-                pass
-            else:
-                issues.append("Certificate number not found on COD document")
-    else:
-        if has_cod_in_chassis:
             if not check_substring_match(web_old_chassis, extracted_cert):
                 if not check_value_in_pdf(pdf_path, web_old_chassis):
                     issues.append(
                         f"COD Certificate No '{extracted_cert}' does not match expected old chassis '{web_old_chassis}'"
                     )
-        else:
-            # Fallback: check Reg. No against the certificate number in the COD document
-            web_old_reg = get_val_by_fuzzy_key(old_vehicle_details, ["Reg. No", "Reg No", "Registration No", "Registration"]) or \
-                          get_val_by_fuzzy_key(claim_details, ["Reg. No", "Reg No", "Registration No", "Registration"])
-            if web_old_reg:
+    else:
+        # Fallback to check against Registration No if Chassis No is not specified or is OTHERS
+        web_old_reg = get_val_by_fuzzy_key(old_vehicle_details, ["Reg. No", "Reg No", "Registration No", "Registration"]) or \
+                      get_val_by_fuzzy_key(claim_details, ["Reg. No", "Reg No", "Registration No", "Registration"])
+        if web_old_reg and web_old_reg.upper().strip() not in ("OTHERS", "OTHER", "ANY OTHER"):
+            if not extracted_cert:
+                if not check_value_in_pdf(pdf_path, web_old_reg):
+                    issues.append("Certificate number not found on COD document")
+            else:
                 if not check_substring_match(web_old_reg, extracted_cert):
                     if not check_value_in_pdf(pdf_path, web_old_reg):
                         issues.append(
                             f"COD Certificate No '{extracted_cert}' does not match expected old vehicle registration '{web_old_reg}'"
-                        )
-            else:
-                # If neither chassis with COD nor Reg No is found, fallback to check chassis if available
-                if web_old_chassis and not check_substring_match(web_old_chassis, extracted_cert):
-                    if not check_value_in_pdf(pdf_path, web_old_chassis):
-                        issues.append(
-                            f"COD Certificate No '{extracted_cert}' does not match expected old chassis '{web_old_chassis}'"
                         )
 
     # 2. Customer Name Check (Verify customer name is present in the document from top to bottom)
@@ -343,8 +362,7 @@ def validate_cod(pdf_path, claim_details, old_vehicle_details, data_store):
         # Fallback 2: Check if portal customer name is present anywhere in the full text of the COD PDF
         if not name_found:
             try:
-                doc = fitz.open(pdf_path)
-                full_text = "".join(page.get_text() for page in doc)
+                full_text = get_pdf_text(pdf_path)
                 full_text_clean = re.sub(r"[^A-Z0-9\s]", "", full_text.upper())
                 if p_clean in full_text_clean:
                     name_found = True
@@ -375,39 +393,7 @@ def validate_cod(pdf_path, claim_details, old_vehicle_details, data_store):
                     f"COD Registration No '{extracted_reg}' does not match expected old vehicle registration '{web_old_reg}'"
                 )
 
-    # 4. Vehicle Make Check
-    extracted_make = extracted.get("vehicle_make", {}).get("text", "").strip()
-    web_old_make = get_val_by_fuzzy_key(old_vehicle_details, ["Make", "Manufacturer"]) or \
-                   get_val_by_fuzzy_key(claim_details, ["Make", "Manufacturer"])
-    
-    if not extracted_make:
-        if web_old_make and check_value_in_pdf(pdf_path, web_old_make):
-            pass
-        else:
-            issues.append("Vehicle Make not found on COD document")
-    elif web_old_make:
-        if not check_substring_match(web_old_make, extracted_make):
-            if not check_value_in_pdf(pdf_path, web_old_make):
-                issues.append(
-                    f"COD Vehicle Make '{extracted_make}' does not match expected old vehicle make '{web_old_make}'"
-                )
 
-    # 5. Vehicle Model Check
-    extracted_model = extracted.get("vehicle_model", {}).get("text", "").strip()
-    web_old_model = get_val_by_fuzzy_key(old_vehicle_details, ["Model"]) or \
-                    get_val_by_fuzzy_key(claim_details, ["Model"])
-    
-    if not extracted_model:
-        if web_old_model and check_value_in_pdf(pdf_path, web_old_model):
-            pass
-        else:
-            issues.append("Vehicle Model not found on COD document")
-    elif web_old_model:
-        if not check_substring_match(web_old_model, extracted_model):
-            if not check_value_in_pdf(pdf_path, web_old_model):
-                issues.append(
-                    f"COD Vehicle Model '{extracted_model}' does not match expected old vehicle model '{web_old_model}'"
-                )
 
     if issues:
         return False, "; ".join(issues)
