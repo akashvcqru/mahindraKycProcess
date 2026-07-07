@@ -25,3 +25,8 @@ Thumbs.db
 dist/
 build/
 *.spec
+# Temporary browser automation profiles
+Edge_Playwright_Profile/
+
+# Temporary data stores and scratch runs
+scratch/
