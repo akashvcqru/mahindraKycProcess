@@ -221,7 +221,18 @@ def check_substring_match(val1, val2):
         return False
     c1 = clean_comp(val1)
     c2 = clean_comp(val2)
-    return c1 in c2 or c2 in c1
+    if c1 in c2 or c2 in c1:
+        return True
+    # Try suffix matching for registrations (last 6, 7, 8, or 9 characters) to handle prefix OCR errors
+    if len(c1) >= 6 and c1[-6:] in c2:
+        return True
+    if len(c1) >= 7 and c1[-7:] in c2:
+        return True
+    if len(c1) >= 8 and c1[-8:] in c2:
+        return True
+    if len(c1) >= 9 and c1[-9:] in c2:
+        return True
+    return False
 
 
 _PDF_TEXT_CACHE = {}

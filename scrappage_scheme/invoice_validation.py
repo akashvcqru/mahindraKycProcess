@@ -302,29 +302,35 @@ def validate_invoice(pdf_path, claim_details, data_store):
     # ── Validation rules ────────────────────────────────────────────────────
     issues = []
 
-    # 1. Dealer stamp / seal must be present
-    stamp_text = extracted.get("dealer_stamp", {}).get("text", "").lower()
-    if "missing" in stamp_text or not stamp_text.strip():
-        issues.append("Dealer stamp/seal is MISSING on the invoice")
+    # Collect stamp / stamp-signature status first
+    stamp_text        = extracted.get("dealer_stamp",        {}).get("text", "").lower()
+    stamp_sig_text    = extracted.get("stamp_signature",     {}).get("text", "").lower()
+    dig_text          = extracted.get("stamp_digitally_signed", {}).get("text", "No").strip().lower()
+
+    stamp_missing     = "missing" in stamp_text     or not stamp_text.strip()
+    stamp_sig_missing = "missing" in stamp_sig_text or not stamp_sig_text.strip()
+    is_digitally_signed = (dig_text == "yes")
+
+    # Rules 1 & 3 — Dealer stamp + Signature on stamp
+    # HOLD only when BOTH are missing AND "This document is digitally signed" is NOT present.
+    # If only one is missing, or both are present → no issue.
+    if stamp_missing and stamp_sig_missing:
+        if is_digitally_signed:
+            logging.info(
+                "Dealer stamp & stamp signature both absent but "
+                "'This document is digitally signed' found — PASS"
+            )
+        else:
+            issues.append(
+                "Dealer stamp/seal and authorised signature are both MISSING "
+                "and no 'This document is digitally signed' text found"
+            )
 
     # 2. Customer signature must be present (anywhere on the document)
     sig_text = extracted.get("customer_signature", {}).get("text", "").lower()
     if "missing" in sig_text or not sig_text.strip():
         issues.append("Customer signature is MISSING on the invoice")
 
-    # 3. Authorised signatory signature on/near the stamp
-    stamp_sig_text    = extracted.get("stamp_signature", {}).get("text", "").lower()
-    stamp_sig_missing = "missing" in stamp_sig_text or not stamp_sig_text.strip()
-    if stamp_sig_missing:
-        # Digitally signed document is an acceptable alternative
-        dig_text = extracted.get("stamp_digitally_signed", {}).get("text", "No").strip().lower()
-        if dig_text != "yes":
-            issues.append(
-                "No authorised signature found on/near dealer stamp, "
-                "and no 'Digitally Signed' indication present"
-            )
-        else:
-            logging.info("Stamp signature absent but document is digitally signed — PASS")
 
     # 4. OEM / Scrappage discount must be present
     oem_text = extracted.get("oem_discount", {}).get("text",   "").strip()

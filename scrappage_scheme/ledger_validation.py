@@ -9,6 +9,78 @@ import fitz
 import requests
 from PIL import Image
 
+from .ledger_validation_east  import validate_east_zone_ledger
+from .ledger_validation_north import validate_north_zone_ledger
+
+
+def _get_current_zone() -> str:
+    """Read the active zone from automate_login global (same pattern used elsewhere)."""
+    try:
+        import automate_login  # noqa: PLC0415
+        return getattr(automate_login, "CURRENT_ZONE", "COMMON").strip().upper()
+    except Exception:
+        return "COMMON"
+
+
+def _build_prompt(zone: str, scheme: str) -> str:
+    """
+    Return a zone/scheme-aware extraction prompt for the ledger document.
+
+    Parameters
+    ----------
+    zone   : EAST | NORTH | SOUTH | WEST | COMMON
+    scheme : loyalty | scrappage
+    """
+    # ── Bonus hint line injected into the prompt based on zone + scheme ───────
+    if zone == "EAST" and scheme == "loyalty":
+        bonus_hint = (
+            "4. BONUS LINE — Look specifically for 'SCRAPPAGE BONUS' or 'WELCOME BONUS'. "
+            "One of these two MUST be present for East Zone loyalty claims."
+        )
+    elif zone == "NORTH" and scheme == "loyalty":
+        bonus_hint = (
+            "4. BONUS LINE — Look for any of the following North Zone loyalty bonus entries: "
+            "'Green Bonus', 'Xmrt', 'GST 18%', 'Loyalty Bonus', 'Scrappage Bonus'. "
+            "Report the exact label and credit amount found."
+        )
+    else:
+        bonus_hint = (
+            "4. SCRAPPAGE BONUS / LOYALTY BONUS / EXCHANGE BONUS — "
+            "Look for 'SCRAPPAGE BONUS', 'LOYALTY CLAIM', or 'EXCHANGE BONUS'. "
+            "The credit amount might be exactly on the same horizontal row, "
+            "OR it might be on the parent row immediately ABOVE it. Extract the correct credit amount."
+        )
+
+    return f"""Read this document line by line from top to bottom and extract the following details:
+
+1. DEALERSHIP NAME — the company/dealer name mentioned in the heading (name only, no address)
+2. CUSTOMER NAME — the person the ledger/invoice is made for. Example: CHANDRASHEKHAR SAHU S/O NAJRU RAM SAHU
+3. DOCUMENT NAME — is it "Ledger Account", "Tax Invoice", or another document type?
+{bonus_hint}
+5. DEALER SEAL & STAMP & SIGNATURE — look for a circular, oval, or rectangular ink stamp containing the dealership's name and signature. It is typically found near the very bottom or middle of the page. Do NOT confuse it with scanner watermarks like "Scanned with OKEN Scanner".
+
+TRAINING / GENERAL RULE FOR BONUS LINE:
+- Scan the table to find the bonus entry.
+- If that exact row has a Credit amount, use it.
+- If that exact row only has a Debit (Dr) amount, look at the row immediately ABOVE or BELOW it and use that Credit amount instead.
+- Ignore completely unrelated rows below it (e.g., Bank Receipt).
+
+For each field return:
+- The exact text found
+- Which line number (approx) it appears on
+- A crop bounding box as percentage of image width/height: {{top%, left%, bottom%, right%}}
+  (IMPORTANT: Ensure these accurately reflect the spatial location in the image! Do not hallucinate coordinates).
+
+Respond ONLY in this JSON format (no markdown, no extra text):
+{{
+  "dealership_name": {{"text": "...", "line": N, "crop": {{"top": X, "left": X, "bottom": X, "right": X}}}},
+  "customer_name":   {{"text": "...", "line": N, "crop": {{"top": X, "left": X, "bottom": X, "right": X}}}},
+  "document_name":   {{"text": "...", "line": N, "crop": {{"top": X, "left": X, "bottom": X, "right": X}}}},
+  "scrappage_bonus": {{"text": "...", "amount": "...", "line": N, "crop": {{"top": X, "left": X, "bottom": X, "right": X}}}},
+  "seal_stamp":      {{"text": "...", "line": N, "crop": {{"top": X, "left": X, "bottom": X, "right": X}}}}
+}}"""
+
+
 def validate_ledger(pdf_path, claim_details, data_store):
     """
     Validates a Scrappage Ledger document.
@@ -39,34 +111,12 @@ def validate_ledger(pdf_path, claim_details, data_store):
     pil_img.save(img_byte_arr, format="PNG")
     full_b64 = base64.b64encode(img_byte_arr.getvalue()).decode("utf-8")
 
-    prompt_text = """Read this document line by line from top to bottom and extract the following details:
+    # ── Zone / Scheme detection ────────────────────────────────────────────
+    zone   = _get_current_zone()
+    scheme = claim_details.get("Scheme", "").strip().lower()  # "loyalty" or "scrappage"
+    logging.info(f"[Ledger] Zone='{zone}' Scheme='{scheme}'")
 
-1. DEALERSHIP NAME — the company/dealer name mentioned in the heading (name only, no address)
-2. CUSTOMER NAME — the person the ledger/invoice is made for. Example: CHANDRASHEKHAR SAHU S/O NAJRU RAM SAHU
-3. DOCUMENT NAME — is it "Ledger Account", "Tax Invoice", or another document type?
-4. SCRAPPAGE BONUS / LOYALTY BONUS / EXCHANGE BONUS — Look for "SCRAPPAGE BONUS", "LOYALTY CLAIM", or "EXCHANGE BONUS". The credit amount might be exactly on the same horizontal row, OR it might be on the parent row immediately ABOVE it. Extract the correct credit amount.
-5. DEALER SEAL & STAMP & SIGNATURE — look for a circular, oval, or rectangular ink stamp containing the dealership's name and signature. It is typically found near the very bottom or middle of the page. Do NOT confuse it with scanner watermarks like "Scanned with OKEN Scanner".
-
-TRAINING / GENERAL RULE FOR SCRAPPAGE BONUS:
-- Scan the table to find "SCRAPPAGE BONUS", "LOYALTY CLAIM", or "EXCHANGE BONUS".
-- If that exact row has a Credit amount, use it.
-- If that exact row only has a Debit (Dr) amount, look at the row immediately ABOVE or BELOW it and use that Credit amount instead.
-- Ignore completely unrelated rows below it (e.g., Bank Receipt).
-
-For each field return:
-- The exact text found
-- Which line number (approx) it appears on
-- A crop bounding box as percentage of image width/height: {top%, left%, bottom%, right%}
-  (IMPORTANT: Ensure these accurately reflect the spatial location in the image! For example, if a stamp is at the very bottom of the page, top% should be > 80. Do not hallucinate coordinates).
-
-Respond ONLY in this JSON format (no markdown, no extra text):
-{
-  "dealership_name": {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "customer_name": {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "document_name": {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "scrappage_bonus": {"text": "...", "amount": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "seal_stamp": {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}}
-}"""
+    prompt_text = _build_prompt(zone, scheme)
 
     api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key:
@@ -130,7 +180,18 @@ Respond ONLY in this JSON format (no markdown, no extra text):
     # Save data to store
     if extracted_data and data_store:
         data_store.update_doc_data("ledger", extracted_data)
-        
+
+    # ── Zone-specific validation ───────────────────────────────────────────
+    zone_issues = []
+    if zone == "EAST":
+        zone_issues = validate_east_zone_ledger(extracted_data, scheme)
+    elif zone == "NORTH":
+        zone_issues = validate_north_zone_ledger(extracted_data, scheme)
+    # SOUTH / WEST / COMMON — no extra ledger rules yet
+
+    if zone_issues:
+        return False, " | ".join(zone_issues)
+
     return True, "Ledger Validated"
 
 

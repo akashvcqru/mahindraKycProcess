@@ -11555,7 +11555,20 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                                 "doc_type": fname.split("-")[0].upper() if "-" in fname else "DOCUMENT"
                             })
 
+                # Inject zone + scheme so scrappage-scheme validators can use them
+                claim_details["Zone"]   = CURRENT_ZONE
+                claim_details["Scheme"] = "loyalty" if (
+                    claim_choice == "1"
+                    or str(claim_choice).lower() == "loyalty"
+                    or is_welcome_scheme
+                ) else "scrappage"
+                logging.info(
+                    f"[Scrappage] Injecting Zone='{claim_details['Zone']}' "
+                    f"Scheme='{claim_details['Scheme']}' into claim_details"
+                )
+
                 issues = scrappage_processor.process_scrappage(claim_details, old_vehicle_details, _t_dir)
+
                 
                 # Record to Excel
                 scrappage_status = "HOLD" if issues else "APPROVED"

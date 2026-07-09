@@ -36,18 +36,36 @@ except ImportError:
         return None
 
 
-# ── System Prompt for Certificate of Deposit / Scrappage Certificate ─────────
-OEM_PROMPT = """You are an advanced document analysis AI. Your task is to read this Certificate of Deposit (COD) / Scrappage Certificate document line by line from top to bottom.
+# ── System Prompt for Vahan OEM Scrapping Incentive Document ─────────────────
+OEM_PROMPT = """You are an expert document analysis AI analyzing a multi-page Vahan portal screenshot (OEM Scrapping Incentive document).
 
-Extract ONLY the following 2 fields:
-1. Certificate of Deposit Number (Certificate Deposit Number / Scrapped Vehicle Chassis Number) — Look for the certificate number, registration number, or scrapped/old vehicle chassis number in the document.
-2. New Vehicle Chassis Number — Look for the new vehicle chassis number, or general chassis number mentioned in the document.
+This document contains MULTIPLE pages stitched vertically. These pages show:
+- Page with new vehicle registration details at the top (header shows "Registration No: XXXXXX" — IGNORE this registration number, it belongs to the NEW vehicle, NOT what we need)
+- A page showing "Certificate of Deposit(COD) Details" with fields like "Certificate of Deposit(COD) Number" and "Old Registration Number"
+- A page titled "OEM SCRAPPING INCENTIVE" with a table titled "Details of CDs Applied for OEM Scrapping Incentive" containing THREE columns:
+  - Column 1: "Chassis Number" (new vehicle chassis numbers)
+  - Column 2: "Engine Number"
+  - Column 3: "Certificate Deposit" (this contains values like COD2026063AS01AD1927 — this is what we need)
 
-For each field also return:
+YOUR TASK:
+Extract ONLY these 2 fields:
+
+1. certificate_deposit_no
+   - CRITICAL: You must locate the table titled "Details of CDs Applied for OEM Scrapping Incentive"
+   - In that table, find the SPECIFIC ROW whose "Chassis Number" column matches the target chassis number (will be provided in context)
+   - Extract the "Certificate Deposit" column value from THAT MATCHING ROW (it always starts with "COD..." followed by digits and letters)
+   - DO NOT extract the registration number shown in the page header (e.g. "AS01GU7475" — this is the new vehicle's Vahan registration, NOT the certificate deposit)
+   - The correct value MUST start with "COD" and look like: COD2026063AS01AD1927
+
+2. chassis_no
+   - The new vehicle chassis number from the same matching row in the "Chassis Number" column of the OEM Scrapping Incentive table
+   - It looks like: MA1TA2YS2T2E91998
+
+For each field return:
 - The exact text found
 - Which line number (approx) it appears on
-- A crop bounding box as percentage of image width/height: {top%, left%, bottom%, right%}
-  (IMPORTANT: Ensure coordinates accurately reflect the spatial location in the image. Do NOT hallucinate coordinates.)
+- A crop bounding box as percentage of TOTAL stitched image height/width: {top%, left%, bottom%, right%}
+  (IMPORTANT: Coordinates must reflect the actual position in the full stitched image. The OEM table is usually in the bottom portion. Do NOT hallucinate.)
 
 Respond ONLY in this JSON format (no markdown, no extra text):
 {
@@ -258,7 +276,23 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
             if old_reg_web:
                 c1 = re.sub(r"[^A-Z0-9]", "", old_reg_web.upper())
                 c2 = re.sub(r"[^A-Z0-9]", "", cert_no.upper())
-                if c1 not in c2 and c2 not in c1:
+                
+                # Check for match (direct, or suffix match to handle OCR prefixes like AS01 -> S01)
+                reg_matches = (c1 in c2) or (c2 in c1)
+                if not reg_matches and len(c1) >= 6:
+                    if c1[-6:] in c2:
+                        reg_matches = True
+                if not reg_matches and len(c1) >= 7:
+                    if c1[-7:] in c2:
+                        reg_matches = True
+                if not reg_matches and len(c1) >= 8:
+                    if c1[-8:] in c2:
+                        reg_matches = True
+                if not reg_matches and len(c1) >= 9:
+                    if c1[-9:] in c2:
+                        reg_matches = True
+                        
+                if not reg_matches:
                     issues.append(
                         f"Certificate No mismatch (Document Certificate No: '{cert_no}' does not match old vehicle registration: '{old_reg_web}')"
                     )
