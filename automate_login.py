@@ -271,12 +271,43 @@ def select_antd_dropdown_option(
                 print("Please enter a valid number.")
 
     if option_text:
-        # Find option containing option_text
+        # 1. Exact match (case-insensitive)
         for text, opt in options_data:
-            if option_text.lower() in text.lower():
-                logging.info(f"Selecting option for '{field_name}': {text}")
+            if option_text.lower() == text.lower():
+                logging.info(f"Selecting exact option for '{field_name}': {text}")
                 opt.click(force=True)
                 return text
+
+        # 2. Substring match (either way)
+        for text, opt in options_data:
+            if option_text.lower() in text.lower() or text.lower() in option_text.lower():
+                logging.info(f"Selecting substring option for '{field_name}': {text}")
+                opt.click(force=True)
+                return text
+
+        # 3. Keyword-based matching
+        for keyword in ("sskm", "ao", "hold", "pending", "reject"):
+            if keyword in option_text.lower():
+                for text, opt in options_data:
+                    if keyword in text.lower():
+                        logging.info(f"Selecting keyword option ({keyword}) for '{field_name}': {text}")
+                        opt.click(force=True)
+                        return text
+
+        # 4. Fuzzy match fallback
+        best_match = None
+        best_score = 0
+        for text, opt in options_data:
+            score = fuzz.token_sort_ratio(option_text.lower(), text.lower())
+            if score > best_score:
+                best_score = score
+                best_match = (text, opt)
+        if best_match and best_score > 60:
+            text, opt = best_match
+            logging.info(f"Selecting fuzzy option for '{field_name}' (score {best_score}%): {text}")
+            opt.click(force=True)
+            return text
+
         logging.warning(
             f"Option containing '{option_text}' not found for '{field_name}'. Clicking first option."
         )
@@ -10997,12 +11028,12 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
 
         # Select Claim Status (Prompt user for Pending vs Hold vs Pending with AO)
         status_container = (
-            f"#36da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #\\33 6da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
+            f"#36da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #\\33 6da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, #\\39 8a463b6-2622-4779-9f90-ecc5426b8829 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
         )
         selected_status = get_ui_input(
             "Select Claim Status to process:",
             "dropdown",
-            ["Pending by SSKM", "Hold by SSKM", "Pending with AO"]
+            ["Pending by SSKM", "Pending with SSKM", "Hold by SSKM", "Hold with SSKM", "Pending with AO"]
         )
         if not selected_status:
             selected_status = "Pending by SSKM"

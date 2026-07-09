@@ -76,7 +76,7 @@ Respond ONLY in this JSON format (no markdown, no extra text):
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
 
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-5.5",
         "messages": [
             {
                 "role": "user",
@@ -198,7 +198,7 @@ Respond ONLY in this JSON format (no markdown, no extra text):
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
 
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-5.5",
         "messages": [
             {
                 "role": "user",

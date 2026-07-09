@@ -11,33 +11,79 @@ import requests
 from PIL import Image
 
 
-# ── System Prompt (derived from invoice_analyzer.html) ─────────────────────
-INVOICE_PROMPT = """You are an advanced document analysis AI. Your task is to read this tax invoice image line by line from top to bottom.
+# ── System Prompt ────────────────────────────────────────────────────────────
+INVOICE_PROMPT = """You are an expert document analysis AI. Carefully analyze this TAX INVOICE image.
 
-Extract ONLY the following 7 fields in this exact order:
-1. Dealership Name — the company/dealer name from the header at the very top of the document (name only, no address)
-2. Document Type — the label printed on the document, e.g. "Tax Invoice", "GST Invoice", "Retail Invoice"
-3. GST Invoice Number and Date — the invoice number AND the invoice date together
-4. Customer Name — the buyer/customer name exactly as printed on the document
-5. OEM Loyalty / Scrappage Bonus Discount — Prioritize looking for a specific note text on the page such as "Note : Scrappage Bonus Amount is Rs.XXXX" or "Note : Loyalty Bonus Amount is Rs.XXXX" (which is often printed at the bottom or middle). If such a note exists, extract its full text and the rupee amount (e.g. 45000.00). If no such note exists, look in the table line items for "OEM LOYALTY DISCOUNT", "SCRAPPAGE BONUS", "OEM Discount", or similar.
-6. Customer Signature — State: "Present" or "Missing". If present, briefly note whether it appears to match the customer name line.
-7. Dealership Stamp and Seal — Describe what is printed (dealer name, designation, reverse charge note). State "Present" or "Missing".
+Your task is to locate and extract 9 specific fields. For EVERY field:
+- Identify the actual CONTENT (not the label/heading text itself)
+- Return precise bounding box coordinates (as % of image dimensions) that frame the CONTENT AREA with generous padding
+- The crop must show the actual value/image, NOT just the row label
 
-For each field also return:
-- The exact text found
-- Which line number (approx) it appears on
-- A crop bounding box as percentage of image width/height: {top%, left%, bottom%, right%}
-  (IMPORTANT: Ensure coordinates accurately reflect the spatial location. E.g. if the stamp is at the very bottom, top% should be > 80. Do NOT hallucinate coordinates.)
+=== CRITICAL CROPPING RULES ===
+- NEVER return coordinates that only capture a text label like "Customer Signature :" or "Dealer Stamp :" — those are just labels
+- For SIGNATURES: The customer may have signed ANYWHERE on the document (near IRN Number row, middle of page, or bottom). Search the ENTIRE document for any handwritten ink/cursive writing. Crop the region where the ink appears with at least 8% vertical height.
+- For STAMPS: The dealer stamp/seal is a CIRCULAR or OVAL rubber stamp image with printed text inside. It is usually in the bottom-right or middle-right area. Crop the actual circle/oval stamp graphic with at least 8% vertical height.
+- For STAMP SIGNATURE: Look for a handwritten signature that appears INSIDE or DIRECTLY ABOVE/BELOW the circular stamp. This is the authorised signatory's signature. It may overlap with the stamp. Crop both together.
+- For INVOICE NUMBER: Crop the full row containing the GST Invoice Number AND Invoice Date together. Minimum 3% vertical height.
+- All crop values must be realistic percentages of the actual image. Do NOT hallucinate. If genuinely not found, use "Missing" for text and return approximate area where it should be.
 
-Respond ONLY in this JSON format (no markdown, no extra text):
+=== FIELDS TO EXTRACT ===
+
+1. dealership_name
+   - The dealership/company name from the HEADER at the very top of the document
+   - Name only, no address
+
+2. document_type
+   - The document classification label printed prominently e.g. "TAX INVOICE", "GST INVOICE", "RETAIL INVOICE"
+
+3. invoice_no_date
+   - The GST Invoice Number AND the Invoice Date together
+   - Example: "INV27M000018, Date: 18/06/2026"
+
+4. customer_name
+   - The buyer/customer full name exactly as printed
+
+5. oem_discount
+   - Look for NOTE text like "Scrappage Bonus Amount is Rs.XXXX" or "Loyalty Bonus Amount is Rs.XXXX" printed anywhere on the page
+   - If found: return full note text and extract the rupee amount separately
+   - If not in a note: look in table line items for "OEM Discount", "OEM LOYALTY DISCOUNT", "SCRAPPAGE BONUS", etc.
+
+6. customer_signature
+   - Search the ENTIRE page for any handwritten cursive ink — this is the customer signature
+   - It is often found near the "IRN Number" row or at the bottom "Customer Signature" section
+   - State "Present" or "Missing" in text
+   - Crop the actual handwritten ink area (not the label) with generous padding
+
+7. dealer_stamp
+   - Find the actual CIRCULAR/OVAL rubber stamp graphic with the dealer name printed inside
+   - It is usually in the bottom-right area of the invoice
+   - State "Present" or "Missing" in text
+   - Crop the actual stamp circle/oval image
+
+8. stamp_signature
+   - Look for a handwritten signature that is ON, INSIDE, or directly ABOVE/BELOW the dealer stamp
+   - This is the "Authorised Signatory" signature
+   - State "Present" or "Missing" in text
+   - Crop the area including both the stamp and the signature overlapping/adjacent to it
+   - If no such signature exists on/near stamp, state "Missing"
+
+9. stamp_digitally_signed
+   - Look anywhere near the dealer stamp or authorised signatory area for text like:
+     "Digitally Signed", "e-Signed", "Digital Signature", "This document is digitally signed"
+   - Return "Yes" if found, "No" if not found
+
+=== RESPONSE FORMAT ===
+Respond ONLY with valid JSON (no markdown fences, no extra text):
 {
-  "dealership_name":   {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "document_type":     {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "invoice_no_date":   {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "customer_name":     {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "oem_discount":      {"text": "...", "amount": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "customer_signature":{"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
-  "dealer_stamp":      {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}}
+  "dealership_name":        {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
+  "document_type":          {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
+  "invoice_no_date":        {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
+  "customer_name":          {"text": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
+  "oem_discount":           {"text": "...", "amount": "...", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
+  "customer_signature":     {"text": "Present|Missing", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
+  "dealer_stamp":           {"text": "Present|Missing", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
+  "stamp_signature":        {"text": "Present|Missing", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}},
+  "stamp_digitally_signed": {"text": "Yes|No", "line": N, "crop": {"top": X, "left": X, "bottom": X, "right": X}}
 }"""
 
 
@@ -71,7 +117,7 @@ def _call_openai(full_b64, max_retries=3):
         "Authorization": f"Bearer {api_key}",
     }
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-5.5",
         "messages": [
             {
                 "role": "user",
@@ -113,15 +159,31 @@ def _call_openai(full_b64, max_retries=3):
     return None
 
 
+# ── Minimum crop height (% of image) per field ──────────────────────────────
+# Ensures crops are large enough to actually show content, not just label rows
+_MIN_CROP_HEIGHT_PCT = {
+    "customer_signature":     8,   # Handwritten signature needs height to be visible
+    "dealer_stamp":           8,   # Circular stamp needs height
+    "stamp_signature":        10,  # Stamp + signature overlap — give extra room
+    "invoice_no_date":        3,   # At least one full table row
+    "oem_discount":           3,
+    "dealership_name":        3,
+    "document_type":          3,
+    "customer_name":          2,
+    "stamp_digitally_signed": 2,
+}
+
 # ── Field mapping: JSON key → human-readable label ─────────────────────────
 FIELD_MAPPING = {
-    "dealership_name":    "Dealership Name",
-    "document_type":      "Document Type",
-    "invoice_no_date":    "GST Invoice Number & Date",
-    "customer_name":      "Customer Name",
-    "oem_discount":       "OEM / Scrappage Bonus Discount",
-    "customer_signature": "Customer Signature",
-    "dealer_stamp":       "Dealership Stamp & Seal",
+    "dealership_name":        "Dealership Name",
+    "document_type":          "Document Type",
+    "invoice_no_date":        "GST Invoice Number & Date",
+    "customer_name":          "Customer Name",
+    "oem_discount":           "OEM / Scrappage Bonus Discount",
+    "customer_signature":     "Customer Signature",
+    "dealer_stamp":           "Dealership Stamp & Seal",
+    "stamp_signature":        "Authorised Signatory (on Stamp)",
+    "stamp_digitally_signed": "Stamp: Digitally Signed",
 }
 
 FIELD_ORDER = [
@@ -132,6 +194,8 @@ FIELD_ORDER = [
     "oem_discount",
     "customer_signature",
     "dealer_stamp",
+    "stamp_signature",
+    "stamp_digitally_signed",
 ]
 
 
@@ -153,21 +217,29 @@ def _pair_crops(pil_img, extracted):
         else:
             val = data.get("text", "")
 
-        crop_info = data.get("crop", {})
-        top_pct    = crop_info.get("top",    0)  / 100.0
-        left_pct   = crop_info.get("left",   0)  / 100.0
+        crop_info  = data.get("crop", {})
+        top_pct    = crop_info.get("top",    0)   / 100.0
+        left_pct   = crop_info.get("left",   0)   / 100.0
         bottom_pct = crop_info.get("bottom", 100) / 100.0
         right_pct  = crop_info.get("right",  100) / 100.0
 
-        PAD_X, PAD_Y = 50, 50
-        x1 = max(0, int(left_pct   * width)  - PAD_X)
-        y1 = max(0, int(top_pct    * height) - PAD_Y)
+        # ── Enforce minimum crop height so label-only crops are expanded ──────
+        min_h_pct = _MIN_CROP_HEIGHT_PCT.get(key, 2) / 100.0
+        if (bottom_pct - top_pct) < min_h_pct:
+            centre     = (top_pct + bottom_pct) / 2.0
+            half       = min_h_pct / 2.0
+            top_pct    = max(0.0, centre - half)
+            bottom_pct = min(1.0, centre + half)
+
+        PAD_X, PAD_Y = 40, 30
+        x1 = max(0,      int(left_pct   * width)  - PAD_X)
+        y1 = max(0,      int(top_pct    * height) - PAD_Y)
         x2 = min(width,  int(right_pct  * width)  + PAD_X)
         y2 = min(height, int(bottom_pct * height) + PAD_Y)
 
         # Guard against degenerate boxes
-        if x2 <= x1: x2 = min(width,  x1 + 10)
-        if y2 <= y1: y2 = min(height, y1 + 10)
+        if x2 <= x1: x2 = min(width,  x1 + 20)
+        if y2 <= y1: y2 = min(height, y1 + 20)
 
         crop_b64 = ""
         try:
@@ -186,13 +258,15 @@ def _pair_crops(pil_img, extracted):
 def _generate_mock_response(pil_img):
     """Return a placeholder result when the API is unavailable."""
     mock = {
-        "dealership_name":    {"text": "API Error", "line": 1,  "crop": {"top": 0,  "left": 0, "bottom": 10, "right": 100}},
-        "document_type":      {"text": "API Error", "line": 2,  "crop": {"top": 5,  "left": 0, "bottom": 15, "right": 100}},
-        "invoice_no_date":    {"text": "API Error", "line": 3,  "crop": {"top": 10, "left": 0, "bottom": 20, "right": 100}},
-        "customer_name":      {"text": "API Error", "line": 10, "crop": {"top": 20, "left": 0, "bottom": 30, "right": 100}},
-        "oem_discount":       {"text": "API Error", "amount": "–", "line": 20, "crop": {"top": 50, "left": 0, "bottom": 70, "right": 100}},
-        "customer_signature": {"text": "API Error", "line": 30, "crop": {"top": 75, "left": 0, "bottom": 90, "right": 100}},
-        "dealer_stamp":       {"text": "API Error", "line": 35, "crop": {"top": 85, "left": 0, "bottom": 100, "right": 100}},
+        "dealership_name":        {"text": "API Error", "line": 1,  "crop": {"top": 0,  "left": 0,  "bottom": 8,  "right": 100}},
+        "document_type":          {"text": "API Error", "line": 2,  "crop": {"top": 8,  "left": 0,  "bottom": 15, "right": 100}},
+        "invoice_no_date":        {"text": "API Error", "line": 3,  "crop": {"top": 15, "left": 0,  "bottom": 22, "right": 100}},
+        "customer_name":          {"text": "API Error", "line": 10, "crop": {"top": 22, "left": 0,  "bottom": 32, "right": 100}},
+        "oem_discount":           {"text": "API Error", "amount": "–", "line": 20, "crop": {"top": 60, "left": 0, "bottom": 70, "right": 100}},
+        "customer_signature":     {"text": "API Error", "line": 30, "crop": {"top": 70, "left": 0,  "bottom": 82, "right": 100}},
+        "dealer_stamp":           {"text": "API Error", "line": 35, "crop": {"top": 82, "left": 50, "bottom": 95, "right": 100}},
+        "stamp_signature":        {"text": "API Error", "line": 36, "crop": {"top": 80, "left": 50, "bottom": 95, "right": 100}},
+        "stamp_digitally_signed": {"text": "No",        "line": 36, "crop": {"top": 80, "left": 50, "bottom": 95, "right": 100}},
     }
     return _pair_crops(pil_img, mock)
 
@@ -233,35 +307,46 @@ def validate_invoice(pdf_path, claim_details, data_store):
     if "missing" in stamp_text or not stamp_text.strip():
         issues.append("Dealer stamp/seal is MISSING on the invoice")
 
-    # 2. Customer signature must be present
+    # 2. Customer signature must be present (anywhere on the document)
     sig_text = extracted.get("customer_signature", {}).get("text", "").lower()
     if "missing" in sig_text or not sig_text.strip():
         issues.append("Customer signature is MISSING on the invoice")
 
-    # 3. OEM / Scrappage discount must be present
-    oem_text = extracted.get("oem_discount", {}).get("text", "").strip()
+    # 3. Authorised signatory signature on/near the stamp
+    stamp_sig_text    = extracted.get("stamp_signature", {}).get("text", "").lower()
+    stamp_sig_missing = "missing" in stamp_sig_text or not stamp_sig_text.strip()
+    if stamp_sig_missing:
+        # Digitally signed document is an acceptable alternative
+        dig_text = extracted.get("stamp_digitally_signed", {}).get("text", "No").strip().lower()
+        if dig_text != "yes":
+            issues.append(
+                "No authorised signature found on/near dealer stamp, "
+                "and no 'Digitally Signed' indication present"
+            )
+        else:
+            logging.info("Stamp signature absent but document is digitally signed — PASS")
+
+    # 4. OEM / Scrappage discount must be present
+    oem_text = extracted.get("oem_discount", {}).get("text",   "").strip()
     oem_amt  = extracted.get("oem_discount", {}).get("amount", "").strip()
     if not oem_text or not oem_amt or oem_amt in ("-", "0", ""):
         issues.append("OEM/Scrappage Bonus discount line not found on invoice")
 
-    # 4. Customer name must be present
+    # 5. Customer name must be present and match claim
     cust_text = extracted.get("customer_name", {}).get("text", "").strip()
     if not cust_text:
         issues.append("Customer name not found on invoice")
     else:
-        # Cross-check name against claim details (fuzzy match)
         claim_name = claim_details.get("Customer Name", "").strip()
         c1 = re.sub(r"[^A-Z0-9\s]", "", cust_text.upper()).strip()
         c2 = re.sub(r"[^A-Z0-9\s]", "", claim_name.upper()).strip()
-        
-        c2_words = [w for w in c2.split() if len(w) >= 3]
-        word_match = False
-        if c2_words and all(w in c1 for w in c2_words):
-            word_match = True
-            
+
+        c2_words   = [w for w in c2.split() if len(w) >= 3]
+        word_match = bool(c2_words) and all(w in c1 for w in c2_words)
+
         import difflib
         ratio = difflib.SequenceMatcher(None, c1, c2).ratio()
-        
+
         if c2 and not (c2 in c1 or c1 in c2 or word_match or ratio >= 0.80):
             issues.append(
                 f"Invoice customer name '{cust_text}' does not match claim customer '{claim_name}'"

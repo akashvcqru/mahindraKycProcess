@@ -2055,7 +2055,9 @@ class AppUI(tk.Tk):
         extracted_data = doc_dict.get("extracted_data", {})
         pdf_path = doc_dict.get("file_path", doc_dict.get("path", ""))
         doc_type = doc_dict.get("file_type", doc_dict.get("doc_type", "")).upper()
-        
+
+        logging.info(f"[UI] Visual → doc_type='{doc_type}', pdf_path='{pdf_path}', exists={os.path.exists(pdf_path) if pdf_path else False}")
+
         is_ledger = False
         fname_lower = os.path.basename(pdf_path).lower()
         dict_fname_lower = doc_dict.get("file_name", "").lower()
@@ -2323,6 +2325,69 @@ class AppUI(tk.Tk):
             import threading
             threading.Thread(target=disclaimer_task, daemon=True).start()
             return
+
+        # ── Generic fallback: try to dispatch by filename one more time ────────
+        # This handles cases where doc_type/dict_fname detection missed but the
+        # file exists (e.g. older processed claims, unexpected filenames).
+        if pdf_path and os.path.exists(pdf_path):
+            fname_lower2 = os.path.basename(pdf_path).lower()
+            # Re-try invoice
+            if any(fname_lower2.startswith(p) for p in ("inv",)) or "invoice" in fname_lower2:
+                logging.info(f"[UI] Fallback: routing to invoice visual for {pdf_path}")
+                loading_lbl2 = tk.Label(
+                    self.visual_frame,
+                    text="⏳ Extracting Invoice fields...\nPlease wait (approx 5-10s)",
+                    fg=TEXT_LIGHT_COLOR, bg=BG_COLOR,
+                    font=("Segoe UI", 10), justify=tk.CENTER,
+                )
+                loading_lbl2.pack(pady=40)
+                def _fb_invoice_task():
+                    try:
+                        import scrappage_scheme.invoice_validation as inv_mod
+                        results = inv_mod.process_invoice_visual(pdf_path)
+                        vd = {}
+                        for item in results:
+                            f = item.get("field", "")
+                            if f:
+                                vd[f] = {"value": item.get("value", ""), "confidence": 95, "image_base64": item.get("crop_b64", "")}
+                        self.after(0, self._render_visual_data, vd, loading_lbl2)
+                    except Exception as e:
+                        logging.error(f"[UI] Fallback invoice visual failed: {e}")
+                        self.after(0, self._render_visual_data, {}, loading_lbl2)
+                import threading
+                threading.Thread(target=_fb_invoice_task, daemon=True).start()
+                return
+            # Re-try ledger
+            elif any(fname_lower2.startswith(p) for p in ("l-", "les", "ldgr", "lgr", "ldr", "ldg")) or "ledger" in fname_lower2:
+                logging.info(f"[UI] Fallback: routing to ledger visual for {pdf_path}")
+                loading_lbl2 = tk.Label(
+                    self.visual_frame,
+                    text="⏳ Extracting Ledger fields...\nPlease wait (approx 5-10s)",
+                    fg=TEXT_LIGHT_COLOR, bg=BG_COLOR,
+                    font=("Segoe UI", 10), justify=tk.CENTER,
+                )
+                loading_lbl2.pack(pady=40)
+                def _fb_ledger_task():
+                    try:
+                        current_scheme = self.scheme_type_var.get()
+                        if current_scheme == "Scrappage Bonus Scheme":
+                            import scrappage_scheme.ledger_validation as scrappage_ledger
+                            results = scrappage_ledger.process_scrappage_ledger_visual(pdf_path)
+                        else:
+                            import east_welcome_bonus_ledger
+                            results = east_welcome_bonus_ledger.process_east_welcome_bonus_ledger(pdf_path)
+                        vd = {}
+                        for item in results:
+                            f = item.get("field", "")
+                            if f:
+                                vd[f] = {"value": item.get("value", ""), "confidence": 95, "image_base64": item.get("crop_b64", item.get("crop", ""))}
+                        self.after(0, self._render_visual_data, vd, loading_lbl2)
+                    except Exception as e:
+                        logging.error(f"[UI] Fallback ledger visual failed: {e}")
+                        self.after(0, self._render_visual_data, {}, loading_lbl2)
+                import threading
+                threading.Thread(target=_fb_ledger_task, daemon=True).start()
+                return
 
         visual_data = extracted_data.get("visual_extractions", {})
         self._render_visual_data(visual_data)

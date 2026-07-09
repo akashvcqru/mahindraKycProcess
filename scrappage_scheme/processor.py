@@ -15,59 +15,77 @@ _INVOICE_PREFIXES = ("INV",)
 _INVOICE_KEYWORDS = ("INVOICE", "TAX INV", "GST INV")
 _OEM_PREFIXES     = ("COD", "OEM")
 _OEM_KEYWORDS     = ("CERTIFICATE OF DEPOSIT", "CERTIFICATE DEPOSIT", "SCRAPPAGE CERTIFICATE", "COD", "OEM", "VAHAN SCREEN", "VAHAN", "SCREENSHOT", "SCREEN SHORT", "OEM SCRAPPING", "OEM SCRAPPING INCENTIVE")
-_DISCLAIMER_PREFIXES = ("DIS", "DSC", "CD-")
+_DISCLAIMER_PREFIXES = ("DIS", "DSC", "CD-", "DS")
 _DISCLAIMER_KEYWORDS = ("DISCLAIMER",)
 
 
-def _is_ledger(filename):
-    fn = filename.upper()
-    if any(k in fn for k in ("LEDGER", "STMT", "STATEMENT")):
-        return True
-    prefixes = ("LDGR", "LES", "LGR", "LDR", "LDG", "LED")
-    if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in prefixes):
-        return True
-    if "-L-" in fn or " L-" in fn or fn.startswith("L-") or "-TL-" in fn or " TL-" in fn or fn.startswith("TL-"):
-        return True
-    return False
+def classify_document(f_path):
+    from .cod_validation import get_pdf_text
+    
+    filename = os.path.basename(f_path).upper()
+    
+    # Try content text/OCR check
+    text = ""
+    try:
+        text = get_pdf_text(f_path).upper()
+    except Exception as exc:
+        logging.warning(f"Could not extract text for classification of {f_path}: {exc}")
 
+    # 1. COD (High specificity check)
+    if "TRANSFER CERTIFICATE OF DEPOSIT" in text:
+        return "COD"
 
-def _is_invoice(filename):
-    fn = filename.upper()
-    if any(k in fn for k in ("INVOICE", "TAX INV", "GST INV")):
-        return True
-    prefixes = ("INV",)
-    if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in prefixes):
-        return True
-    return False
+    # 2. OEM (High specificity check)
+    if "OEM SCRAPPING" in text or "OEM INCENTIVE" in text or "VAHAN" in text or "SCRAPPAGE CERTIFICATE" in text:
+        return "OEM"
 
+    # 3. Disclaimer (High specificity check)
+    if "DISCLAIMER" in text or "DESCLAIMER" in text:
+        return "DISCLAIMER"
 
-def _is_cod(filename):
-    fn = filename.upper()
-    return (
-        fn.startswith("COD")
-        or "CERTIFICATE OF DEPOSIT" in fn
-        or "CERTIFICATE DEPOSIT" in fn
-        or "COD" in fn
-    )
+    # 4. COD (Lower specificity fallback)
+    if "CERTIFICATE OF DEPOSIT" in text or "CERTIFICATE DEPOSIT" in text:
+        return "COD"
 
+    # 5. Invoice
+    if "TAX INVOICE" in text or "GST INVOICE" in text or "INVOICE" in text or "INVOLCE" in text:
+        return "INVOICE"
 
-def _is_oem(filename):
-    fn = filename.upper()
-    if any(k in fn for k in _OEM_KEYWORDS):
-        return True
-    if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in _OEM_PREFIXES):
-        return True
-    return False
+    # 6. Ledger
+    if "LEDGER" in text or "STATEMENT OF ACCOUNT" in text or "STMT OF" in text:
+        return "LEDGER"
 
+    # ── Filename Fallback ────────────────────────────────────────────────────
+    if "DISCLAIMER" in filename or "DESCLAIMER" in filename:
+        return "DISCLAIMER"
+    for p in ("DIS", "DSC", "CD-", "DES", "DS"):
+        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename:
+            return "DISCLAIMER"
 
-def _is_disclaimer(filename):
-    fn = filename.upper()
-    if "DISCLAIMER" in fn or "DESCLAIMER" in fn:
-        return True
-    prefixes = ("DIS", "DSC", "CD-", "DES")
-    if any(fn.startswith(p) or f" {p}" in fn or f"-{p}" in fn for p in prefixes):
-        return True
-    return False
+    if "TRANSFER CERTIFICATE OF DEPOSIT" in filename or "CERTIFICATE OF DEPOSIT" in filename or "COD" in filename:
+        return "COD"
+
+    for k in ("INVOICE", "TAX INV", "GST INV"):
+        if k in filename:
+            return "INVOICE"
+    for p in ("INV",):
+        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename:
+            return "INVOICE"
+
+    if any(k in filename for k in ("LEDGER", "STMT", "STATEMENT")):
+        return "LEDGER"
+    for p in ("LDGR", "LES", "LGR", "LDR", "LDG", "LED", "L-"):
+        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename:
+            return "LEDGER"
+
+    for k in ("CERTIFICATE OF DEPOSIT", "CERTIFICATE DEPOSIT", "SCRAPPAGE CERTIFICATE", "COD", "OEM", "VAHAN SCREEN", "VAHAN", "SCREENSHOT", "SCREEN SHORT", "OEM SCRAPPING", "OEM SCRAPPING INCENTIVE"):
+        if k in filename:
+            return "OEM"
+    for p in ("COD", "OEM"):
+        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename:
+            return "OEM"
+
+    return None
 
 
 def process_scrappage(claim_details, old_vehicle_details, target_dir):
@@ -106,9 +124,11 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
     processed_files = set()
     for f_path in pdf_files:
         filename = os.path.basename(f_path)
+        doc_type = classify_document(f_path)
+        logging.info(f"Document {filename} classified as: {doc_type}")
 
         # ── Ledger ───────────────────────────────────────────────────────────
-        if _is_ledger(filename):
+        if doc_type == "LEDGER":
             found_ledger = True
             processed_files.add(f_path)
             logging.info(f"Passing Ledger to Scrappage Vision Extractor: {f_path}")
@@ -117,7 +137,7 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
                 issues.append(f"Ledger Validation Failed: {msg}")
 
         # ── Invoice ──────────────────────────────────────────────────────────
-        elif _is_invoice(filename):
+        elif doc_type == "INVOICE":
             found_invoice = True
             processed_files.add(f_path)
             logging.info(f"Passing Invoice to Scrappage Invoice Validator: {f_path}")
@@ -126,7 +146,7 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
                 issues.append(f"Invoice Validation Failed: {msg}")
 
         # ── COD Document ─────────────────────────────────────────────────────
-        elif _is_cod(filename):
+        elif doc_type == "COD":
             found_oem = True
             processed_files.add(f_path)
             logging.info(f"Passing COD Document to Scrappage COD Validator: {f_path}")
@@ -135,7 +155,7 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
                 issues.append(f"COD Document Validation Failed: {msg}")
 
         # ── OEM Document ─────────────────────────────────────────────────────
-        elif _is_oem(filename):
+        elif doc_type == "OEM":
             found_oem = True
             processed_files.add(f_path)
             logging.info(f"Passing OEM Document to Scrappage OEM Validator: {f_path}")
@@ -144,7 +164,7 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
                 issues.append(f"OEM Document Validation Failed: {msg}")
 
         # ── Disclaimer ───────────────────────────────────────────────────────
-        elif _is_disclaimer(filename):
+        elif doc_type == "DISCLAIMER":
             found_disclaimer = True
             processed_files.add(f_path)
             logging.info(f"Passing Disclaimer to Scrappage Disclaimer Validator: {f_path}")

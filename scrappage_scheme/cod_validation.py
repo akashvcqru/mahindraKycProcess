@@ -90,7 +90,7 @@ def _call_openai(full_b64, max_retries=3):
         "Authorization": f"Bearer {api_key}",
     }
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-5.5",
         "messages": [
             {
                 "role": "user",
