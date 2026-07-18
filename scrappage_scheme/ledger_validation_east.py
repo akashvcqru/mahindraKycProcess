@@ -13,7 +13,7 @@ For SCRAPPAGE scheme (non-loyalty):
 import logging
 
 # ── East Zone Keyword Rules ──────────────────────────────────────────────────
-EAST_LOYALTY_REQUIRED = ["SCRAPPAGE BONUS", "WELCOME BONUS"]
+EAST_LOYALTY_REQUIRED = ["SCRAPPAGE BONUS", "WELCOME BONUS", "SCRAP DISCOUNT"]
 
 
 def validate_east_zone_ledger(extracted: dict, scheme: str) -> list:
@@ -51,7 +51,7 @@ def validate_east_zone_ledger(extracted: dict, scheme: str) -> list:
         else:
             issues.append(
                 f"East Zone Loyalty: Ledger must strictly contain "
-                f"'Scrappage Bonus' or 'Welcome Bonus'. "
+                f"'Scrappage Bonus', 'Welcome Bonus' or 'SCRAP DISCOUNT'. "
                 f"Found: '{bonus_text or 'NOTHING'}'"
             )
             logging.warning(

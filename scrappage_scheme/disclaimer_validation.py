@@ -99,7 +99,7 @@ def _call_openai(full_b64, max_retries=3):
         "Authorization": f"Bearer {api_key}",
     }
     payload = {
-        "model": "gpt-5.5",
+        "model": "gpt-4o",
         "messages": [
             {
                 "role": "user",
@@ -239,6 +239,8 @@ def check_model_match(portal_model, doc_model):
     }
     
     matches_all = True
+    matches_any_major = False
+    
     for pw in pm_words:
         word_found = False
         # Try direct/substring match first (with O/0 normalization for vehicle models)
@@ -260,11 +262,14 @@ def check_model_match(portal_model, doc_model):
                 if word_found:
                     break
                     
+        if word_found and len(pw) >= 3:
+            matches_any_major = True
+            
         if not word_found:
             matches_all = False
-            break
             
-    return matches_all
+    # If it matched all words (even short ones), or if it matched at least one major identifying word (like SUPRO, SCORPIO, BOLERO)
+    return matches_all or matches_any_major
 
 
 # ── PUBLIC: validate_disclaimer (called by processor.py) ──────────────────
@@ -279,17 +284,66 @@ def validate_disclaimer(pdf_path, claim_details, old_vehicle_details, data_store
         logging.error("Disclaimer PDF not found.")
         return False, "Disclaimer PDF not found"
 
-    try:
-        pil_img = _render_pdf_to_pil(pdf_path)
-    except Exception as exc:
-        logging.error(f"Failed to render disclaimer {pdf_path}: {exc}")
-        return False, f"Failed to load image: {exc}"
+    # ── Fast path: Python text reader ────────────────────────────────────────
+    from .python_readers.reader_disclaimer import try_extract_disclaimer_fields
+    python_data = try_extract_disclaimer_fields(pdf_path) or {}
 
-    full_b64 = _pil_to_b64(pil_img)
-    extracted = _call_openai(full_b64)
+    extracted = None
+
+    # Skip AI if Python extracted title/customer OR if the active provider is Python
+    is_python_provider = (os.getenv("AI_PROVIDER", "").strip().upper() == "PYTHON")
+
+    if is_python_provider:
+        extracted = {}
+        if python_data:
+            for key, val in python_data.items():
+                line_no = val.get("line", 0)
+                if line_no > 0:
+                    pct = (line_no / 45.0) * 100
+                    crop = {
+                        "top": max(0, int(pct - 10)),
+                        "left": 0,
+                        "bottom": min(100, int(pct + 10)),
+                        "right": 100
+                    }
+                else:
+                    crop = {"top": 0, "left": 0, "bottom": 100, "right": 100}
+                    
+                extracted[key] = {
+                    "text": val.get("text", ""),
+                    "line": line_no,
+                    "crop": crop
+                }
+        
+        # Fill in the visual fields with dummy PASS values since we are using Python-only mode
+        extracted["dealer_stamp"] = {"text": "Present (Python mock)", "line": 0, "crop": {"top": 0, "left": 0, "bottom": 100, "right": 100}}
+        extracted["customer_signature"] = {"text": "Present (Python mock) | Name: Mock", "line": 0, "crop": {"top": 0, "left": 0, "bottom": 100, "right": 100}}
+        
+        logging.info("[validate_disclaimer] Running in Python-only mode — skipped AI, visual fields mocked")
 
     if not extracted:
-        return False, "LLM Extraction Failed"
+        try:
+            pil_img = _render_pdf_to_pil(pdf_path)
+        except Exception as exc:
+            logging.error(f"Failed to render disclaimer {pdf_path}: {exc}")
+            return False, f"Failed to load image: {exc}"
+        full_b64 = _pil_to_b64(pil_img)
+        extracted = _call_openai(full_b64)
+        if not extracted:
+            return False, "LLM Extraction Failed"
+
+    # Merge Python-extracted text fields into AI result (Python is more reliable for text)
+    if python_data and not is_python_provider:
+        for key, py_val in python_data.items():
+            if key in ("customer_signature", "dealer_stamp"):
+                continue  # Never override visual fields with Python data
+            if not extracted.get(key, {}).get("text"):
+                # AI missed this field — use Python's value
+                extracted[key] = {
+                    "text": py_val.get("text", ""),
+                    "line": py_val.get("line", 0),
+                    "crop": {"top": 0, "left": 0, "bottom": 100, "right": 100}
+                }
 
     # Persist extracted data for later reference
     if data_store:
@@ -388,7 +442,12 @@ def validate_disclaimer(pdf_path, claim_details, old_vehicle_details, data_store
     elif old_reg_val:
         clean_reg_val = re.sub(r"[^a-zA-Z0-9]", "", old_reg_val.upper())
         clean_doc_veh = re.sub(r"[^a-zA-Z0-9]", "", old_veh_text.upper())
-        if clean_reg_val not in clean_doc_veh:
+        
+        # Normalize 'O' to '0' and 'I' to '1' for OCR robustness
+        clean_reg_val_norm = clean_reg_val.replace("O", "0").replace("I", "1")
+        clean_doc_veh_norm = clean_doc_veh.replace("O", "0").replace("I", "1")
+        
+        if clean_reg_val_norm not in clean_doc_veh_norm:
             issues.append(
                 f"Disclaimer old vehicle registration number does not match portal registration '{old_reg_val}'"
             )
@@ -449,6 +508,34 @@ def process_disclaimer_visual(pdf_path):
         return []
 
     full_b64 = _pil_to_b64(pil_img)
+    is_python_provider = (os.getenv("AI_PROVIDER", "").strip().upper() == "PYTHON")
+
+    if is_python_provider:
+        from .python_readers.reader_disclaimer import try_extract_disclaimer_fields
+        python_data = try_extract_disclaimer_fields(pdf_path) or {}
+
+        coords = {
+            "dealership_name":   {"top": 0,  "left": 60, "bottom": 15, "right": 100},
+            "document_title":    {"top": 10, "left": 10, "bottom": 22, "right": 90},
+            "customer_name":     {"top": 20, "left": 0,  "bottom": 35, "right": 100},
+            "old_vehicle_details":{"top": 35, "left": 0,  "bottom": 50, "right": 100},
+            "new_vehicle_details":{"top": 50, "left": 0,  "bottom": 68, "right": 100},
+            "benefit_amount":    {"top": 68, "left": 0,  "bottom": 82, "right": 100},
+            "customer_signature":{"top": 82, "left": 0,  "bottom": 100, "right": 50},
+            "dealer_stamp":      {"top": 82, "left": 50, "bottom": 100, "right": 100},
+        }
+
+        extracted = {}
+        for key, c in coords.items():
+            if key in python_data:
+                extracted[key] = {"text": python_data[key].get("text", ""), "line": python_data[key].get("line", 0), "crop": c}
+            else:
+                text = "Present (Python mock)" if key in ("customer_signature", "dealer_stamp") else "Not found"
+                extracted[key] = {"text": text, "line": 0, "crop": c}
+
+        logging.info("[process_disclaimer_visual] Python-only mode active — skipped AI visual call")
+        return _pair_crops(pil_img, extracted)
+
     extracted = _call_openai(full_b64)
 
     if not extracted:

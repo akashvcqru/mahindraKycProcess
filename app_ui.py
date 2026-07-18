@@ -1,3 +1,4 @@
+print("[Info] Starting UI Dashboard and loading libraries (PyTorch, EasyOCR, Playwright)... Please wait.")
 import base64
 import io
 import json
@@ -26,181 +27,16 @@ except ImportError:
     pass
 
 # Monkeypatch requests to support Claude as a drop-in replacement for OpenAI
-import requests
-import json
-import time
+import scrappage_scheme.ai_patch
 
-original_post = requests.post
-
-def transform_openai_to_claude(openai_json):
-    claude_messages = []
-    messages = openai_json.get("messages", [])
-    system_text = None
-    
-    for msg in messages:
-        role = msg.get("role", "user")
-        content_in = msg.get("content")
-        
-        if role == "system":
-            if isinstance(content_in, str):
-                system_text = (system_text + "\n" + content_in) if system_text else content_in
-            elif isinstance(content_in, list):
-                text_parts = [p.get("text", "") for p in content_in if p.get("type") == "text"]
-                combined = " ".join(text_parts)
-                system_text = (system_text + "\n" + combined) if system_text else combined
-            continue
-            
-        claude_content = []
-        if isinstance(content_in, list):
-            for part in content_in:
-                if part.get("type") == "text":
-                    claude_content.append({
-                        "type": "text",
-                        "text": part.get("text")
-                    })
-                elif part.get("type") == "image_url":
-                    img_url = part.get("image_url", {}).get("url", "")
-                    if img_url.startswith("data:image/"):
-                        try:
-                            header, base64_data = img_url.split(",", 1)
-                            media_type = header.split(";")[0].replace("data:", "")
-                        except Exception:
-                            base64_data = img_url
-                            media_type = "image/jpeg"
-                    else:
-                        base64_data = img_url
-                        media_type = "image/jpeg"
-                    
-                    claude_content.append({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": base64_data
-                        }
-                    })
-        elif isinstance(content_in, str):
-            claude_content = content_in
-            
-        claude_messages.append({
-            "role": role,
-            "content": claude_content
-        })
-        
-    claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
-    claude_payload = {
-        "model": claude_model,
-        "max_tokens": openai_json.get("max_tokens", 4096),
-        "messages": claude_messages
-    }
-    if system_text:
-        claude_payload["system"] = system_text
-        
-    return claude_payload
-
-def transform_claude_to_openai(claude_json):
-    text_content = ""
-    for part in claude_json.get("content", []):
-        if part.get("type") == "text":
-            text_content += part.get("text", "")
-            
-    # Extract JSON if present to conform with OpenAI strict JSON format expectations
-    clean_content = text_content.strip()
-    if '{' in clean_content or '[' in clean_content:
-        start_brace = clean_content.find('{')
-        start_bracket = clean_content.find('[')
-        
-        start = -1
-        end = -1
-        
-        if start_brace != -1 and (start_bracket == -1 or start_brace < start_bracket):
-            start = start_brace
-            end = clean_content.rfind('}')
-        elif start_bracket != -1:
-            start = start_bracket
-            end = clean_content.rfind(']')
-            
-        if start != -1 and end != -1 and end > start:
-            json_candidate = clean_content[start:end+1]
-            try:
-                # Validate it's parseable JSON
-                json.loads(json_candidate)
-                text_content = json_candidate
-            except json.JSONDecodeError:
-                pass
-            
-    openai_json = {
-        "id": claude_json.get("id", "chatcmpl-mock"),
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": claude_json.get("model", "gpt-4o"),
-        "choices": [
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": text_content
-                },
-                "finish_reason": "stop"
-            }
-        ],
-        "usage": {
-            "prompt_tokens": claude_json.get("usage", {}).get("input_tokens", 0),
-            "completion_tokens": claude_json.get("usage", {}).get("output_tokens", 0),
-            "total_tokens": claude_json.get("usage", {}).get("input_tokens", 0) + claude_json.get("usage", {}).get("output_tokens", 0)
-        }
-    }
-    return openai_json
-
-def custom_post(url, *args, **kwargs):
-    if url == "https://api.openai.com/v1/chat/completions":
-        provider = os.getenv("AI_PROVIDER", "OpenAI")
-        if provider == "Claude":
-            claude_key = os.getenv("CLAUDE_API_KEY", "")
-            headers = {
-                "x-api-key": claude_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            }
-            openai_payload = kwargs.get("json", {})
-            claude_payload = transform_openai_to_claude(openai_payload)
-            timeout = kwargs.get("timeout", 60)
-            
-            logging.info("Routing request to Claude API...")
-            claude_resp = original_post(
-                "https://api.anthropic.com/v1/messages",
-                headers=headers,
-                json=claude_payload,
-                timeout=timeout
-            )
-            
-            resp = requests.Response()
-            resp.status_code = claude_resp.status_code
-            resp.headers = dict(claude_resp.headers)
-            resp.reason = claude_resp.reason
-            resp.url = claude_resp.url
-            resp.request = claude_resp.request
-            
-            if claude_resp.status_code == 200:
-                try:
-                    claude_json = claude_resp.json()
-                    openai_json = transform_claude_to_openai(claude_json)
-                    resp._content = json.dumps(openai_json).encode("utf-8")
-                except Exception as e:
-                    logging.error(f"Error parsing Claude response: {e}")
-                    resp._content = claude_resp.content
-            else:
-                logging.error(f"Claude API request failed ({claude_resp.status_code}): {claude_resp.text}")
-                resp._content = claude_resp.content
-                
-            return resp
-            
-    return original_post(url, *args, **kwargs)
-
-requests.post = custom_post
 
 # Import the backend automation module
 import automate_login
+
+# Import UI components
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from ui.manual_kyc_panel import ManualKycPanel
 
 # Colors
 BG_COLOR = "#1E1E1E"  # Main dark background
@@ -414,6 +250,28 @@ class AppUI(tk.Tk):
         )
         self.fab_toggle_btn.pack(side="right", padx=20, pady=12)
 
+        # Global AI Action Toggle Buttons
+        self.toggle_frame = tk.Frame(self.header_frame, bg=CARD_BG_COLOR)
+        self.toggle_frame.pack(side="right", padx=10, pady=12)
+
+        self.header_btn_approve = tk.Button(
+            self.toggle_frame, text="✔ AI Approved", bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat",
+            font=("Segoe UI", 9, "bold"), bd=0, padx=12, pady=6, command=self.header_action_approve
+        )
+        self.header_btn_approve.pack(side="left", padx=2)
+
+        self.header_btn_hold = tk.Button(
+            self.toggle_frame, text="⚠ AI Hold", bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat",
+            font=("Segoe UI", 9, "bold"), bd=0, padx=12, pady=6, command=self.header_action_hold
+        )
+        self.header_btn_hold.pack(side="left", padx=2)
+
+        self.header_btn_reject = tk.Button(
+            self.toggle_frame, text="✖ AI Reject", bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat",
+            font=("Segoe UI", 9, "bold"), bd=0, padx=12, pady=6, command=self.header_action_reject
+        )
+        self.header_btn_reject.pack(side="left", padx=2)
+
         # VS Code style sidebar (width=60)
         self.sidebar_frame = tk.Frame(self, bg="#1E1E1E", width=60)
         self.sidebar_frame.pack(side="left", fill="y")
@@ -432,6 +290,7 @@ class AppUI(tk.Tk):
             "history": True,
             "document": True,
             "visual": True,
+            "manual_kyc": False,
         }
 
         self.sidebar_buttons = {}
@@ -441,6 +300,7 @@ class AppUI(tk.Tk):
             ("history", "📜\nHistory"),
             ("document", "📑\nDoc"),
             ("visual", "🔍\nVisual"),
+            ("manual_kyc", "📝\nManual KYC"),
         ]
 
         for key, text in button_info:
@@ -574,9 +434,11 @@ class AppUI(tk.Tk):
         self.row_helper_lbl.grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 4))
 
         # AI Provider selection variable and UI (NEW!)
-        self.ai_provider_var = tk.StringVar(value=os.getenv("AI_PROVIDER", "OpenAI"))
+        self.ai_provider_var = tk.StringVar(value=os.getenv("AI_PROVIDER", "Claude"))
         self.openai_key_var = tk.StringVar(value=os.getenv("OPENAI_API_KEY", ""))
         self.claude_key_var = tk.StringVar(value=os.getenv("CLAUDE_API_KEY", ""))
+        self.gemini_key_var = tk.StringVar(value=os.getenv("GEMINI_API_KEY", ""))
+        self.google_sheet_webapp_var = tk.StringVar(value=os.getenv("GOOGLE_SHEET_WEBAPP_URL", "https://script.google.com/a/macros/vcqru.com/s/AKfycbw5bxrn9bwZVad3YrbcNeum2UR7AIZ1UxcsK1trhppsTivG5xA00z94rSUAFmEo5SC1/exec"))
 
         tk.Label(
             self.controls_card,
@@ -588,7 +450,7 @@ class AppUI(tk.Tk):
         self.ai_provider_combo = ttk.Combobox(
             self.controls_card,
             textvariable=self.ai_provider_var,
-            values=["OpenAI", "Claude"],
+            values=["OpenAI", "Claude", "Gemini", "Python"],
             state="readonly",
             width=18,
         )
@@ -638,6 +500,67 @@ class AppUI(tk.Tk):
         )
         self.claude_key_entry.grid(row=8, column=1, sticky="w", padx=10, pady=6)
 
+        # Claude Model Selector field
+        self.claude_model_var = tk.StringVar(value=os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-latest"))
+        tk.Label(
+            self.controls_card,
+            text="Claude Model:",
+            bg=CARD_BG_COLOR,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 9),
+        ).grid(row=9, column=0, sticky="w", pady=6)
+        self.claude_model_combo = ttk.Combobox(
+            self.controls_card,
+            textvariable=self.claude_model_var,
+            values=["claude-haiku-4-5-20251001", "claude-sonnet-5"],
+            state="readonly",
+            width=18,
+        )
+        self.claude_model_combo.grid(row=9, column=1, sticky="w", padx=10, pady=6)
+
+        # Gemini API Key field
+        tk.Label(
+            self.controls_card,
+            text="Gemini API Key:",
+            bg=CARD_BG_COLOR,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 9),
+        ).grid(row=10, column=0, sticky="w", pady=6)
+        self.gemini_key_entry = tk.Entry(
+            self.controls_card,
+            textvariable=self.gemini_key_var,
+            show="*",
+            bg="#2A2A2A",
+            fg=TEXT_COLOR,
+            insertbackground=TEXT_COLOR,
+            font=("Segoe UI", 9),
+            relief="flat",
+            bd=1,
+            width=21,
+        )
+        self.gemini_key_entry.grid(row=10, column=1, sticky="w", padx=10, pady=6)
+
+        # Google Sheet Web App URL field
+        tk.Label(
+            self.controls_card,
+            text="Google Sheet WebApp URL:",
+            bg=CARD_BG_COLOR,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 9),
+        ).grid(row=11, column=0, sticky="w", pady=6)
+        self.google_sheet_webapp_entry = tk.Entry(
+            self.controls_card,
+            textvariable=self.google_sheet_webapp_var,
+            bg="#2A2A2A",
+            fg=TEXT_COLOR,
+            insertbackground=TEXT_COLOR,
+            font=("Segoe UI", 9),
+            relief="flat",
+            bd=1,
+            width=21,
+        )
+        self.google_sheet_webapp_entry.grid(row=11, column=1, sticky="w", padx=10, pady=6)
+
         # Action Buttons
         self.start_btn = tk.Button(
             self.controls_card,
@@ -652,7 +575,7 @@ class AppUI(tk.Tk):
             bd=0,
             command=self.start_automation,
         )
-        self.start_btn.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        self.start_btn.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
         # Real-time styled terminal console logs log widget
         self.log_card = tk.LabelFrame(
@@ -711,8 +634,8 @@ class AppUI(tk.Tk):
         self.history_tree.heading("Status", text="Verification Status")
 
         self.history_tree.column("Row", width=50, anchor="center")
-        self.history_tree.column("Customer", width=140, anchor="w")
-        self.history_tree.column("Status", width=80, anchor="center")
+        self.history_tree.column("Customer", width=120, anchor="w")
+        self.history_tree.column("Status", width=110, anchor="center")
 
         self.history_tree.tag_configure(
             "approved", foreground=SUCCESS_COLOR, font=("Segoe UI", 9, "bold")
@@ -1105,11 +1028,27 @@ class AppUI(tk.Tk):
             "document": self.viewer_frame,
             "visual": self.visual_panel,
         }
+        
+        # Manual KYC standalone view
+        self.manual_kyc_panel = ManualKycPanel(self.workspace_pane, self)
+        self.panel_widgets["manual_kyc"] = self.manual_kyc_panel
 
         self.update_workspace_layout()
 
     def toggle_panel(self, key):
-        self.panel_states[key] = not self.panel_states[key]
+        # Exclusivity logic: If manual_kyc is toggled ON, turn off standard panels.
+        # If standard panel is toggled ON, turn off manual_kyc.
+        if key == "manual_kyc":
+            is_turning_on = not self.panel_states["manual_kyc"]
+            self.panel_states["manual_kyc"] = is_turning_on
+            if is_turning_on:
+                for k in ["params", "console", "history", "document", "visual"]:
+                    self.panel_states[k] = False
+        else:
+            self.panel_states[key] = not self.panel_states[key]
+            if self.panel_states[key]:
+                self.panel_states["manual_kyc"] = False
+                
         self.update_workspace_layout()
 
     def update_workspace_layout(self):
@@ -1118,13 +1057,14 @@ class AppUI(tk.Tk):
             self.workspace_pane.forget(pane)
 
         # 2. Add active ones in correct order
-        order = ["params", "console", "history", "document", "visual"]
+        order = ["params", "console", "history", "document", "visual", "manual_kyc"]
         minsizes = {
             "params": 280,
             "console": 350,
             "history": 280,
             "document": 600,
-            "visual": 300
+            "visual": 300,
+            "manual_kyc": 900
         }
 
         for key in order:
@@ -1279,10 +1219,16 @@ class AppUI(tk.Tk):
         provider = self.ai_provider_var.get()
         openai_key = self.openai_key_var.get().strip()
         claude_key = self.claude_key_var.get().strip()
+        claude_model = self.claude_model_var.get().strip()
+        gemini_key = self.gemini_key_var.get().strip()
+        google_sheet_webapp = self.google_sheet_webapp_var.get().strip()
         
         os.environ["AI_PROVIDER"] = provider
-        os.environ["OPENAI_API_KEY"] = openai_key
+        os.environ["OPENAI_API_KEY"] = openai_key or ("dummy-key-for-patched-request" if provider in ("Claude", "Gemini") else "")
         os.environ["CLAUDE_API_KEY"] = claude_key
+        os.environ["CLAUDE_MODEL"] = claude_model
+        os.environ["GEMINI_API_KEY"] = gemini_key
+        os.environ["GOOGLE_SHEET_WEBAPP_URL"] = google_sheet_webapp
         
         # Save to .env file
         try:
@@ -1298,7 +1244,14 @@ class AppUI(tk.Tk):
                     lines = f.readlines()
             
             new_lines = []
-            updated = {"AI_PROVIDER": False, "OPENAI_API_KEY": False, "CLAUDE_API_KEY": False}
+            updated = {
+                "AI_PROVIDER": False,
+                "OPENAI_API_KEY": False,
+                "CLAUDE_API_KEY": False,
+                "CLAUDE_MODEL": False,
+                "GEMINI_API_KEY": False,
+                "GOOGLE_SHEET_WEBAPP_URL": False
+            }
             for line in lines:
                 striped = line.strip()
                 if not striped or striped.startswith('#'):
@@ -1314,6 +1267,12 @@ class AppUI(tk.Tk):
                             new_lines.append(f"OPENAI_API_KEY={openai_key}\n")
                         elif k == "CLAUDE_API_KEY":
                             new_lines.append(f"CLAUDE_API_KEY={claude_key}\n")
+                        elif k == "CLAUDE_MODEL":
+                            new_lines.append(f"CLAUDE_MODEL={claude_model}\n")
+                        elif k == "GEMINI_API_KEY":
+                            new_lines.append(f"GEMINI_API_KEY={gemini_key}\n")
+                        elif k == "GOOGLE_SHEET_WEBAPP_URL":
+                            new_lines.append(f"GOOGLE_SHEET_WEBAPP_URL={google_sheet_webapp}\n")
                         updated[k] = True
                     else:
                         new_lines.append(line)
@@ -1326,6 +1285,12 @@ class AppUI(tk.Tk):
                 new_lines.append(f"OPENAI_API_KEY={openai_key}\n")
             if not updated["CLAUDE_API_KEY"]:
                 new_lines.append(f"CLAUDE_API_KEY={claude_key}\n")
+            if not updated["CLAUDE_MODEL"]:
+                new_lines.append(f"CLAUDE_MODEL={claude_model}\n")
+            if not updated["GEMINI_API_KEY"]:
+                new_lines.append(f"GEMINI_API_KEY={gemini_key}\n")
+            if not updated["GOOGLE_SHEET_WEBAPP_URL"]:
+                new_lines.append(f"GOOGLE_SHEET_WEBAPP_URL={google_sheet_webapp}\n")
                 
             with open(env_path, 'w', encoding='utf-8') as f:
                 f.writelines(new_lines)
@@ -1335,11 +1300,16 @@ class AppUI(tk.Tk):
     def check_keys(self):
         self.update_env_keys()
         provider = self.ai_provider_var.get()
+        if provider == "Python":
+            return True
         if provider == "OpenAI" and not self.openai_key_var.get().strip():
             messagebox.showerror("Error", "OpenAI API Key is required.")
             return False
         elif provider == "Claude" and not self.claude_key_var.get().strip():
             messagebox.showerror("Error", "Claude API Key is required.")
+            return False
+        elif provider == "Gemini" and not self.gemini_key_var.get().strip():
+            messagebox.showerror("Error", "Gemini API Key is required.")
             return False
         return True
 
@@ -1363,6 +1333,9 @@ class AppUI(tk.Tk):
         self.ai_provider_combo.configure(state="disabled")
         self.openai_key_entry.configure(state="disabled")
         self.claude_key_entry.configure(state="disabled")
+        self.gemini_key_entry.configure(state="disabled")
+        self.claude_model_combo.configure(state="disabled")
+        self.google_sheet_webapp_entry.configure(state="disabled")
 
         # Clean console log
         self.log_console.configure(state="normal")
@@ -1414,6 +1387,9 @@ class AppUI(tk.Tk):
         self.ai_provider_combo.configure(state="readonly")
         self.openai_key_entry.configure(state="normal")
         self.claude_key_entry.configure(state="normal")
+        self.gemini_key_entry.configure(state="normal")
+        self.claude_model_combo.configure(state="readonly")
+        self.google_sheet_webapp_entry.configure(state="normal")
 
     # Bridge between threads: automation thread requests UI inputs
     def ui_input_callback_bridge(self, prompt, prompt_type="text", options=None):
@@ -1573,19 +1549,30 @@ class AppUI(tk.Tk):
 
         # Insert into visual list tree
         status_tag = "approved" if row_result["status"] == "APPROVED" else "hold"
+        status_display = row_result["status"]
+        duration = row_result.get("duration")
+        if duration is not None:
+            status_display += f" ({duration:.1f}s)" if duration < 60 else f" ({int(duration // 60)}m {int(duration % 60)}s)"
+            
         node_id = self.history_tree.insert(
             "",
             "end",
             values=(
                 f"Row {row_result['row_idx'] + 1}",
                 row_result["customer_name"],
-                row_result["status"],
+                status_display,
             ),
             tags=(status_tag,),
         )
         # Automatically highlight and select the newly completed row
         self.history_tree.selection_set(node_id)
         self.history_tree.see(node_id)
+        
+        # Dispatch to Manual KYC Panel (it filters for HOLD)
+        try:
+            self.manual_kyc_panel.add_row(row_result)
+        except Exception as e:
+            print(f"Error dispatching to Manual KYC Panel: {e}")
 
     # Load history panel when user selects list elements
     def on_history_select(self, event):
@@ -1615,6 +1602,7 @@ class AppUI(tk.Tk):
 
     def load_claim_to_viewer(self, claim):
         self.selected_claim = claim
+        self.update_header_toggles()
 
         # Show details panel, hide placeholder
         self.placeholder_lbl.pack_forget()
@@ -1631,6 +1619,12 @@ class AppUI(tk.Tk):
             self.dash_tree.insert("", "end", values=(k, v))
         for k, v in v_details.items():
             self.dash_tree.insert("", "end", values=(f"[Old Veh] {k}", v))
+
+        # Add KYC Processing Duration at the end of the Dashboard Info tab
+        duration = claim.get("duration")
+        if duration is not None:
+            dur_text = f"{duration:.2f} seconds" if duration < 60 else f"{int(duration // 60)}m {int(duration % 60)}s ({duration:.1f}s)"
+            self.dash_tree.insert("", "end", values=("KYC Processing Duration", dur_text))
 
         # 2. Populate PDF selector toolbar values
         documents = claim.get("documents") or []
@@ -2029,16 +2023,25 @@ class AppUI(tk.Tk):
                     status_tag = (
                         "approved" if row_result["status"] == "APPROVED" else "hold"
                     )
+                    status_display = row_result["status"]
+                    duration = row_result.get("duration")
+                    if duration is not None:
+                        status_display += f" ({duration:.1f}s)" if duration < 60 else f" ({int(duration // 60)}m {int(duration % 60)}s)"
                     self.history_tree.insert(
                         "",
                         "end",
                         values=(
                             f"Row {row_result['row_idx'] + 1}",
                             row_result["customer_name"],
-                            row_result["status"],
+                            status_display,
                         ),
                         tags=(status_tag,),
                     )
+                    # Dispatch to Manual KYC Panel (it filters for HOLD)
+                    try:
+                        self.manual_kyc_panel.add_row(row_result)
+                    except Exception as e:
+                        logging.error(f"Error forwarding startup row to manual KYC panel: {e}")
             except Exception as e:
                 logging.error(f"Failed to load history file: {e}")
 
@@ -2100,8 +2103,8 @@ class AppUI(tk.Tk):
                         import scrappage_scheme.ledger_validation as scrappage_ledger
                         ledger_results = scrappage_ledger.process_scrappage_ledger_visual(pdf_path)
                     else:
-                        import east_welcome_bonus_ledger
-                        ledger_results = east_welcome_bonus_ledger.process_east_welcome_bonus_ledger(pdf_path)
+                        import welcome_scheme.ledger_validation as welcome_ledger
+                        ledger_results = welcome_ledger.process_east_welcome_bonus_ledger(pdf_path)
                     
                     visual_data = {}
                     for item in ledger_results:
@@ -2140,8 +2143,13 @@ class AppUI(tk.Tk):
 
             def invoice_task():
                 try:
-                    import scrappage_scheme.invoice_validation as inv_mod
-                    invoice_results = inv_mod.process_invoice_visual(pdf_path)
+                    current_scheme = self.scheme_type_var.get()
+                    if current_scheme == "Scrappage Bonus Scheme":
+                        import scrappage_scheme.invoice_validation as inv_mod
+                        invoice_results = inv_mod.process_invoice_visual(pdf_path)
+                    else:
+                        import welcome_scheme.invoice_validation as welcome_inv
+                        invoice_results = welcome_inv.process_invoice_visual(pdf_path)
 
                     visual_data = {}
                     for item in invoice_results:
@@ -2302,8 +2310,13 @@ class AppUI(tk.Tk):
 
             def disclaimer_task():
                 try:
-                    import scrappage_scheme.disclaimer_validation as dis_mod
-                    disclaimer_results = dis_mod.process_disclaimer_visual(pdf_path)
+                    current_scheme = self.scheme_type_var.get()
+                    if current_scheme == "Scrappage Bonus Scheme":
+                        import scrappage_scheme.disclaimer_validation as dis_mod
+                        disclaimer_results = dis_mod.process_disclaimer_visual(pdf_path)
+                    else:
+                        import welcome_scheme.disclaimer_validation as welcome_disclaimer
+                        disclaimer_results = welcome_disclaimer.process_disclaimer_visual(pdf_path)
 
                     visual_data = {}
                     for item in disclaimer_results:
@@ -2614,6 +2627,80 @@ class AppUI(tk.Tk):
         self.fab_window.withdraw()
         # Restore main window
         self.deiconify()
+
+    def update_header_toggles(self):
+        """Update header toggle buttons highlighting to reflect the selected claim's status."""
+        if not self.selected_claim:
+            self.header_btn_approve.config(bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat")
+            self.header_btn_hold.config(bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat")
+            self.header_btn_reject.config(bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat")
+            return
+            
+        status = self.selected_claim.get("status", "").upper()
+        
+        # Reset colors
+        self.header_btn_approve.config(bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat")
+        self.header_btn_hold.config(bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat")
+        self.header_btn_reject.config(bg="#2D3748", fg=TEXT_LIGHT_COLOR, relief="flat")
+        
+        # Highlight active status
+        if status == "APPROVED":
+            self.header_btn_approve.config(bg=SUCCESS_COLOR, fg="white", relief="sunken")
+        elif status == "HOLD":
+            self.header_btn_hold.config(bg=WARNING_COLOR, fg="white", relief="sunken")
+        elif status == "REJECTED":
+            self.header_btn_reject.config(bg=ERROR_COLOR, fg="white", relief="sunken")
+
+    def header_action_approve(self):
+        if not self.selected_claim:
+            return
+        self.selected_claim["status"] = "APPROVED"
+        
+        # Sync structures
+        for c in self.processed_claims:
+            if c.get("row_idx") == self.selected_claim.get("row_idx") and c.get("customer_name") == self.selected_claim.get("customer_name"):
+                c["status"] = "APPROVED"
+        
+        if hasattr(self, 'manual_kyc_panel'):
+            for c in self.manual_kyc_panel.processed_claims:
+                if c.get("row_idx") == self.selected_claim.get("row_idx") and c.get("customer_name") == self.selected_claim.get("customer_name"):
+                    c["status"] = "APPROVED"
+            
+        self.update_header_toggles()
+
+    def header_action_hold(self):
+        if not self.selected_claim:
+            return
+        self.selected_claim["status"] = "HOLD"
+        
+        # Sync structures
+        for c in self.processed_claims:
+            if c.get("row_idx") == self.selected_claim.get("row_idx") and c.get("customer_name") == self.selected_claim.get("customer_name"):
+                c["status"] = "HOLD"
+        
+        if hasattr(self, 'manual_kyc_panel'):
+            for c in self.manual_kyc_panel.processed_claims:
+                if c.get("row_idx") == self.selected_claim.get("row_idx") and c.get("customer_name") == self.selected_claim.get("customer_name"):
+                    c["status"] = "HOLD"
+        
+        self.update_header_toggles()
+
+    def header_action_reject(self):
+        if not self.selected_claim:
+            return
+        self.selected_claim["status"] = "REJECTED"
+        
+        # Sync structures
+        for c in self.processed_claims:
+            if c.get("row_idx") == self.selected_claim.get("row_idx") and c.get("customer_name") == self.selected_claim.get("customer_name"):
+                c["status"] = "REJECTED"
+        
+        if hasattr(self, 'manual_kyc_panel'):
+            for c in self.manual_kyc_panel.processed_claims:
+                if c.get("row_idx") == self.selected_claim.get("row_idx") and c.get("customer_name") == self.selected_claim.get("customer_name"):
+                    c["status"] = "REJECTED"
+            
+        self.update_header_toggles()
 
 
 if __name__ == "__main__":

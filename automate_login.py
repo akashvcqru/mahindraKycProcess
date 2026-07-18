@@ -1,3 +1,4 @@
+import scrappage_scheme.ai_patch
 import logging
 import os
 import re
@@ -1208,9 +1209,9 @@ def select_drawer_timeline_tab(page, tab_name):
         tab_locator = drawer_body.get_by_text(tab_name).first
 
     try:
-        tab_locator.wait_for(state="visible", timeout=3000)
+        tab_locator.wait_for(state="visible", timeout=10000)
     except Exception as e:
-        raise Exception(f"Tab '{tab_name}' not visible after 3 seconds: {e}")
+        raise Exception(f"Tab '{tab_name}' not visible after 10 seconds: {e}")
 
     logging.info(f"Clicking on details drawer tab: '{tab_name}'")
     tab_locator.scroll_into_view_if_needed()
@@ -1951,6 +1952,11 @@ CRITICAL EXTRACTION RULES (Follow strictly for consistency):
     - 70-89: Good quality, minor blur or handwriting
     - 50-69: Fair quality, some fields unclear
     - Below 50: Poor quality, multiple fields uncertain
+11. Perform signature and stamp checks:
+    - customer_signature_present: set to true/false if you see a handwritten customer signature or scribble in the customer signature block.
+    - authorized_signature_present: set to true/false if you see an authorized signature (handwritten scribble, digital signature text, or handwritten initials inside the stamp).
+    - company_stamp_present: set to true/false if you see an official company stamp/seal impression.
+    - signature_stamp_hold_reason: if any of the above are missing/false, write the reason. Otherwise, set to null.
 
 EXAMPLES OF CORRECT EXTRACTION:
 
@@ -2005,6 +2011,10 @@ Return JSON in this format:
 "new_vehicle_model": "",
 "welcome_bonus_amount": "",
 "seal_stamp_dealer_name": "",
+"customer_signature_present": false,
+"authorized_signature_present": false,
+"company_stamp_present": false,
+"signature_stamp_hold_reason": null,
 "full_text": ""
 }}
 
@@ -2269,6 +2279,11 @@ CRITICAL EXTRACTION RULES (Follow strictly for consistency):
     - 70-89: Good quality, minor blur or handwriting
     - 50-69: Fair quality, some fields unclear
     - Below 50: Poor quality, multiple fields uncertain
+11. Perform signature and stamp checks:
+    - customer_signature_present: set to true/false if you see a handwritten customer signature or scribble in the customer signature block.
+    - authorized_signature_present: set to true/false if you see an authorized signature (handwritten scribble, digital signature text, or handwritten initials inside the stamp).
+    - company_stamp_present: set to true/false if you see an official company stamp/seal impression.
+    - signature_stamp_hold_reason: if any of the above are missing/false, write the reason. Otherwise, set to null.
 
 EXAMPLES OF CORRECT EXTRACTION:
 
@@ -2327,6 +2342,10 @@ Return JSON in this format:
 "new_vehicle_model": "",
 "welcome_bonus_amount": "",
 "seal_stamp_dealer_name": "",
+"customer_signature_present": false,
+"authorized_signature_present": false,
+"company_stamp_present": false,
+"signature_stamp_hold_reason": null,
 "full_text": "",
 "bounding_boxes": {
   "invoice_number": [x1, y1, x2, y2],
@@ -2382,8 +2401,9 @@ Note:
                     f"Retry attempt {retry_attempt + 1}/{max_retries} for {os.path.basename(pdf_path)}..."
                 )
             else:
+                provider = os.getenv("AI_PROVIDER", "OpenAI")
                 logging.info(
-                    f"Sending vision extraction request to OpenAI for {os.path.basename(pdf_path)}..."
+                    f"Sending vision extraction request to {provider} for {os.path.basename(pdf_path)}..."
                 )
 
             response = requests.post(
@@ -3205,15 +3225,16 @@ def extract_text_hybrid(pdf_path):
         except Exception as ocr_err:
             logging.error(f"Local OCR/rotation failed: {ocr_err}")
 
-    # Try OpenAI Vision API for JSON fields
+    # Try Vision API for JSON fields
     # FORCE RE-EXTRACTION (bypass cache to get visual confirmations)
+    provider = os.getenv("AI_PROVIDER", "OpenAI")
     print(
-        f"[VISUAL DEBUG] Calling extract_details_via_openai for {os.path.basename(pdf_path)}"
+        f"[VISUAL DEBUG] Calling extract_details_via_{provider.lower()} for {os.path.basename(pdf_path)}"
     )
     openai_res = extract_details_via_openai(
         pdf_path, base64_images=base64_images if base64_images else None
     )
-    print(f"[VISUAL DEBUG] OpenAI result: {bool(openai_res)}")
+    print(f"[VISUAL DEBUG] {provider} result: {bool(openai_res)}")
     if openai_res:
         print(
             f"[VISUAL DEBUG] visual_extractions in result: {'visual_extractions' in openai_res}"
@@ -3229,14 +3250,14 @@ def extract_text_hybrid(pdf_path):
             text = local_text + "\n" + openai_full_text
         else:
             text = openai_full_text
-        logging.info("--> Successfully extracted details via OpenAI Vision API.")
+        logging.info(f"--> Successfully extracted details via {provider} Vision API.")
         result = (text, is_digital)
         extract_text_hybrid._text_cache[cache_key] = result
         return result
 
-    # Fallback to local extraction if OpenAI fails
+    # Fallback to local extraction if Vision API fails
     logging.warning(
-        "--> OpenAI Vision API failed. Falling back to local hybrid extraction..."
+        f"--> {provider} Vision API failed. Falling back to local hybrid extraction..."
     )
     result = (local_text, is_digital)
     extract_text_hybrid._text_cache[cache_key] = result
@@ -6332,9 +6353,30 @@ def verify_document_with_openai_and_portal(
     import json
     import logging
     import os
-
     import fitz
     import requests
+
+    openai_res = OPENAI_CACHE.get(doc_path)
+    if openai_res and "customer_signature_present" in openai_res:
+        provider = os.getenv("AI_PROVIDER", "OpenAI")
+        logging.info(f"--> Using cached {provider} Vision results for signature/stamp check.")
+        cust_sig = openai_res.get("customer_signature_present")
+        auth_sig = openai_res.get("authorized_signature_present")
+        comp_stamp = openai_res.get("company_stamp_present")
+        hold_reason = openai_res.get("signature_stamp_hold_reason")
+        
+        cust_sig_bool = bool(cust_sig)
+        auth_sig_bool = bool(auth_sig)
+        comp_stamp_bool = bool(comp_stamp)
+        
+        status = "PASS" if (cust_sig_bool and auth_sig_bool and comp_stamp_bool) else "HOLD"
+        return {
+            "customer_signature": {"present": cust_sig_bool, "confidence": 0.95},
+            "authorized_signature": {"present": auth_sig_bool, "confidence": 0.95},
+            "company_stamp": {"present": comp_stamp_bool, "confidence": 0.95},
+            "document_status": status,
+            "hold_reason": hold_reason
+        }
 
     def get_first_page_b64(pdf_path):
         try:
@@ -6455,7 +6497,8 @@ Be extremely careful not to mark customer signature as present if it's not actua
     }
 
     try:
-        logging.info("Calling OpenAI Vision API for Portal-to-Document validation...")
+        provider = os.getenv("AI_PROVIDER", "OpenAI")
+        logging.info(f"Calling {provider} Vision API for Portal-to-Document validation...")
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
@@ -6468,7 +6511,8 @@ Be extremely careful not to mark customer signature as present if it's not actua
         gpt_res = json.loads(content)
         return gpt_res
     except Exception as e:
-        logging.error(f"OpenAI Portal Validation Error: {e}")
+        provider = os.getenv("AI_PROVIDER", "OpenAI")
+        logging.error(f"{provider} Portal Validation Error: {e}")
         return {"document_status": "HOLD", "hold_reason": f"API Error: {e}"}
 
 
@@ -6653,8 +6697,9 @@ Return a JSON object in this exact format (no other text, no markdown block):
     }
 
     try:
+        provider = os.getenv("AI_PROVIDER", "OpenAI")
         logging.info(
-            "Calling OpenAI Vision API for custom Invoice-Declaration cross-validation..."
+            f"Calling {provider} Vision API for custom Invoice-Declaration cross-validation..."
         )
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
@@ -8577,25 +8622,15 @@ def verify_documents(
     dashboard_dealer_name=None,
     dashboard_scheme_type=None,
 ):
-    cur_zone = globals().get("CURRENT_ZONE", "").strip().upper()
-    if cur_zone == "EAST":
-        return EastZoneModel.verify_documents(
-            target_dir,
-            customer_name,
-            claim_details,
-            old_vehicle_details,
-            claim_choice,
-            dashboard_dealer_name,
-            dashboard_scheme_type,
-        )
-    return common_verify_documents(
-        target_dir,
-        customer_name,
-        claim_details,
-        old_vehicle_details,
-        claim_choice,
-        dashboard_dealer_name,
-        dashboard_scheme_type,
+    import welcome_scheme.processor
+    return welcome_scheme.processor.process_welcome(
+        target_dir=target_dir,
+        customer_name=customer_name,
+        claim_details=claim_details,
+        old_vehicle_details=old_vehicle_details,
+        claim_choice=claim_choice,
+        dashboard_dealer_name=dashboard_dealer_name,
+        dashboard_scheme_type=dashboard_scheme_type,
     )
 
 
@@ -8729,17 +8764,16 @@ def common_verify_documents(
     dashboard_dealer_name=None,
     dashboard_scheme_type=None,
 ):
-    """Validate all downloaded PDFs and return a list of issue strings.
-    Empty list  → APPROVED.  Non-empty list → HOLD."""
-    logging.info(
-        f"Starting verification of documents in: {target_dir} for customer: {customer_name}"
+    import welcome_scheme.processor
+    return welcome_scheme.processor.process_welcome(
+        target_dir=target_dir,
+        customer_name=customer_name,
+        claim_details=claim_details,
+        old_vehicle_details=old_vehicle_details,
+        claim_choice=claim_choice,
+        dashboard_dealer_name=dashboard_dealer_name,
+        dashboard_scheme_type=dashboard_scheme_type,
     )
-    global CURRENT_ROW_DOCUMENTS
-    CURRENT_ROW_DOCUMENTS = []
-    issues = []  # ← accumulated issues; returned at end
-    if not os.path.exists(target_dir):
-        logging.warning(f"Directory {target_dir} does not exist. Skipping validation.")
-        return issues
 
     # Determine old vehicle owner details and relationship based on new logic
     relationship = "Self"
@@ -10112,7 +10146,8 @@ EXCEL_HEADERS = [
     "Status",  # I  col 9
     "Hold Reasons / Remarks",  # J  col 10
     "Processed Date",  # K  col 11
-    "Chassis No",  # L  col 12  ← last column
+    "Chassis No",  # L  col 12
+    "Time Taken (seconds)",  # M  col 13  ← new column
 ]
 
 
@@ -10138,8 +10173,8 @@ def append_row_to_excel(record, excel_path):
     )  # amber
     regular_font = Font(name="Segoe UI", size=10)
 
-    # Centre-aligned column indices (1-based): Row Number(1), Status(9), Processed Date(11)
-    centre_cols = {1, 9, 11}
+    # Centre-aligned column indices (1-based): Row Number(1), Status(9), Processed Date(11), Time Taken(13)
+    centre_cols = {1, 9, 11, 13}
 
     try:
         if os.path.exists(excel_path):
@@ -10195,7 +10230,8 @@ def append_row_to_excel(record, excel_path):
             status_val,  # I  col 9
             record.get("hold_reasons", ""),  # J  col 10
             record.get("date_processed", ""),  # K  col 11
-            record.get("chassis_no", ""),  # L  col 12  ← last
+            record.get("chassis_no", ""),  # L  col 12
+            record.get("duration", ""),  # M  col 13  ← new column
         ]
         ws.append(row_vals)
         curr_row = ws.max_row
@@ -10215,7 +10251,7 @@ def append_row_to_excel(record, excel_path):
 
         # Column widths  (A=Row#, B=ClaimNo, C=ClaimDate, D=AreaOffice, E=Customer,
         #                  F=DealerName, G=DealerBranch, H=Scheme, I=Status,
-        #                  J=HoldReasons, K=ProcessedDate, L=ChassisNo)
+        #                  J=HoldReasons, K=ProcessedDate, L=ChassisNo, M=TimeTaken)
         col_widths = {
             "A": 12,
             "B": 18,
@@ -10229,6 +10265,7 @@ def append_row_to_excel(record, excel_path):
             "J": 60,
             "K": 22,
             "L": 22,
+            "M": 22,
         }
         for col, w in col_widths.items():
             ws.column_dimensions[col].width = w
@@ -10238,6 +10275,38 @@ def append_row_to_excel(record, excel_path):
         logging.info(
             f"[Excel] Row {record.get('row_num')} saved immediately → {excel_path}"
         )
+
+        # Synchronize with Google Sheets Web App if configured
+        webapp_url = os.getenv("GOOGLE_SHEET_WEBAPP_URL", "")
+        if webapp_url:
+            logging.info(f"[Google Sheets] Synchronizing row {record.get('row_num')} to Google Sheet...")
+            try:
+                # Attach stitched base64 document images
+                global CURRENT_ROW_DOCUMENTS
+                from document_processing.pdf_handler import get_stitched_base64_document
+                for doc in CURRENT_ROW_DOCUMENTS:
+                    fpath = doc.get("file_path")
+                    dtype = doc.get("doc_type", "") or ""
+                    fname_upper = doc.get("file_name", "").upper()
+                    if any(kw in dtype or kw in fname_upper for kw in ["DISCLAIMER", "DIS"]):
+                        record["disclaimer_doc_img"] = get_stitched_base64_document(fpath)
+                    elif any(kw in dtype or kw in fname_upper for kw in ["LEDGER", "LED"]):
+                        record["ledger_doc_img"] = get_stitched_base64_document(fpath)
+                    elif any(kw in dtype or kw in fname_upper for kw in ["INVOICE", "INV"]):
+                        record["invoice_doc_img"] = get_stitched_base64_document(fpath)
+            except Exception as e:
+                logging.error(f"[Google Sheets Sync] Error attaching documents to record: {e}")
+                
+            try:
+                import requests
+                resp = requests.post(webapp_url, json=record, timeout=45)
+                if resp.status_code == 200:
+                    logging.info(f"[Google Sheets] Row successfully synchronized to Google Sheet.")
+                else:
+                    logging.warning(f"[Google Sheets] Failed to sync row: HTTP {resp.status_code} - {resp.text}")
+            except Exception as sync_err:
+                logging.warning(f"[Google Sheets] Error synchronizing row to Google Sheet: {sync_err}")
+
         return True
     except Exception as xl_err:
         logging.warning(
@@ -10392,7 +10461,7 @@ def configure_edge_preferences(user_data_path, profile_dir="Default"):
 
 
 def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date_range_choice="Current Month", force_scheme=None):
-    global FORCE_SCHEME
+    global FORCE_SCHEME, CURRENT_ZONE, CURRENT_CITY
     FORCE_SCHEME = force_scheme
     print("=== Mahindra Rise Edge Login Automation ===")
 
@@ -10505,24 +10574,28 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
         # Workaround for Chrome/Edge 130+ blocking remote debugging on default User Data directory
         import shutil
         playwright_user_data = os.path.join(get_exe_dir(), "Edge_Playwright_Profile")
-        logging.info(f"Copying Edge profile to temporary workspace directory to bypass debugging restrictions...")
-        os.makedirs(playwright_user_data, exist_ok=True)
-        
-        src_local_state = os.path.join(user_data_path, "Local State")
-        dst_local_state = os.path.join(playwright_user_data, "Local State")
-        if os.path.exists(src_local_state):
-            try:
-                shutil.copy2(src_local_state, dst_local_state)
-            except Exception as e:
-                logging.warning(f"Could not copy Local State: {e}")
-                
         src_profile = os.path.join(user_data_path, profile_dir)
         dst_profile = os.path.join(playwright_user_data, profile_dir)
-        if os.path.exists(src_profile):
-            try:
-                shutil.copytree(src_profile, dst_profile, dirs_exist_ok=True)
-            except Exception as e:
-                logging.warning(f"Could not copy Profile directory: {e}")
+        
+        if not os.path.exists(dst_profile):
+            logging.info(f"Copying Edge profile to temporary workspace directory to bypass debugging restrictions...")
+            os.makedirs(playwright_user_data, exist_ok=True)
+            
+            src_local_state = os.path.join(user_data_path, "Local State")
+            dst_local_state = os.path.join(playwright_user_data, "Local State")
+            if os.path.exists(src_local_state):
+                try:
+                    shutil.copy2(src_local_state, dst_local_state)
+                except Exception as e:
+                    logging.warning(f"Could not copy Local State: {e}")
+                    
+            if os.path.exists(src_profile):
+                try:
+                    shutil.copytree(src_profile, dst_profile, dirs_exist_ok=True)
+                except Exception as e:
+                    logging.warning(f"Could not copy Profile directory: {e}")
+        else:
+            logging.info(f"Reusing existing persistent Playwright Edge profile in {playwright_user_data}...")
 
         # Launch persistent context with the chosen profile folder
         logging.info(
@@ -11028,12 +11101,12 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
 
         # Select Claim Status (Prompt user for Pending vs Hold vs Pending with AO)
         status_container = (
-            f"#36da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #\\33 6da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, #\\39 8a463b6-2622-4779-9f90-ecc5426b8829 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
+            f"#bd883851-7cc9-4bf4-b713-4f7f05f21856 > div, #36da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #\\33 6da712b-6c91-4754-9bf8-30123ff6f3b0 > div, #a27d1f7f-a500-450c-a3d1-ec4f5a59dec2 > div, #\\39 8a463b6-2622-4779-9f90-ecc5426b8829 > div, {MODAL_CONTENT} form > div:nth-child(2) > div:nth-child(3) > div > div"
         )
         selected_status = get_ui_input(
             "Select Claim Status to process:",
             "dropdown",
-            ["Pending by SSKM", "Pending with SSKM", "Hold by SSKM", "Hold with SSKM", "Pending with AO"]
+            ["Pending by SSKM", "Pending with SSKM", "Hold by SSKM", "Hold with SSKM", "Pending with AO", "Pending with ZO"]
         )
         if not selected_status:
             selected_status = "Pending by SSKM"
@@ -11074,15 +11147,12 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
         # ── Set page size to 100 so all rows are visible ─────────────────────
         try:
             logging.info("Setting table page size to 100...")
-            # Try to find the dropdown by looking for the current page size text (usually '10 / page' or '10')
-            # Or by finding the select box inside the specific row container.
             page_size_trigger = page.locator("div.ant-select:has-text('10 / page'), div.ant-select-selection-item:has-text('10 / page'), div.ant-select-selection-item:has-text('10')").last
             if page_size_trigger.count() > 0:
-                page_size_trigger.click(timeout=8000)
+                page_size_trigger.click(timeout=30000)
             else:
-                # Fallback to a broader class-based approach
                 fallback_trigger = page.locator(".ant-pagination-options-size-changer, .ant-select-selector").last
-                fallback_trigger.click(timeout=8000)
+                fallback_trigger.click(timeout=30000)
 
             # Wait for the Ant Design dropdown to appear
             page.wait_for_selector(
@@ -11149,9 +11219,33 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
         schemes = load_scheme_data()
 
         # Check if table has rows
+        logging.info("Waiting for dashboard table to fully load...")
+        try:
+            # Wait for any spinner to disappear
+            page.wait_for_selector(".ant-spin-spinning", state="hidden", timeout=15000)
+        except Exception:
+            pass
+
+        try:
+            # Wait for table rows to appear
+            page.wait_for_selector(f"{table_container_selector} table tbody tr", state="visible", timeout=15000)
+        except Exception as e:
+            logging.warning("Table rows did not appear within timeout.")
+
         rows = page.locator(f"{table_container_selector} table tbody tr")
         row_count = rows.count()
-        if row_count == 0:
+        
+        # Check if the table is truly empty or just has a "No Data" placeholder
+        is_empty_table = (row_count == 0)
+        if row_count == 1:
+            try:
+                first_row_text = rows.first.inner_text().lower()
+                if "no data" in first_row_text or "no claims" in first_row_text:
+                    is_empty_table = True
+            except Exception:
+                pass
+
+        if is_empty_table:
             logging.info("No claims found in the results table.")
             get_ui_input("Press Enter here to close the browser...", "text")
             return
@@ -11267,6 +11361,7 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
             CURRENT_ROW_DOCUMENTS.clear()
             
             row_issues = []  # collect issues → determines Hold / Approved
+            row_start_time = time.time()
 
             print(f"\n{'=' * 60}")
             print(
@@ -11643,7 +11738,6 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                 print(f"  {key} : {val}")
 
             # Extract Zone and City from claim details if present to override global filter selection
-            global CURRENT_ZONE, CURRENT_CITY
             for k, v in claim_details.items():
                 norm_k = k.lower()
                 if "zone" in norm_k:
@@ -11965,6 +12059,19 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                 target_dir = os.path.join(
                     get_exe_dir(), "documents", safe_customer_name
                 )
+                
+                # POPULATE CURRENT_ROW_DOCUMENTS FOR THE UI
+                import glob
+                for ext in ["*.pdf", "*.jpg", "*.jpeg", "*.png"]:
+                    for f in glob.glob(os.path.join(target_dir, ext)):
+                        if not any(d.get("file_path") == f for d in CURRENT_ROW_DOCUMENTS):
+                            fname = os.path.basename(f)
+                            CURRENT_ROW_DOCUMENTS.append({
+                                "file_path": f,
+                                "file_name": fname,
+                                "doc_type": fname.split("-")[0].upper() if "-" in fname else "DOCUMENT"
+                            })
+
                 logging.info("Starting document data extraction and verification...")
 
                 # Extract Dealer Name from left drawer pane for stamp/seal/invoice validation
@@ -11993,8 +12100,13 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
             row_issues.extend(doc_issues)
 
             # ── Final verdict for this row ───────────────────────────────────
+            # Calculate processing time
+            row_duration = time.time() - row_start_time
+            duration_text = f"{row_duration:.1f}s" if row_duration < 60 else f"{int(row_duration // 60)}m {int(row_duration % 60)}s"
+
             print(f"\n{'=' * 60}")
             print(f"  ROW {row_idx + 1} FINAL RESULT  |  Customer: {customer_name}")
+            print(f"  Processing Time: {duration_text}")
             print(f"{'=' * 60}")
             if row_issues:
                 print(f"{ORANGE_TEXT}{BOLD}  ⚠  STATUS : HOLD{RESET_TEXT_S}")
@@ -12023,6 +12135,7 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                 "status": _row_status,
                 "hold_reasons": ", ".join(row_issues) if row_issues else "",
                 "date_processed": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "duration": round(row_duration, 2),
             }
             excel_records.append(_excel_rec)
             # ── Save this row to Excel immediately (crash-safe) ─────────────
@@ -12037,6 +12150,7 @@ def main(use_existing_login=None, target_claim_choice=None, row_limit=None, date
                 "row_idx": row_idx,
                 "customer_name": customer_name,
                 "status": status,
+                "duration": round(row_duration, 2),
                 "issues": list(row_issues),
                 "claim_details": dict(claim_details) if claim_details else {},
                 "old_vehicle_details": dict(old_vehicle_details)

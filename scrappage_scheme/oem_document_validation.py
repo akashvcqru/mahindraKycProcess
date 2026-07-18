@@ -16,7 +16,6 @@ sys.path.append(os.path.abspath("."))
 try:
     from automate_login import find_chassis_in_text, compare_values_robust
 except ImportError:
-    # Fallbacks in case execution environment differs
     def compare_values_robust(v1, v2, fuzzy_threshold=80):
         c1 = re.sub(r"[^A-Z0-9]", "", str(v1).upper())
         c2 = re.sub(r"[^A-Z0-9]", "", str(v2).upper())
@@ -36,12 +35,120 @@ except ImportError:
         return None
 
 
+def replace_common_confusions(s):
+    """Normalize common OCR confusions so mismatch doesn't occur due to a single digit."""
+    return (
+        s.upper()
+        .replace("L", "1")
+        .replace("I", "1")
+        .replace("O", "0")
+        .replace("Q", "0")
+        .replace("U", "0")
+        .replace("Z", "2")
+        .replace("T", "7")
+        .replace("S", "5")
+        .replace("B", "8")
+        .replace("G", "6")
+    )
+
+
+def ocr_adjusted_suffix_match(val1, val2, suffix_len=8):
+    """Robust suffix comparison of length suffix_len with OCR confusion tolerance."""
+    if not val1 or not val2:
+        return False
+    c1 = re.sub(r"[^A-Z0-9]", "", str(val1).upper())
+    c2 = re.sub(r"[^A-Z0-9]", "", str(val2).upper())
+    
+    if len(c1) < suffix_len or len(c2) < suffix_len:
+        min_len = min(len(c1), len(c2))
+        if min_len == 0:
+            return False
+        s1 = c1[-min_len:]
+        s2 = c2[-min_len:]
+    else:
+        s1 = c1[-suffix_len:]
+        s2 = c2[-suffix_len:]
+        
+    return replace_common_confusions(s1) == replace_common_confusions(s2)
+
+
+def compare_certificate_to_reg(cert_no, reg_no):
+    if not cert_no or not reg_no:
+        return False
+    c1 = re.sub(r"[^A-Z0-9]", "", reg_no.upper())
+    c2 = re.sub(r"[^A-Z0-9]", "", cert_no.upper())
+    
+    # Replace common OCR confusions
+    c1_norm = replace_common_confusions(c1)
+    c2_norm = replace_common_confusions(c2)
+    
+    # Match from the back (suffix match)
+    if c2_norm.endswith(c1_norm) or c1_norm.endswith(c2_norm):
+        return True
+        
+    # Suffix match for at least 6 characters
+    min_suffix = min(6, len(c1_norm))
+    if len(c1_norm) >= min_suffix and len(c2_norm) >= min_suffix:
+        if c2_norm[-min_suffix:] == c1_norm[-min_suffix:]:
+            return True
+            
+    return False
+
+
+def compare_chassis_robust(doc_chassis, portal_chassis):
+    if not doc_chassis or not portal_chassis:
+        return False
+    c1 = re.sub(r"[^A-Z0-9]", "", portal_chassis.upper())
+    c2 = re.sub(r"[^A-Z0-9]", "", doc_chassis.upper())
+    
+    # 1. Direct match with OCR normalization
+    if replace_common_confusions(c1) == replace_common_confusions(c2):
+        return True
+        
+    # 2. Suffix match (last 8 characters)
+    if len(c1) >= 8 and len(c2) >= 8:
+        if replace_common_confusions(c1[-8:]) == replace_common_confusions(c2[-8:]):
+            return True
+            
+    # 3. Suffix match (last 6 characters) as fallback
+    if len(c1) >= 6 and len(c2) >= 6:
+        if replace_common_confusions(c1[-6:]) == replace_common_confusions(c2[-6:]):
+            return True
+            
+    return False
+
+
+
+def find_chassis_in_text_ocr(text, target_chassis, suffix_len=8):
+    """Scan text for any token whose suffix matches target_chassis suffix under OCR normalization."""
+    if not target_chassis:
+        return None
+    target_clean = re.sub(r"[^A-Z0-9]", "", target_chassis.upper())
+    if len(target_clean) >= suffix_len:
+        target_suffix = target_clean[-suffix_len:]
+    else:
+        target_suffix = target_clean
+        
+    target_adj = replace_common_confusions(target_suffix)
+    
+    # Split text into uppercase words
+    words = re.findall(r"\b[A-Z0-9]{4,25}\b", text.upper())
+    for w in words:
+        if len(w) >= len(target_suffix):
+            w_suffix = w[-len(target_suffix):]
+            if replace_common_confusions(w_suffix) == target_adj:
+                return w
+                
+    return None
+
+
+
 # ── System Prompt for Vahan OEM Scrapping Incentive Document ─────────────────
 OEM_PROMPT = """You are an expert document analysis AI analyzing a multi-page Vahan portal screenshot (OEM Scrapping Incentive document).
 
 This document contains MULTIPLE pages stitched vertically. These pages show:
 - Page with new vehicle registration details at the top (header shows "Registration No: XXXXXX" — IGNORE this registration number, it belongs to the NEW vehicle, NOT what we need)
-- A page showing "Certificate of Deposit(COD) Details" with fields like "Certificate of Deposit(COD) Number" and "Old Registration Number"
+- A page showing "Certificate of Deposit(COD) Details" (or "Certificate Deposit(COD) Details") with fields like "Certificate of Deposit(COD) Number" (or "Certificate Deposit(COD) Number" / "Certificate Deposit Number") and "Old Registration Number"
 - A page titled "OEM SCRAPPING INCENTIVE" with a table titled "Details of CDs Applied for OEM Scrapping Incentive" containing THREE columns:
   - Column 1: "Chassis Number" (new vehicle chassis numbers)
   - Column 2: "Engine Number"
@@ -113,7 +220,7 @@ def _call_openai(full_b64, old_chassis=None, old_reg=None, new_chassis=None, max
         "Authorization": f"Bearer {api_key}",
     }
     payload = {
-        "model": "gpt-5.5",
+        "model": "gpt-4o",
         "messages": [
             {
                 "role": "user",
@@ -234,36 +341,152 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
         old_reg_web = claim_details.get("Reg. No", claim_details.get("Reg No", claim_details.get("Registration No", ""))).strip()
     new_chassis_web = claim_details.get("Chassis No", "").strip()
 
-    full_b64 = _pil_to_b64(pil_img)
-    extracted, err_msg = _call_openai(
-        full_b64,
+    # ── Fast path: Python reader (text-based OEM PDFs only) ───────────────────
+    from .python_readers.reader_oem import try_extract_oem_fields
+    python_data = try_extract_oem_fields(
+        pdf_path,
         old_chassis=old_chassis_web,
         old_reg=old_reg_web,
         new_chassis=new_chassis_web
     )
+    extracted = None
+
+    is_python_provider = (os.getenv("AI_PROVIDER", "").strip().upper() == "PYTHON")
+
+    if is_python_provider:
+        # Build extracted from python_data (or empty if none found, to let checks fail normally or pass)
+        extracted = {}
+        if python_data:
+            for k, v in python_data.items():
+                line_no = v.get("line", 0)
+                if line_no > 0:
+                    pct = (line_no / 45.0) * 100
+                    crop = {
+                        "top": max(0, int(pct - 10)),
+                        "left": 0,
+                        "bottom": min(100, int(pct + 10)),
+                        "right": 100
+                    }
+                else:
+                    crop = {"top": 0, "left": 0, "bottom": 100, "right": 100}
+                extracted[k] = {"text": v.get("text", ""), "line": line_no, "crop": crop}
+        
+        logging.info("[validate_oem] Running in Python-only mode — skipped AI")
+
+    if not extracted and not is_python_provider:
+        try:
+            pil_img = _render_pdf_to_pil(pdf_path)
+        except Exception as exc:
+            logging.error(f"Failed to render OEM PDF {pdf_path}: {exc}")
+            return False, f"Failed to load image: {exc}"
+        full_b64 = _pil_to_b64(pil_img)
+        extracted, err_msg = _call_openai(
+            full_b64,
+            old_chassis=old_chassis_web,
+            old_reg=old_reg_web,
+            new_chassis=new_chassis_web
+        )
 
     if not extracted:
-        return False, err_msg or "LLM Extraction Failed"
+        # Instead of failing immediately, allow the text/OCR fallbacks below to attempt extraction.
+        # Initialize empty dict so .get() calls below don't throw errors.
+        extracted = {}
+    # Merge Python-extracted text fields into AI result
+    if python_data and not is_python_provider:
+        for k, v in python_data.items():
+            if not extracted.get(k, {}).get("text"):
+                extracted[k] = {"text": v.get("text", ""), "line": v.get("line", 0), "crop": {"top": 0, "left": 0, "bottom": 100, "right": 100}}
 
     if data_store:
         data_store.update_doc_data("oem_document", extracted)
 
     issues = []
+    text_str = None
 
     # 1. Certificate of Deposit number must match old vehicle Chassis No or Reg No if COD prefix is missing
     cert_no = extracted.get("certificate_deposit_no", {}).get("text", "").strip()
 
     if not cert_no:
+        # Fallback: Try to extract text/OCR to find any COD number in the document
+        try:
+            doc = fitz.open(pdf_path)
+            text_str = "\n".join(page.get_text() for page in doc)
+            if len(text_str.strip()) < 10:
+                import easyocr
+                import numpy as np
+                import io
+                from PIL import Image
+                reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+                ocr_text = []
+                for page in doc:
+                    pix = page.get_pixmap(dpi=150)
+                    img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+                    res = reader.readtext(np.array(img), detail=0)
+                    ocr_text.extend(res)
+                text_str = " ".join(ocr_text)
+        except Exception as exc:
+            logging.error(f"Fallback text extraction failed for Certificate of Deposit No: {exc}")
+            text_str = ""
+
+        # Search for COD value in the extracted text
+        # Find all words that look like a COD number
+        words = re.findall(r"\b(?:COD|CO0|C0D|C00)?[A-Z0-9]{8,25}\b", text_str, re.IGNORECASE)
+        best_candidate = None
+        best_score = 0
+        
+        for w in words:
+            w_upper = w.upper()
+            if not w_upper.startswith(("COD", "CO0", "C0D", "C00")) and "COD" not in w_upper:
+                continue
+            
+            # Clean and normalize candidate
+            w_clean = re.sub(r"[^A-Z0-9]", "", w_upper)
+            
+            # Check direct match with old chassis
+            if old_chassis_web:
+                status, score = compare_values_robust(w_clean, old_chassis_web)
+                if status.startswith("MATCH") and score > best_score:
+                    best_candidate = w_clean
+                    best_score = score
+                    
+            # Check direct match with old reg
+            if old_reg_web:
+                status, score = compare_values_robust(w_clean, old_reg_web)
+                if status.startswith("MATCH") and score > best_score:
+                    best_candidate = w_clean
+                    best_score = score
+                    
+        if best_candidate:
+            cert_no = best_candidate
+            logging.info(f"Fallback: Found best matching certificate_deposit_no '{cert_no}' in raw text / OCR (score={best_score})")
+        else:
+            # If no good fuzzy match found, fallback to the first word that starts with COD (or similar)
+            cod_match = re.search(r"\b(COD\d{4,}[A-Z0-9]+)\b", text_str, re.IGNORECASE)
+            if not cod_match:
+                cod_match = re.search(r"\b(COD[A-Z0-9]+)\b", text_str, re.IGNORECASE)
+            if cod_match:
+                cert_no = cod_match.group(1).upper()
+                logging.info(f"Fallback: Found first certificate_deposit_no '{cert_no}' in raw text / OCR")
+                
+        if cert_no:
+            extracted["certificate_deposit_no"] = {
+                "text": cert_no,
+                "line": 0,
+                "crop": {"top": 0, "left": 0, "bottom": 100, "right": 100}
+            }
+
+    if not cert_no:
         issues.append("Certificate of Deposit No not found in document")
     else:
         # Check if the portal chassis number has the 'COD' prefix
-        has_cod_in_chassis = False
-        if old_chassis_web and "COD" in old_chassis_web.upper():
-            has_cod_in_chassis = True
-            
-        if has_cod_in_chassis:
-            status_cert, score_cert = compare_values_robust(cert_no, old_chassis_web)
-            if not status_cert.startswith("MATCH"):
+        is_cod_chassis = False
+        if old_chassis_web:
+            old_chassis_clean = re.sub(r"[^A-Z0-9]", "", old_chassis_web.upper())
+            if old_chassis_clean.startswith(("COD", "CO0", "C0D", "C00")):
+                is_cod_chassis = True
+                
+        if is_cod_chassis:
+            if not compare_certificate_to_reg(cert_no, old_chassis_web):
                 issues.append(
                     f"Certificate No mismatch (Document Certificate No: '{cert_no}' does not match old vehicle chassis: '{old_chassis_web}')"
                 )
@@ -274,33 +497,14 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
                 old_reg_web = claim_details.get("Reg. No", claim_details.get("Reg No", claim_details.get("Registration No", ""))).strip()
                 
             if old_reg_web:
-                c1 = re.sub(r"[^A-Z0-9]", "", old_reg_web.upper())
-                c2 = re.sub(r"[^A-Z0-9]", "", cert_no.upper())
-                
-                # Check for match (direct, or suffix match to handle OCR prefixes like AS01 -> S01)
-                reg_matches = (c1 in c2) or (c2 in c1)
-                if not reg_matches and len(c1) >= 6:
-                    if c1[-6:] in c2:
-                        reg_matches = True
-                if not reg_matches and len(c1) >= 7:
-                    if c1[-7:] in c2:
-                        reg_matches = True
-                if not reg_matches and len(c1) >= 8:
-                    if c1[-8:] in c2:
-                        reg_matches = True
-                if not reg_matches and len(c1) >= 9:
-                    if c1[-9:] in c2:
-                        reg_matches = True
-                        
-                if not reg_matches:
+                if not compare_certificate_to_reg(cert_no, old_reg_web):
                     issues.append(
                         f"Certificate No mismatch (Document Certificate No: '{cert_no}' does not match old vehicle registration: '{old_reg_web}')"
                     )
             else:
                 # If neither chassis with COD nor Reg No is found, fallback to check chassis if available
                 if old_chassis_web:
-                    status_cert, score_cert = compare_values_robust(cert_no, old_chassis_web)
-                    if not status_cert.startswith("MATCH"):
+                    if not compare_certificate_to_reg(cert_no, old_chassis_web):
                         issues.append(
                             f"Certificate No mismatch (Document Certificate No: '{cert_no}' does not match old vehicle chassis: '{old_chassis_web}')"
                         )
@@ -311,17 +515,37 @@ def validate_oem(pdf_path, claim_details, old_vehicle_details, data_store):
 
     if not doc_chassis:
         # Check raw text backup just in case LLM missed the structured new chassis key but it exists in the document
-        try:
-            # Re-read page text via fitz
-            doc = fitz.open(pdf_path)
-            text_str = doc[0].get_text()
-        except Exception:
-            text_str = ""
-        matched_new = find_chassis_in_text(text_str, new_chassis_web, match_last_8=True)
+        if text_str is None:
+            try:
+                # Join text of ALL pages since the table might be on the last page (e.g. page 4)
+                doc = fitz.open(pdf_path)
+                text_str = "\n".join(page.get_text() for page in doc)
+                if len(text_str.strip()) < 10:
+                    # It's an image-based PDF, use EasyOCR
+                    import easyocr
+                    import numpy as np
+                    import io
+                    from PIL import Image
+                    reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+                    ocr_text = []
+                    for page in doc:
+                        pix = page.get_pixmap(dpi=150)
+                        img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+                        res = reader.readtext(np.array(img), detail=0)
+                        ocr_text.extend(res)
+                    text_str = " ".join(ocr_text)
+            except Exception:
+                text_str = ""
+        
+        matched_new = find_chassis_in_text_ocr(text_str, new_chassis_web, suffix_len=8)
+        if not matched_new:
+            matched_new = find_chassis_in_text_ocr(text_str, new_chassis_web, suffix_len=5)
+            if matched_new:
+                logging.info(f"Fallback matched new chassis in text_str using shorter suffix_len=5")
         if not matched_new:
             issues.append("New Chassis number not found in OEM Document")
     elif new_chassis_web:
-        matched_new = find_chassis_in_text(doc_chassis, new_chassis_web, match_last_8=True)
+        matched_new = compare_chassis_robust(doc_chassis, new_chassis_web)
         if not matched_new:
             issues.append(
                 f"New Chassis mismatch (Document Chassis: '{doc_chassis}' does not match last 8 digits of dashboard: '{new_chassis_web}')"
@@ -350,6 +574,32 @@ def process_oem_visual(pdf_path, old_chassis=None, old_reg=None, new_chassis=Non
         return []
 
     full_b64 = _pil_to_b64(pil_img)
+    is_python_provider = (os.getenv("AI_PROVIDER", "").strip().upper() == "PYTHON")
+
+    if is_python_provider:
+        from .python_readers.reader_oem import try_extract_oem_fields
+        python_data = try_extract_oem_fields(
+            pdf_path,
+            old_chassis=old_chassis or "",
+            old_reg=old_reg or "",
+            new_chassis=new_chassis or ""
+        ) or {}
+
+        coords = {
+            "certificate_deposit_no": {"top": 10, "left": 0, "bottom": 30, "right": 100},
+            "chassis_no":             {"top": 40, "left": 0, "bottom": 60, "right": 100}
+        }
+
+        extracted = {}
+        for key, c in coords.items():
+            if key in python_data:
+                extracted[key] = {"text": python_data[key].get("text", ""), "line": python_data[key].get("line", 0), "crop": c}
+            else:
+                extracted[key] = {"text": "Not found", "line": 0, "crop": c}
+
+        logging.info("[process_oem_visual] Python-only mode active — skipped AI visual call")
+        return _pair_crops(pil_img, extracted)
+
     extracted, err_msg = _call_openai(
         full_b64,
         old_chassis=old_chassis,

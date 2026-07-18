@@ -90,7 +90,7 @@ def _call_openai(full_b64, max_retries=3):
         "Authorization": f"Bearer {api_key}",
     }
     payload = {
-        "model": "gpt-5.5",
+        "model": "gpt-4o",
         "messages": [
             {
                 "role": "user",
@@ -294,6 +294,9 @@ def validate_cod(pdf_path, claim_details, old_vehicle_details, data_store):
     """
     Validates a Transfer Certificate of Deposit (COD) document.
     Returns (success: bool, message: str).
+
+    Fast path: Python text reader is tried first.
+    AI vision is only called when Python cannot extract the needed fields.
     """
     logging.info(f"Validating Transfer COD: {pdf_path}")
 
@@ -301,17 +304,51 @@ def validate_cod(pdf_path, claim_details, old_vehicle_details, data_store):
         logging.error("COD PDF not found.")
         return False, "COD PDF not found"
 
-    try:
-        pil_img = _render_pdf_to_pil(pdf_path)
-    except Exception as exc:
-        logging.error(f"Failed to render COD {pdf_path}: {exc}")
-        return False, f"Failed to load image: {exc}"
+    # ── Fast path: Python text reader ────────────────────────────────────────
+    from .python_readers.reader_cod import try_extract_cod_fields
+    python_data = try_extract_cod_fields(pdf_path)
 
-    full_b64 = _pil_to_b64(pil_img)
-    extracted, err_msg = _call_openai(full_b64)
+    extracted = None
 
+    is_python_provider = (os.getenv("AI_PROVIDER", "").strip().upper() == "PYTHON")
+
+    if is_python_provider:
+        extracted = {}
+        if python_data:
+            for key, val in python_data.items():
+                line_no = val.get("line", 0)
+                if line_no > 0:
+                    pct = (line_no / 45.0) * 100
+                    crop = {
+                        "top": max(0, int(pct - 10)),
+                        "left": 0,
+                        "bottom": min(100, int(pct + 10)),
+                        "right": 100
+                    }
+                else:
+                    crop = {"top": 0, "left": 0, "bottom": 100, "right": 100}
+                    
+                row = {"text": val.get("text", ""), "line": line_no, "crop": crop}
+                if "amount" in val:
+                    row["amount"] = val["amount"]
+                extracted[key] = row
+        
+        logging.info("[validate_cod] Running in Python-only mode — skipped AI")
+
+    if not extracted and not is_python_provider:
+        # ── AI vision fallback ────────────────────────────────────────────────
+        try:
+            pil_img = _render_pdf_to_pil(pdf_path)
+        except Exception as exc:
+            logging.error(f"Failed to render COD {pdf_path}: {exc}")
+            return False, f"Failed to load image: {exc}"
+        full_b64 = _pil_to_b64(pil_img)
+        extracted, err_msg = _call_openai(full_b64)
+        
     if not extracted:
-        return False, f"LLM Extraction Failed: {err_msg}"
+        # In Python-only mode for images, or if AI failed, initialize empty dict
+        # so .get() calls don't error, and let the robust OCR text fallbacks below handle it.
+        extracted = {}
 
     # Persist extracted data for later reference
     if data_store:
@@ -331,10 +368,23 @@ def validate_cod(pdf_path, claim_details, old_vehicle_details, data_store):
                     f"COD Certificate No '{web_old_chassis}' not found in COD document"
                 )
         else:
-            if not check_substring_match(web_old_chassis, extracted_cert):
-                if not check_value_in_pdf(pdf_path, web_old_chassis):
+            # Check if web_old_chassis is in extracted_cert
+            matched_chassis = check_substring_match(web_old_chassis, extracted_cert) or check_value_in_pdf(pdf_path, web_old_chassis)
+            
+            if not matched_chassis:
+                # Fallback: check if the certificate string contains the registration number instead
+                web_old_reg = get_val_by_fuzzy_key(old_vehicle_details, ["Reg. No", "Reg No", "Registration No", "Registration"]) or \
+                              get_val_by_fuzzy_key(claim_details, ["Reg. No", "Reg No", "Registration No", "Registration"])
+                matched_reg = False
+                
+                if web_old_reg and web_old_reg.upper().strip() not in ("OTHERS", "OTHER", "ANY OTHER"):
+                    matched_reg = check_substring_match(web_old_reg, extracted_cert) or check_value_in_pdf(pdf_path, web_old_reg)
+                
+                if matched_reg:
+                    logging.info(f"Certificate No matched Registration No '{web_old_reg}' instead of Chassis No '{web_old_chassis}'")
+                else:
                     issues.append(
-                        f"COD Certificate No '{extracted_cert}' does not match expected old chassis '{web_old_chassis}'"
+                        f"COD Certificate No '{extracted_cert}' does not match expected old chassis '{web_old_chassis}' or registration"
                     )
     else:
         # Fallback to check against Registration No if Chassis No is not specified or is OTHERS
@@ -427,6 +477,33 @@ def process_cod_visual(pdf_path):
     except Exception as exc:
         logging.error(f"Failed to render COD {pdf_path}: {exc}")
         return []
+
+    is_python_provider = (os.getenv("AI_PROVIDER", "").strip().upper() == "PYTHON")
+
+    if is_python_provider:
+        from .python_readers.reader_cod import try_extract_cod_fields
+        python_data = try_extract_cod_fields(pdf_path) or {}
+
+        coords = {
+            "certificate_no": {"top": 10, "left": 5,  "bottom": 20, "right": 90},
+            "customer_name":  {"top": 30, "left": 10, "bottom": 45, "right": 80},
+            "registration_no":{"top": 30, "left": 50, "bottom": 45, "right": 90},
+            "vehicle_make":   {"top": 45, "left": 10, "bottom": 55, "right": 45},
+            "vehicle_model":  {"top": 45, "left": 50, "bottom": 55, "right": 90},
+        }
+
+        extracted = {}
+        for key, c in coords.items():
+            if key in python_data:
+                row = {"text": python_data[key].get("text", ""), "line": python_data[key].get("line", 0), "crop": c}
+                if "amount" in python_data[key]:
+                    row["amount"] = python_data[key]["amount"]
+                extracted[key] = row
+            else:
+                extracted[key] = {"text": "Not found", "line": 0, "crop": c}
+
+        logging.info("[process_cod_visual] Python-only mode active — skipped AI visual call")
+        return _pair_crops(pil_img, extracted)
 
     full_b64 = _pil_to_b64(pil_img)
     extracted, err_msg = _call_openai(full_b64)

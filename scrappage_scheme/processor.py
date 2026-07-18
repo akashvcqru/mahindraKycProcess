@@ -24,43 +24,60 @@ def classify_document(f_path):
     
     filename = os.path.basename(f_path).upper()
     
-    # Try content text/OCR check
+    # ── 1. Strong Filename Checks (Prioritized over text to prevent overlapping keywords) ──
+    
+    # Invoice
+    if "TAX INVOICE" in filename or "GST INVOICE" in filename or "INVOICE" in filename or "INVOLCE" in filename:
+        return "INVOICE"
+    for p in ("INV",):
+        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
+            return "INVOICE"
+            
+    # Ledger
+    if any(k in filename for k in ("LEDGER", "STMT", "STATEMENT")):
+        return "LEDGER"
+    for p in ("LDGR", "LES", "LGR", "LDR", "LDG", "LED", "L-"):
+        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
+            return "LEDGER"
+            
+    # Disclaimer
+    if "DISCLAIMER" in filename or "DESCLAIMER" in filename:
+        return "DISCLAIMER"
+    for p in ("DIS", "DSC", "CD-", "DES", "DS"):
+        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
+            return "DISCLAIMER"
+            
+    # COD
+    if "TRANSFER CERTIFICATE OF DEPOSIT" in filename or "CERTIFICATE OF DEPOSIT" in filename:
+        return "COD"
+    for p in ("COD",):
+        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
+            return "COD"
+            
+    # OEM (Vahan)
+    if any(k in filename for k in ("OEM", "VAHAN SCREEN", "VAHAN", "VAHON", "SCREENSHOT", "SCREEN SHORT", "OEM SCRAPPING")):
+        return "OEM"
+
+    # ── 2. Content text/OCR Fallback ──
     text = ""
     try:
         text = get_pdf_text(f_path).upper()
     except Exception as exc:
         logging.warning(f"Could not extract text for classification of {f_path}: {exc}")
 
-    # 1. COD (High specificity check)
-    if "TRANSFER CERTIFICATE OF DEPOSIT" in text:
-        return "COD"
-
-    # 2. OEM (High specificity check)
-    if "OEM SCRAPPING" in text or "OEM INCENTIVE" in text or "VAHAN" in text or "SCRAPPAGE CERTIFICATE" in text:
+    # OEM
+    if "OEM SCRAPPING" in text or "OEM INCENTIVE" in text or "DETAILS OF CDS" in text:
         return "OEM"
 
-    # 3. Disclaimer (High specificity check)
-    if "DISCLAIMER" in text or "DESCLAIMER" in text:
-        return "DISCLAIMER"
-
-    # 4. COD (Lower specificity fallback)
+    # COD
     if "CERTIFICATE OF DEPOSIT" in text or "CERTIFICATE DEPOSIT" in text:
         return "COD"
 
-    # 5. Invoice
-    if "TAX INVOICE" in text or "GST INVOICE" in text or "INVOICE" in text or "INVOLCE" in text:
-        return "INVOICE"
-
-    # 6. Ledger
-    if "LEDGER" in text or "STATEMENT OF ACCOUNT" in text or "STMT OF" in text:
-        return "LEDGER"
-
-    # ── Filename Fallback ────────────────────────────────────────────────────
-    if "DISCLAIMER" in filename or "DESCLAIMER" in filename:
+    # Disclaimer
+    if "DISCLAIMER" in text or "DESCLAIMER" in text:
         return "DISCLAIMER"
-    for p in ("DIS", "DSC", "CD-", "DES", "DS"):
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename:
-            return "DISCLAIMER"
+        
+    return None
 
     if "TRANSFER CERTIFICATE OF DEPOSIT" in filename or "CERTIFICATE OF DEPOSIT" in filename or "COD" in filename:
         return "COD"
@@ -205,9 +222,12 @@ def process_scrappage(claim_details, old_vehicle_details, target_dir):
                         except Exception as ocr_err:
                             logging.warning(f"OCR fallback failed for {f_path}: {ocr_err}")
 
-                    if any(k in clean_text for k in ["CERTIFICATE DEPOSIT", "CERTIFICATE OF DEPOSIT", "COD", "OEM SCRAPPING"]):
+                    has_oem_keywords = any(k in clean_text for k in ["OEM SCRAPPING", "OEM INCENTIVE", "DETAILS OF CDS", "VAHAN"])
+                    has_cod_keywords = any(k in clean_text for k in ["CERTIFICATE DEPOSIT", "CERTIFICATE OF DEPOSIT", "COD"])
+
+                    if has_oem_keywords or has_cod_keywords:
                         found_oem = True
-                        if "OEM SCRAPPING" in clean_text or ("CERTIFICATE DEPOSIT" in clean_text and "TRANSFER" not in clean_text):
+                        if has_oem_keywords:
                             logging.info(f"Fallback: Identified OEM document via text content: {f_path}")
                             success, msg = validate_oem(f_path, claim_details, old_vehicle_details, data_store)
                             if not success:
