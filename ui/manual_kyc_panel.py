@@ -112,6 +112,12 @@ class ManualKycPanel(tk.Frame):
         pdf_hscroll.pack(side="bottom", fill="x")
         self.pdf_canvas.pack(fill="both", expand=True, padx=2, pady=2)
 
+        # Drag-to-pan mouse bindings
+        self.pdf_canvas.bind("<Button-1>", self.start_pan)
+        self.pdf_canvas.bind("<B1-Motion>", self.drag_pan)
+        # Mousewheel zoom & scroll bindings
+        self.pdf_canvas.bind("<MouseWheel>", self.on_pdf_mousewheel)
+
         # Visual Confirmation Viewer
         self.visual_frame = tk.LabelFrame(self.workspace_pane, text="Visual Confirmation Crops", bg=CARD_BG_COLOR, fg="#60A5FA", font=("Segoe UI", 10, "bold"), bd=1)
         self.workspace_pane.add(self.visual_frame, minsize=350)
@@ -134,6 +140,32 @@ class ManualKycPanel(tk.Frame):
         # Only scroll if mouse is over manual kyc visual panel
         if self.winfo_ismapped() and self.visual_canvas.winfo_exists():
             self.visual_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def start_pan(self, event):
+        self.pdf_canvas.scan_mark(event.x, event.y)
+
+    def drag_pan(self, event):
+        self.pdf_canvas.scan_dragto(event.x, event.y, gain=1)
+
+    def on_pdf_mousewheel(self, event):
+        try:
+            is_control = (event.state & 4) != 0
+            is_shift = (event.state & 1) != 0
+            
+            if is_control:
+                # Zoom in / out
+                if event.delta > 0:
+                    self.zoom_in()
+                elif event.delta < 0:
+                    self.zoom_out()
+            elif is_shift:
+                # Horizontal scroll
+                self.pdf_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+            else:
+                # Vertical scroll
+                self.pdf_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        except Exception:
+            pass
 
     def add_row(self, row_result):
         self.processed_claims.append(row_result)
@@ -182,10 +214,56 @@ class ManualKycPanel(tk.Frame):
         if doc:
             self.load_pdf(doc)
 
+    def clear_queue(self):
+        self.processed_claims = []
+        for item in self.history_tree.get_children():
+            self.history_tree.delete(item)
+        self.selected_claim = None
+        self.title_label.config(text="No Row Selected")
+        self.doc_selector.configure(values=[])
+        self.doc_selector.set("")
+        self.pdf_canvas.delete("all")
+        self.page_label.config(text="Page 0 of 0")
+        self.clear_visuals()
+
     def load_pdf(self, doc_dict):
         path = doc_dict.get("file_path")
         self.current_pdf_path = path
         
+        if doc_dict.get("is_url"):
+            self.current_pdf_doc = None
+            self.current_pdf_page = 0
+            self.current_zoom = 1.0
+            self.pdf_canvas.delete("all")
+            self.page_label.config(text="Downloading Image...")
+
+            def download_task():
+                try:
+                    url = doc_dict.get("file_path")
+                    direct_url = url
+                    if "drive.google.com" in url:
+                        import re
+                        match = re.search(r"/d/([^/]+)", url)
+                        if match:
+                            direct_url = f"https://drive.google.com/uc?export=download&id={match.group(1)}"
+                    
+                    import requests
+                    import io
+                    resp = requests.get(direct_url, timeout=20)
+                    if resp.status_code == 200:
+                        img = Image.open(io.BytesIO(resp.content))
+                        self.current_image_original = img
+                        self.after(0, self.display_downloaded_image)
+                    else:
+                        self.after(0, lambda: self.page_label.config(text="Download Failed"))
+                except Exception as e:
+                    logging.error(f"Error downloading stitched image in manual panel: {e}")
+                    self.after(0, lambda: self.page_label.config(text="Download Error"))
+
+            threading.Thread(target=download_task, daemon=True).start()
+            self.clear_visuals()
+            return
+
         if path and os.path.exists(path):
             try:
                 if self.current_pdf_doc:
@@ -204,6 +282,24 @@ class ManualKycPanel(tk.Frame):
             
         # Async load the visual confirmations for this selected document dict
         self.load_visual_confirmations(doc_dict)
+
+    def display_downloaded_image(self):
+        if not hasattr(self, "current_image_original") or not self.current_image_original:
+            return
+        try:
+            w, h = self.current_image_original.size
+            new_w = int(w * self.current_zoom)
+            new_h = int(h * self.current_zoom)
+            resized = self.current_image_original.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            
+            self.canvas_photo = ImageTk.PhotoImage(resized)
+            self.pdf_canvas.delete("all")
+            self.pdf_canvas.create_image(0, 0, anchor="nw", image=self.canvas_photo)
+            self.pdf_canvas.configure(scrollregion=(0, 0, new_w, new_h))
+            self.page_label.config(text="Stitched Image (1 of 1)")
+            self.zoom_label.config(text=f"{int(self.current_zoom * 100)}%")
+        except Exception as e:
+            logging.error(f"Error displaying downloaded image in manual panel: {e}")
 
     def render_pdf_page(self):
         if not self.current_pdf_doc: return
@@ -236,14 +332,20 @@ class ManualKycPanel(tk.Frame):
             self.render_pdf_page()
 
     def zoom_in(self):
-        if self.current_pdf_doc and self.current_zoom < 3.0:
+        if self.current_zoom < 3.0:
             self.current_zoom += 0.15
-            self.render_pdf_page()
+            if self.current_pdf_doc:
+                self.render_pdf_page()
+            elif hasattr(self, "current_image_original") and self.current_image_original:
+                self.display_downloaded_image()
 
     def zoom_out(self):
-        if self.current_pdf_doc and self.current_zoom > 0.4:
+        if self.current_zoom > 0.4:
             self.current_zoom -= 0.15
-            self.render_pdf_page()
+            if self.current_pdf_doc:
+                self.render_pdf_page()
+            elif hasattr(self, "current_image_original") and self.current_image_original:
+                self.display_downloaded_image()
 
     def clear_visuals(self):
         for widget in self.visual_inner.winfo_children():

@@ -628,6 +628,24 @@ def validate_disclaimer(pdf_path, claim_details, old_vehicle_details, data_store
         issues.append("Dealership stamp/seal is missing")
     elif not is_present_robust(dealer_stamp, ["SIGNATURE", "SIGNED"]):
         issues.append("Dealership authorized signature is missing from stamp/seal")
+    else:
+        portal_dealer_name = claim_details.get("Dealer Name", "")
+        if portal_dealer_name:
+            stamp_upper = dealer_stamp.upper().replace(" ", "").replace("&", "").replace("-", "")
+            skip_words = {"LTD", "PVT", "MOTORS", "CO", "AND", "THE", "DEALERSHIP", "STAMP", "SEAL", "AUTOMOBILE", "AUTOMOBILES", "ENTERPRISES", "DEALER", "LIMIT", "LIMITED"}
+            name_words = [w.strip() for w in portal_dealer_name.upper().split() if w.strip() not in skip_words and len(w.strip()) > 2]
+            belongs = False
+            if name_words:
+                for word in name_words:
+                    if word in stamp_upper:
+                        belongs = True
+                        break
+            else:
+                dealer_clean = portal_dealer_name.upper().replace(" ", "").replace("&", "").replace("-", "")
+                belongs = dealer_clean in stamp_upper or stamp_upper in dealer_clean
+                
+            if not belongs:
+                issues.append(f"Dealership stamp/seal does not belong to dealer '{portal_dealer_name}' (Stamp text: '{dealer_stamp}')")
 
     if issues:
         return False, "; ".join(issues)

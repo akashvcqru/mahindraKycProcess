@@ -1,3 +1,55 @@
+function doGet(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return ContentService.createTextOutput(JSON.stringify([]))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var formulas = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getFormulas();
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  
+  var records = [];
+  for (var r = 0; r < values.length; r++) {
+    var record = {
+      "row_idx": r + 1, // index relative to data lines
+    };
+    for (var c = 0; c < headers.length; c++) {
+      var headerName = headers[c].toString().toLowerCase().trim();
+      var formulaVal = formulas[r][c] || "";
+      var rawVal = values[r][c];
+      
+      // Extract URL from =HYPERLINK("url", IMAGE("url")) formulas
+      if (formulaVal && formulaVal.toUpperCase().indexOf("HYPERLINK") !== -1) {
+        var urlMatch = formulaVal.match(/=HYPERLINK\("([^"]+)"/i);
+        if (urlMatch && urlMatch[1]) {
+          rawVal = urlMatch[1];
+        }
+      }
+      
+      // Normalise key mappings for Python Client consumption
+      if (headerName === "row number" || headerName === "row #") record["row_idx"] = Number(rawVal) - 1;
+      else if (headerName === "customer name") record["customer_name"] = rawVal;
+      else if (headerName === "status") record["status"] = rawVal;
+      else if (headerName === "hold reasons / remarks" || headerName === "hold reasons" || headerName === "remarks") record["hold_reasons"] = rawVal;
+      else if (headerName === "claim number" || headerName === "claim no") record["claim_no"] = rawVal;
+      else if (headerName === "claim date") record["claim_date"] = rawVal;
+      else if (headerName === "chassis no" || headerName === "chassis number") record["chassis_no"] = rawVal;
+      else if (headerName === "processed date" || headerName === "date processed") record["date_processed"] = rawVal;
+      
+      // Save raw documents URLs directly
+      if (headerName.indexOf("disclaimer") !== -1) record["disclaimer_url"] = rawVal;
+      else if (headerName.indexOf("ledger") !== -1) record["ledger_url"] = rawVal;
+      else if (headerName.indexOf("invoice") !== -1) record["invoice_url"] = rawVal;
+    }
+    records.push(record);
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify(records))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   

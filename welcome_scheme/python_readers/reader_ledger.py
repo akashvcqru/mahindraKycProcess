@@ -114,13 +114,14 @@ def _extract_bonus_row(text: str, lines: list[str], claim_details: dict = None) 
                                     }
                             except ValueError:
                                 continue
-
-            # Standard (non-Dr) path: first, if we know portal_amount, look around (up to 5 lines above, 5 lines below)
             if portal_amount is not None:
                 start_idx = max(0, i - 30)
                 end_idx = min(len(lines), i + 5)
                 for j in range(start_idx, end_idx):
                     scan_ln = lines[j].strip().replace(",", "")
+                    # Clean OCR spaces in numbers (e.g. "5 000.00" -> "5000.00")
+                    for _ in range(3):
+                        scan_ln = re.sub(r"(\d+)\s+(\d{2,3}(?:\b|\.))", r"\1\2", scan_ln)
                     norm_scan = scan_ln.upper().replace("O", "0").replace("I", "1").replace("S", "5")
                     matches = re.findall(r"\b(\d{4,10}(?:\.\d{0,2})?)\b", norm_scan)
                     for m_val in matches:
@@ -141,7 +142,7 @@ def _extract_bonus_row(text: str, lines: list[str], claim_details: dict = None) 
             norm_block = amount_block.upper().replace("O", "0").replace("Q", "0").replace("I", "1").replace("S", "5").replace("Z", "7").replace("B", "8")
 
             # If space is followed by exactly 2 digits, treat as decimal dot
-            norm_block = re.sub(r"(\d+)\s+(\d{2}(?:\b|[A-Z]))", r"\1.\2", norm_block)
+            norm_block = re.sub(r"(\d+)\s+(\d{2}(?:\b|[A-Z]))", r"\1\2", norm_block)
 
             # Clean OCR spaces in numbers (e.g. "25 428.78" -> "25428.78")
             for _ in range(3):
@@ -150,13 +151,25 @@ def _extract_bonus_row(text: str, lines: list[str], claim_details: dict = None) 
             # Prefer amounts >= 1000 to avoid picking up 3-digit voucher numbers
             amt_matches = re.findall(r"\b(\d{4,10}(?:\.\d+)?)\b", norm_block)
             amount = ""
+            best_match = None
             for a in amt_matches:
                 try:
-                    if float(a.replace(",", "")) >= 1000:
-                        amount = a
-                        break
+                    val = float(a.replace(",", ""))
+                    if val >= 1000:
+                        if portal_amount is not None:
+                            # If it is close to portal amount, select it!
+                            for target in (portal_amount, portal_amount / 1.18, portal_amount * 1.18):
+                                if abs(val - target) <= 200.0 or (abs(val - target) / target) <= 0.05:
+                                    best_match = a
+                                    break
+                        if best_match:
+                            break
+                        if not amount:
+                            amount = a
                 except ValueError:
                     continue
+            if best_match:
+                amount = best_match
             if not amount:
                 # Fallback: any number >= 4 digits
                 amt_matches2 = re.findall(r"\b\d{4,6}(?:\.\d+)?\b", norm_block)

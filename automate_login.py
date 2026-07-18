@@ -10284,15 +10284,36 @@ def append_row_to_excel(record, excel_path):
                 # Attach stitched base64 document images
                 global CURRENT_ROW_DOCUMENTS
                 from document_processing.pdf_handler import get_stitched_base64_document
+                import fitz
+
+                def classify_by_content(fpath):
+                    try:
+                        doc = fitz.open(fpath)
+                        text = "".join(page.get_text() for page in doc).upper()
+                        
+                        # Heading/content checks first
+                        if "CUSTOMER DISCLAIMER" in text or "DISCLAIMER FOR WELCOME" in text or "DISCLAIMER" in text or "DECLARATION" in text:
+                            return "DISCLAIMER"
+                        if "STATEMENT OF ACCOUNT" in text or "LEDGER" in text or "JOURNAL ENTRY" in text or "ACCOUNT STATEMENT" in text:
+                            return "LEDGER"
+                        if "TAX INVOICE" in text or "INVOICE" in text or "BILL OF SUPPLY" in text:
+                            return "INVOICE"
+                    except Exception:
+                        pass
+                    return None
+
                 for doc in CURRENT_ROW_DOCUMENTS:
                     fpath = doc.get("file_path")
                     dtype = doc.get("doc_type", "") or ""
                     fname_upper = doc.get("file_name", "").upper()
-                    if any(kw in dtype or kw in fname_upper for kw in ["DISCLAIMER", "DIS"]):
+                    
+                    resolved = classify_by_content(fpath)
+                    
+                    if resolved == "DISCLAIMER" or (resolved is None and any(kw in dtype or kw in fname_upper for kw in ["DISCLAIMER", "DIS"])):
                         record["disclaimer_doc_img"] = get_stitched_base64_document(fpath)
-                    elif any(kw in dtype or kw in fname_upper for kw in ["LEDGER", "LED"]):
+                    elif resolved == "LEDGER" or (resolved is None and any(kw in dtype or kw in fname_upper for kw in ["LEDGER", "LED", "LGR", "LDGR", "LDR", "LDG"])):
                         record["ledger_doc_img"] = get_stitched_base64_document(fpath)
-                    elif any(kw in dtype or kw in fname_upper for kw in ["INVOICE", "INV"]):
+                    elif resolved == "INVOICE" or (resolved is None and any(kw in dtype or kw in fname_upper for kw in ["INVOICE", "INV"])):
                         record["invoice_doc_img"] = get_stitched_base64_document(fpath)
             except Exception as e:
                 logging.error(f"[Google Sheets Sync] Error attaching documents to record: {e}")

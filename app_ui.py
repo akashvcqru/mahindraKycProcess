@@ -1092,9 +1092,23 @@ class AppUI(tk.Tk):
         self.pdf_canvas.scan_dragto(event.x, event.y, gain=1)
 
     def on_mouse_wheel(self, event):
-        # Vertical scroll canvas
         try:
-            self.pdf_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            # Check for Ctrl and Shift key modifiers
+            is_control = (event.state & 4) != 0
+            is_shift = (event.state & 1) != 0
+            
+            if is_control:
+                # Zoom in / out
+                if event.delta > 0:
+                    self.zoom_in_pdf()
+                elif event.delta < 0:
+                    self.zoom_out_pdf()
+            elif is_shift:
+                # Horizontal scroll
+                self.pdf_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+            else:
+                # Vertical scroll
+                self.pdf_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         except Exception:
             pass
 
@@ -1731,8 +1745,43 @@ class AppUI(tk.Tk):
         # Load visual confirmations (NEW!)
         self.load_visual_confirmations(doc_dict)
 
-        # 2. Render PDF on Canvas
+        # 2. Render PDF/Image on Canvas
         pdf_path = doc_dict.get("file_path")
+        if doc_dict.get("is_url"):
+            self.current_pdf_doc = None
+            self.current_pdf_page = 0
+            self.current_zoom = 1.0
+            self.pdf_canvas.delete("all")
+            self.page_label.config(text="Downloading Image...")
+
+            def download_task():
+                try:
+                    url = doc_dict.get("file_path")
+                    direct_url = url
+                    if "drive.google.com" in url:
+                        import re
+                        match = re.search(r"/d/([^/]+)", url)
+                        if match:
+                            direct_url = f"https://drive.google.com/uc?export=download&id={match.group(1)}"
+                    
+                    import requests
+                    from PIL import Image
+                    import io
+                    resp = requests.get(direct_url, timeout=20)
+                    if resp.status_code == 200:
+                        img = Image.open(io.BytesIO(resp.content))
+                        self.current_image_original = img
+                        self.after(0, self.display_downloaded_image)
+                    else:
+                        self.after(0, lambda: self.page_label.config(text="Download Failed"))
+                except Exception as e:
+                    logging.error(f"Error downloading stitched image: {e}")
+                    self.after(0, lambda: self.page_label.config(text="Download Error"))
+
+            import threading
+            threading.Thread(target=download_task, daemon=True).start()
+            return
+
         if pdf_path and os.path.exists(pdf_path):
             try:
                 # Close previous if exists
@@ -1792,14 +1841,38 @@ class AppUI(tk.Tk):
             self.render_pdf_page()
 
     def zoom_in_pdf(self):
-        if self.current_pdf_doc and self.current_zoom < 3.0:
+        if self.current_zoom < 3.0:
             self.current_zoom += 0.15
-            self.render_pdf_page()
+            if self.current_pdf_doc:
+                self.render_pdf_page()
+            elif hasattr(self, "current_image_original") and self.current_image_original:
+                self.display_downloaded_image()
 
     def zoom_out_pdf(self):
-        if self.current_pdf_doc and self.current_zoom > 0.4:
+        if self.current_zoom > 0.4:
             self.current_zoom -= 0.15
-            self.render_pdf_page()
+            if self.current_pdf_doc:
+                self.render_pdf_page()
+            elif hasattr(self, "current_image_original") and self.current_image_original:
+                self.display_downloaded_image()
+
+    def display_downloaded_image(self):
+        if not hasattr(self, "current_image_original") or not self.current_image_original:
+            return
+        try:
+            w, h = self.current_image_original.size
+            new_w = int(w * self.current_zoom)
+            new_h = int(h * self.current_zoom)
+            resized = self.current_image_original.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            
+            self.canvas_photo = ImageTk.PhotoImage(resized)
+            self.pdf_canvas.delete("all")
+            self.pdf_canvas.create_image(0, 0, anchor="nw", image=self.canvas_photo)
+            self.pdf_canvas.configure(scrollregion=(0, 0, new_w, new_h))
+            self.page_label.config(text="Stitched Image (1 of 1)")
+            self.zoom_lbl.config(text=f"{int(self.current_zoom * 100)}%")
+        except Exception as e:
+            logging.error(f"Error displaying downloaded image: {e}")
 
     def run_east_disclaimer_analysis(self):
         if not hasattr(self, 'current_pdf_path') or not self.current_pdf_path or not os.path.exists(self.current_pdf_path):
@@ -2010,6 +2083,31 @@ class AppUI(tk.Tk):
 
     # Load local history registry
     def load_history_from_file(self):
+        webapp_url = os.getenv("GOOGLE_SHEET_WEBAPP_URL", "")
+        if not webapp_url:
+            self._load_local_history()
+            return
+
+        def fetch_thread():
+            logging.info("[UI] Fetching validation history from Google Sheets...")
+            try:
+                import requests
+                resp = requests.get(webapp_url, timeout=15)
+                if resp.status_code == 200:
+                    claims = resp.json()
+                    if isinstance(claims, list):
+                        logging.info(f"[UI] Loaded {len(claims)} historical rows from Google Sheets.")
+                        self.after(0, self._populate_history_from_sheets, claims)
+                        return
+                logging.warning(f"[UI] Google Sheet history query returned HTTP {resp.status_code}, falling back to local file.")
+            except Exception as e:
+                logging.error(f"[UI] Failed to fetch history from Google Sheets: {e}, falling back to local file.")
+            self.after(0, self._load_local_history)
+
+        import threading
+        threading.Thread(target=fetch_thread, daemon=True).start()
+
+    def _load_local_history(self):
         history_file = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "ui_history.json"
         )
@@ -2017,33 +2115,59 @@ class AppUI(tk.Tk):
             try:
                 with open(history_file, "r", encoding="utf-8") as f:
                     self.processed_claims = json.load(f)
-
-                # Populate Tree
-                for row_result in self.processed_claims:
-                    status_tag = (
-                        "approved" if row_result["status"] == "APPROVED" else "hold"
-                    )
-                    status_display = row_result["status"]
-                    duration = row_result.get("duration")
-                    if duration is not None:
-                        status_display += f" ({duration:.1f}s)" if duration < 60 else f" ({int(duration // 60)}m {int(duration % 60)}s)"
-                    self.history_tree.insert(
-                        "",
-                        "end",
-                        values=(
-                            f"Row {row_result['row_idx'] + 1}",
-                            row_result["customer_name"],
-                            status_display,
-                        ),
-                        tags=(status_tag,),
-                    )
-                    # Dispatch to Manual KYC Panel (it filters for HOLD)
-                    try:
-                        self.manual_kyc_panel.add_row(row_result)
-                    except Exception as e:
-                        logging.error(f"Error forwarding startup row to manual KYC panel: {e}")
+                self._populate_trees(self.processed_claims)
             except Exception as e:
-                logging.error(f"Failed to load history file: {e}")
+                logging.error(f"Failed to load local history file: {e}")
+
+    def _populate_history_from_sheets(self, claims):
+        self.processed_claims = claims
+        self._populate_trees(claims)
+
+    def _populate_trees(self, claims):
+        for item in self.history_tree.get_children():
+            self.history_tree.delete(item)
+        try:
+            self.manual_kyc_panel.clear_queue()
+        except Exception as e:
+            logging.error(f"Failed to clear manual kyc panel queue: {e}")
+
+        for row_result in claims:
+            status_tag = (
+                "approved" if row_result.get("status") == "APPROVED" else "hold"
+            )
+            status_display = row_result.get("status", "UNKNOWN")
+            duration = row_result.get("duration")
+            if duration is not None:
+                status_display += f" ({duration:.1f}s)" if duration < 60 else f" ({int(duration // 60)}m {int(duration % 60)}s)"
+            
+            # Check for document URLs to populate list dynamically if docs are missing
+            docs = row_result.get("documents", [])
+            if not docs:
+                docs = []
+                if row_result.get("disclaimer_url"):
+                    docs.append({"file_name": "Disclaimer Stitched Image (Sheets)", "file_path": row_result["disclaimer_url"], "is_url": True, "file_type": "DISCLAIMER"})
+                if row_result.get("ledger_url"):
+                    docs.append({"file_name": "Ledger Stitched Image (Sheets)", "file_path": row_result["ledger_url"], "is_url": True, "file_type": "LEDGER"})
+                if row_result.get("invoice_url"):
+                    docs.append({"file_name": "Invoice Stitched Image (Sheets)", "file_path": row_result["invoice_url"], "is_url": True, "file_type": "INVOICE"})
+                row_result["documents"] = docs
+
+            self.history_tree.insert(
+                "",
+                "end",
+                values=(
+                    f"Row {row_result.get('row_idx', 0) + 1}",
+                    row_result.get("customer_name", "Unknown"),
+                    status_display,
+                ),
+                tags=(status_tag,),
+            )
+            
+            # Dispatch to Manual KYC Panel (it filters for HOLD)
+            try:
+                self.manual_kyc_panel.add_row(row_result)
+            except Exception as e:
+                logging.error(f"Error forwarding startup row to manual KYC panel: {e}")
 
     # Visual Confirmations Display Methods (NEW!)
     def load_visual_confirmations(self, doc_dict):
