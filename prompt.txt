@@ -1,167 +1,641 @@
-function doGet(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    return ContentService.createTextOutput(JSON.stringify([]))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var formulas = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getFormulas();
-  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-  
-  var records = [];
-  for (var r = 0; r < values.length; r++) {
-    var record = {
-      "row_idx": r + 1, // index relative to data lines
-    };
-    for (var c = 0; c < headers.length; c++) {
-      var headerName = headers[c].toString().toLowerCase().trim();
-      var formulaVal = formulas[r][c] || "";
-      var rawVal = values[r][c];
-      
-      // Extract URL from =HYPERLINK("url", IMAGE("url")) formulas
-      if (formulaVal && formulaVal.toUpperCase().indexOf("HYPERLINK") !== -1) {
-        var urlMatch = formulaVal.match(/=HYPERLINK\("([^"]+)"/i);
-        if (urlMatch && urlMatch[1]) {
-          rawVal = urlMatch[1];
-        }
-      }
-      
-      // Normalise key mappings for Python Client consumption
-      if (headerName === "row number" || headerName === "row #") record["row_idx"] = Number(rawVal) - 1;
-      else if (headerName === "customer name") record["customer_name"] = rawVal;
-      else if (headerName === "status") record["status"] = rawVal;
-      else if (headerName === "hold reasons / remarks" || headerName === "hold reasons" || headerName === "remarks") record["hold_reasons"] = rawVal;
-      else if (headerName === "claim number" || headerName === "claim no") record["claim_no"] = rawVal;
-      else if (headerName === "claim date") record["claim_date"] = rawVal;
-      else if (headerName === "chassis no" || headerName === "chassis number") record["chassis_no"] = rawVal;
-      else if (headerName === "processed date" || headerName === "date processed") record["date_processed"] = rawVal;
-      
-      // Save raw documents URLs directly
-      if (headerName.indexOf("disclaimer") !== -1) record["disclaimer_url"] = rawVal;
-      else if (headerName.indexOf("ledger") !== -1) record["ledger_url"] = rawVal;
-      else if (headerName.indexOf("invoice") !== -1) record["invoice_url"] = rawVal;
-    }
-    records.push(record);
-  }
-  
-  return ContentService.createTextOutput(JSON.stringify(records))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+I went through your architecture carefully, and considering everything you've told me over the last few days (Mahindra Exchange project, 20,000+ documents, approval engine, stamp/signature detection, ledger + invoice + disclaimer validation), I'd say this is **a very solid architecture**.
 
-function doPost(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  
-  // Create or retrieve a folder in Google Drive to store stitched document images
-  var folderName = "Mahindra KYC Verification Documents";
-  var folders = DriveApp.getFoldersByName(folderName);
-  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-  
-  // If the sheet is empty, initialize headers with document columns
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow([
-      "Row Number", "Claim Number", "Claim Date", "Area Office", 
-      "Customer Name", "Dealer Name", "Dealer Branch", "Scheme", 
-      "Status", "Hold Reasons / Remarks", "Processed Date", "Chassis No",
-      "Disclaimer Document", "Ledger Document", "Invoice Document"
-    ]);
-  }
-  
-  try {
-    var data = JSON.parse(e.postData.contents);
-    
-    // Get headers in first row to map dynamically
-    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    
-    // Helper function to decode base64 image data and save it as a file in Google Drive
-    function saveBase64Image(base64Data, filename) {
-      if (!base64Data) return null;
-      var decodedBytes = Utilities.base64Decode(base64Data);
-      var blob = Utilities.newBlob(decodedBytes, 'image/png', filename);
-      var file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      return file.getUrl();
-    }
+**Overall rating: 9.2/10**
 
-    // Process and upload the base64 document images
-    var disclaimerUrl = saveBase64Image(data.disclaimer_doc_img, "disclaimer_" + (data.claim_no || "unknown") + "_" + Date.now() + ".png");
-    var ledgerUrl = saveBase64Image(data.ledger_doc_img, "ledger_" + (data.claim_no || "unknown") + "_" + Date.now() + ".png");
-    var invoiceUrl = saveBase64Image(data.invoice_doc_img, "invoice_" + (data.claim_no || "unknown") + "_" + Date.now() + ".png");
-    
-    // Map keys to their normalized header matching
-    var keyMap = {
-      "row_num": ["row number", "row #", "row", "row_num", "rownum"],
-      "claim_no": ["claim number", "claim no", "claim #", "claim_no", "claimno"],
-      "claim_date": ["claim date", "date of claim", "claim_date", "claimdate"],
-      "area_office": ["area office", "office", "area_office", "areaoffice"],
-      "customer_name": ["customer name", "customer", "customer_name", "customername"],
-      "dealer_name": ["dealer name", "dealer", "dealer_name", "dealername"],
-      "dealer_branch": ["dealer branch", "branch", "dealer_branch", "dealerbranch"],
-      "scheme": ["scheme", "scheme type", "scheme_type"],
-      "status": ["status", "validation status", "state"],
-      "hold_reasons": ["hold reasons / remarks", "hold reasons", "remarks", "hold_reasons", "holdreasons"],
-      "date_processed": ["processed date", "date processed", "date_processed", "dateprocessed"],
-      "chassis_no": ["chassis no", "chassis number", "chassis", "chassis_no", "chassisno"]
-    };
-    
-    var newRow = [];
-    for (var i = 0; i < headers.length; i++) {
-      var headerVal = headers[i].toString().toLowerCase().trim();
-      var cellVal = "";
-      
-      // Strict header checks to prevent overlapping matches (e.g. "invoice no" matching "invoice document")
-      if (headerVal === "disclaimer document" || headerVal === "disclaimer doc" || headerVal === "disclaimer") {
-        newRow.push(disclaimerUrl ? '=HYPERLINK("' + disclaimerUrl + '", IMAGE("' + disclaimerUrl + '"))' : "");
-        continue;
-      } else if (headerVal === "ledger document" || headerVal === "ledger doc" || headerVal === "ledger") {
-        newRow.push(ledgerUrl ? '=HYPERLINK("' + ledgerUrl + '", IMAGE("' + ledgerUrl + '"))' : "");
-        continue;
-      } else if (headerVal === "invoice document" || headerVal === "invoice doc") {
-        newRow.push(invoiceUrl ? '=HYPERLINK("' + invoiceUrl + '", IMAGE("' + invoiceUrl + '"))' : "");
-        continue;
-      }
-      
-      // Look for a key that maps to this header
-      for (var key in keyMap) {
-        if (keyMap[key].indexOf(headerVal) !== -1 || headerVal.indexOf(key) !== -1) {
-          if (data[key] !== undefined) {
-            cellVal = data[key];
-          }
-          break;
-        }
-      }
-      newRow.push(cellVal);
-    }
-    
-    // If no dynamic match, fallback to standard order
-    if (newRow.filter(function(x) { return x !== ""; }).length === 0) {
-      newRow = [
-        data.row_num || "",
-        data.claim_no || "",
-        data.claim_date || "",
-        data.area_office || "",
-        data.customer_name || "",
-        data.dealer_name || "",
-        data.dealer_branch || "",
-        data.scheme || "",
-        data.status || "",
-        data.hold_reasons || "",
-        data.date_processed || "",
-        data.chassis_no || "",
-        disclaimerUrl ? '=HYPERLINK("' + disclaimerUrl + '", IMAGE("' + disclaimerUrl + '"))' : "",
-        ledgerUrl ? '=HYPERLINK("' + ledgerUrl + '", IMAGE("' + ledgerUrl + '"))' : "",
-        invoiceUrl ? '=HYPERLINK("' + invoiceUrl + '", IMAGE("' + invoiceUrl + '"))' : ""
-      ];
-    }
-    
-    sheet.appendRow(newRow);
-    
-    return ContentService.createTextOutput(JSON.stringify({status: "success"}))
-      .setMimeType(ContentService.MimeType.JSON);
-      
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({status: "error", message: err.toString()}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
+It's much better than what most document-processing systems start with. However, there are a few improvements I'd strongly recommend before calling it production-ready.
+
+---
+
+# ✅ What's excellent
+
+## 1. Hybrid OCR pipeline ⭐⭐⭐⭐⭐
+
+```
+PyMuPDF
+      ↓
+EasyOCR
+```
+
+This is the correct approach.
+
+Digital PDFs are read instantly.
+
+Scanned PDFs fall back to OCR.
+
+**Keep this exactly as it is.**
+
+---
+
+# 2. OpenCV preprocessing ⭐⭐⭐⭐⭐
+
+You already have
+
+* CLAHE
+* Adaptive Threshold
+* Deskew
+* Watermark suppression
+
+This is excellent.
+
+---
+
+# 3. Spatial OCR ⭐⭐⭐⭐⭐
+
+This is actually the biggest strength.
+
+You are storing
+
+```
+x_min
+x_max
+y_min
+y_max
+x_center
+y_center
+```
+
+That means you're not just doing OCR.
+
+You're rebuilding the document.
+
+That's exactly how enterprise document AI works.
+
+---
+
+# 4. Table Reconstruction ⭐⭐⭐⭐⭐
+
+This
+
+```
+Row Cluster
+
+↓
+
+Column Bin
+```
+
+is much better than trying to use AI table extraction.
+
+For Mahindra documents, layouts are fixed.
+
+Your approach will be faster and more stable.
+
+---
+
+# 5. RapidFuzz ⭐⭐⭐⭐⭐
+
+Excellent.
+
+Never compare OCR strings directly.
+
+Always fuzzy match.
+
+---
+
+# 6. Cropper ⭐⭐⭐⭐⭐
+
+Love this.
+
+Instead of showing the whole page
+
+show
+
+Stamp
+
+Signature
+
+Chassis Number
+
+Invoice Number
+
+VIN
+
+etc.
+
+Perfect.
+
+---
+
+# Things I'd Improve
+
+## 1. EasyOCR → PaddleOCR
+
+This is my biggest recommendation.
+
+EasyOCR is good.
+
+PaddleOCR is significantly better for documents.
+
+You'll notice improvements in:
+
+* tables
+* invoice text
+* small fonts
+* rotated text
+* stamps
+
+I would replace
+
+```
+EasyOCR
+```
+
+with
+
+```
+PaddleOCR
+```
+
+Everything else can stay the same.
+
+---
+
+## 2. Stamp Detection
+
+Currently you detect
+
+```
+circle
+```
+
+using
+
+```
+Circularity > 0.55
+```
+
+That works for simple rubber stamps.
+
+But real dealer stamps can be:
+
+✅ oval
+
+✅ broken
+
+✅ partial
+
+✅ smudged
+
+✅ overlapping signatures
+
+Instead of only
+
+```
+Circularity
+```
+
+I'd combine:
+
+```
+Contour
+
++
+
+Color Mask
+
++
+
+Text Density
+```
+
+Example
+
+Purple region
+
+↓
+
+Contour
+
+↓
+
+OCR
+
+↓
+
+Dealer name found?
+
+↓
+
+Stamp = TRUE
+
+This reduces false positives.
+
+---
+
+## 3. Signature Detection
+
+Current
+
+```
+Dilate
+
+↓
+
+Blob
+
+↓
+
+Rectangularity
+```
+
+works for
+
+signature present?
+
+but not
+
+signature valid?
+
+Which is okay if you only need presence.
+
+---
+
+## 4. OCR Confidence
+
+I didn't see confidence handling.
+
+Every OCR engine gives
+
+```
+text
+
+confidence
+```
+
+Don't just save
+
+```
+Dealer Name
+```
+
+Save
+
+```
+Dealer Name
+
+confidence=0.93
+```
+
+Later
+
+```
+if confidence <0.60
+
+↓
+
+UNKNOWN
+```
+
+NOT FAIL
+
+This is extremely important.
+
+---
+
+## 5. Validation Result
+
+Don't return
+
+```
+True
+
+False
+```
+
+Instead
+
+```
+PASS
+
+FAIL
+
+UNKNOWN
+```
+
+Example
+
+Stamp detected
+
+Confidence
+
+0.42
+
+Don't reject.
+
+Return
+
+```
+UNKNOWN
+```
+
+Manual review.
+
+This will dramatically reduce bad decisions.
+
+---
+
+## 6. Image Quality Score
+
+Before OCR
+
+calculate
+
+```
+Blur
+
+Brightness
+
+Contrast
+
+Resolution
+
+Noise
+```
+
+Then
+
+```
+Quality Score
+
+0-100
+```
+
+If
+
+```
+Quality <40
+
+↓
+
+Hold
+
+```
+
+No OCR can fix terrible scans.
+
+---
+
+## 7. Document Classification
+
+Currently it seems
+
+Invoice
+
+↓
+
+Invoice parser
+
+Ledger
+
+↓
+
+Ledger parser
+
+Instead
+
+```
+Input PDF
+
+↓
+
+Classifier
+
+↓
+
+Invoice
+
+↓
+
+Ledger
+
+↓
+
+Disclaimer
+
+↓
+
+RC
+
+↓
+
+DL
+
+↓
+
+PAN
+
+↓
+
+GST
+
+↓
+
+Parser
+```
+
+Very scalable.
+
+---
+
+## 8. Rule Engine
+
+This is probably the most important missing piece.
+
+Instead of
+
+```
+if stamp:
+
+if signature:
+
+if chassis:
+```
+
+Create
+
+```
+Validation Rule
+
+↓
+
+Rule 1
+
+Rule 2
+
+Rule 3
+
+Rule 4
+
+```
+
+Example
+
+```
+Invoice
+
+↓
+
+Dealer Stamp
+
+PASS
+
+Dealer Signature
+
+PASS
+
+Customer Name
+
+PASS
+
+VIN Match
+
+FAIL
+
+↓
+
+HOLD
+```
+
+Very maintainable.
+
+---
+
+# One thing I would NOT use
+
+You currently suppress watermark using a fixed threshold:
+
+```
+>175
+
+↓
+
+white
+```
+
+Be careful.
+
+Sometimes
+
+purple stamps
+
+light blue seals
+
+dealer logos
+
+may disappear.
+
+Instead
+
+detect
+
+```
+background
+
+```
+
+not
+
+```
+everything >175
+```
+
+Adaptive approaches are usually safer across different scan qualities.
+
+---
+
+# If this were my architecture
+
+I'd make only these changes:
+
+```
+PyMuPDF
+```
+
+↓
+
+```
+OpenCV
+```
+
+↓
+
+```
+Image Quality Score
+```
+
+↓
+
+```
+PaddleOCR
+```
+
+↓
+
+```
+RapidFuzz
+```
+
+↓
+
+```
+Row/Column Reconstruction
+```
+
+↓
+
+```
+QR Decoder
+```
+
+↓
+
+```
+Stamp Detector
+```
+
+↓
+
+```
+Signature Detector
+```
+
+↓
+
+```
+Rule Engine
+```
+
+↓
+
+```
+PASS
+FAIL
+UNKNOWN
+```
+
+↓
+
+```
+Dashboard
+```
+
+---
+
+# Final Rating
+
+| Component            | Rating                                             |
+| -------------------- | -------------------------------------------------- |
+| OCR Pipeline         | ⭐⭐⭐⭐⭐ (replace EasyOCR with PaddleOCR if feasible) |
+| Image Preprocessing  | ⭐⭐⭐⭐⭐                                              |
+| Table Reconstruction | ⭐⭐⭐⭐⭐                                              |
+| Stamp Detection      | ⭐⭐⭐⭐☆                                              |
+| Signature Detection  | ⭐⭐⭐⭐☆                                              |
+| QR Detection         | ⭐⭐⭐⭐⭐                                              |
+| Field Mapping        | ⭐⭐⭐⭐⭐                                              |
+| Architecture         | ⭐⭐⭐⭐⭐                                              |
+| Scalability          | ⭐⭐⭐⭐⭐                                              |
+| Production Readiness | ⭐⭐⭐⭐☆                                              |
+
+## Final Score: **9.5/10**
+
+I would be comfortable using this architecture for a high-volume document verification system. The biggest gains from here won't come from adding lots of new libraries—they'll come from improving the decision logic around OCR confidence, validation rules, and edge-case handling. Those changes will have a much larger impact on reliability than swapping one OCR engine for another.

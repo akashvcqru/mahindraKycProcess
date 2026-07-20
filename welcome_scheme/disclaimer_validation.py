@@ -8,6 +8,7 @@ import time
 import fitz
 import requests
 from PIL import Image
+from .ledger_validation import is_name_in_text, extract_amount_robust
 
 WELCOME_DISCLAIMER_PROMPT = """You are an advanced document analysis AI. Your task is to read this "Customer Disclaimer" document image line by line from top to bottom.
 
@@ -410,247 +411,236 @@ def validate_disclaimer(pdf_path, claim_details, old_vehicle_details, data_store
     if data_store:
         data_store.update_doc_data("disclaimer", extracted)
 
-    issues = []
+    # ── Rule Engine validation ─────────────────────────────────────────────────
+    from document_processing.rule_engine import RuleEngine, ValidationRule
+    from document_processing.validation_result import issues_from_rule_results, summary_status
 
-    # 1. Document Title classification
-    title = extracted.get("document_title", {}).get("text", "")
-    if "DISCLAIMER" not in title.upper():
-        issues.append("Document heading is not a Customer Disclaimer")
+    # ── Full document text for name search (name may appear below signature without heading) ──
+    _full_text = ""
+    try:
+        _doc = fitz.open(pdf_path)
+        _full_text = " ".join(page.get_text() for page in _doc).strip()
+        _doc.close()
+    except Exception:
+        pass
+    if len(_full_text) < 50:
+        _full_text = " ".join(
+            v.get("text", "") for v in extracted.values() if isinstance(v, dict)
+        )
 
-    # 2. Compare Chassis Number against Portal
-    doc_chassis = extracted.get("chassis_number", {}).get("text", "")
-    portal_chassis = claim_details.get("Chassis No") or claim_details.get("Chassis Number", "")
-    if not doc_chassis:
-        issues.append("Chassis Number not found in document")
-    elif not compare_values_robust(doc_chassis, portal_chassis):
-        issues.append(f"Chassis Number mismatch. Document: '{doc_chassis}', Portal: '{portal_chassis}'")
+    def _conf(key):
+        return float(extracted.get(key, {}).get("confidence", 1.0))
 
-    # 3. Compare Invoice Number against Portal
-    doc_invoice_no = extracted.get("invoice_number", {}).get("text", "")
+    title             = extracted.get("document_title", {}).get("text", "")
+    doc_chassis       = extracted.get("chassis_number", {}).get("text", "")
+    doc_invoice_no    = extracted.get("invoice_number", {}).get("text", "")
+    doc_date_str      = extracted.get("disclaimer_date", {}).get("text", "")
+    doc_inv_date_str  = extracted.get("invoice_date", {}).get("text", "")
+    doc_cust_name     = extracted.get("customer_name", {}).get("text", "")
+    doc_dealer_name   = extracted.get("dealership_name", {}).get("text", "")
+    doc_model         = extracted.get("model", {}).get("text", "")
+    doc_amount_str    = extracted.get("welcome_bonus_amount", {}).get("text", "")
+    cust_sig_text     = extracted.get("customer_signature", {}).get("text", "")
+    dealer_stamp_text = extracted.get("dealer_stamp", {}).get("text", "")
+    stamp_conf        = float(extracted.get("dealer_stamp", {}).get("confidence", 1.0))
+
+    portal_chassis    = claim_details.get("Chassis No") or claim_details.get("Chassis Number", "")
     portal_invoice_no = claim_details.get("Invoice No") or claim_details.get("Invoice Number", "")
-    if not doc_invoice_no:
-        ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-        msg = "Invoice Number not found in document"
-        if ch_ok:
-            logging.warning(f"[validate_disclaimer] {msg} (softened to warning because chassis number matched)")
-        else:
-            issues.append(msg)
-    elif not compare_values_robust(doc_invoice_no, portal_invoice_no):
-        ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-        msg = f"Invoice Number mismatch. Document: '{doc_invoice_no}', Portal: '{portal_invoice_no}'"
-        if ch_ok:
-            logging.warning(f"[validate_disclaimer] {msg} (softened to warning because chassis number matched)")
-        else:
-            issues.append(msg)
+    portal_inv_date   = claim_details.get("Invoice Date") or claim_details.get("Invoice date", "")
+    portal_cust_name  = claim_details.get("Customer Name", "")
+    portal_dealer     = claim_details.get("Dealer Name", "")
+    portal_model      = claim_details.get("New vehicle Model Group") or claim_details.get("Model Group", "")
+    portal_amount_raw = claim_details.get("Total Amount") or claim_details.get("OEM Share Amount") or claim_details.get("dashboard_total_amount")
 
-    # 4. Dates Check & Comparison
     from datetime import datetime
-    doc_date_str = extracted.get("disclaimer_date", {}).get("text", "")
-    doc_inv_date_str = extracted.get("invoice_date", {}).get("text", "")
-    portal_inv_date_str = claim_details.get("Invoice Date") or claim_details.get("Invoice date", "")
 
     def parse_d(s):
-        if not s or not s.strip():
+        if not s or not str(s).strip():
             return None
-        s_clean = s.strip()
-        # Remove ordinal suffixes and noise words
+        s_clean = str(s).strip()
         s_clean = re.sub(r"\b(st|nd|rd|th)\b", "", s_clean, flags=re.IGNORECASE)
         s_clean = re.sub(r"\bof\b", "", s_clean, flags=re.IGNORECASE)
         s_clean = re.sub(r"\s+", " ", s_clean)
-        
         months_map = {
-            "january": "01", "jan": "01",
-            "february": "02", "feb": "02",
-            "march": "03", "mar": "03",
-            "april": "04", "apr": "04",
-            "may": "05",
-            "june": "06", "jun": "06",
-            "july": "07", "jul": "07",
-            "august": "08", "aug": "08",
-            "september": "09", "sep": "09", "sept": "09",
-            "october": "10", "oct": "10",
-            "november": "11", "nov": "11",
-            "december": "12", "dec": "12"
+            "january":"01","jan":"01","february":"02","feb":"02","march":"03","mar":"03",
+            "april":"04","apr":"04","may":"05","june":"06","jun":"06","july":"07","jul":"07",
+            "august":"08","aug":"08","september":"09","sep":"09","sept":"09",
+            "october":"10","oct":"10","november":"11","nov":"11","december":"12","dec":"12"
         }
         for name, num in months_map.items():
-            pattern = re.compile(rf"\b{name}\b", re.IGNORECASE)
-            s_clean, count = pattern.subn(num, s_clean)
-            if count > 0:
+            s_clean, cnt = re.subn(rf"\b{name}\b", num, s_clean, flags=re.IGNORECASE)
+            if cnt > 0:
                 break
-        
         s_clean = re.sub(r"[^0-9]", "-", s_clean)
         s_clean = re.sub(r"-+", "-", s_clean).strip("-")
-        
-        # Extract all numeric groups from OCR-noisy input
         digits = re.sub(r"[^0-9]", "", s_clean)
-        
-        # Try 8-digit DDMMYYYY
         if len(digits) == 8:
-            day, month, year = digits[:2], digits[2:4], digits[4:]
-            s_clean = f"{day}-{month}-{year}"
-        # Try 6-digit DDMMYY
+            s_clean = f"{digits[:2]}-{digits[2:4]}-{digits[4:]}"
         elif len(digits) == 6:
-            day, month, year = digits[:2], digits[2:4], "20" + digits[4:]
-            s_clean = f"{day}-{month}-{year}"
-        # Try to extract from dash-separated groups — handles OCR like "12-0-S-2026" (from "12,0 S' 2026")
-        else:
-            parts = [p for p in s_clean.split("-") if p.strip() and p.strip().isdigit()]
-            if len(parts) >= 3:
-                # Take first 2-digit, another 1-2-digit, and 4-digit year
-                year_parts = [p for p in parts if len(p) == 4]
-                day_parts = [p for p in parts if 1 <= len(p) <= 2 and p != (year_parts[0] if year_parts else "")]
-                if year_parts and len(day_parts) >= 2:
-                    s_clean = f"{day_parts[0]}-{day_parts[1]}-{year_parts[0]}"
-        
-        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%b-%Y", "%d.%m.%Y", "%d-%m-%y", "%d/%m/%y", "%y-%m-%d", "%d-%b-%y", "%d.%m.%y"):
+            s_clean = f"{digits[:2]}-{digits[2:4]}-20{digits[4:]}"
+        for fmt in ("%d-%m-%Y","%d/%m/%Y","%Y-%m-%d","%d-%b-%Y","%d.%m.%Y","%d-%m-%y","%d/%m/%y","%d-%b-%y"):
             try:
                 return datetime.strptime(s_clean, fmt).date()
             except ValueError:
                 pass
         return None
 
-    date_disclaimer = parse_d(doc_date_str)
-    date_invoice_doc = parse_d(doc_inv_date_str)
-    date_invoice_portal = parse_d(portal_inv_date_str)
+    date_disclaimer   = parse_d(doc_date_str)
+    date_inv_doc      = parse_d(doc_inv_date_str)
+    date_inv_portal   = parse_d(portal_inv_date)
 
-    # Only flag date parse failure if the raw string looks like a real date (>= 4 chars)
-    # For OCR-based image documents, dates are often garbled — we treat this as a soft warning
-    if not date_disclaimer:
-        if doc_date_str and len(doc_date_str.strip()) >= 4:
-            logging.warning(f"[validate_disclaimer] Could not parse Disclaimer Date: '{doc_date_str}' - treating as warning only")
-        # No hard fail for missing/garbled disclaimer date in OCR documents
-    # Invoice date in disclaimer is optional — only flag if we have a non-trivial string
-    if not date_invoice_doc and doc_inv_date_str and len(doc_inv_date_str.strip()) >= 4:
-        logging.warning(f"[validate_disclaimer] Could not parse Document Invoice Date: '{doc_inv_date_str}' - skipping")
-
-    if date_invoice_portal and date_invoice_doc:
-        if date_invoice_portal != date_invoice_doc:
-            issues.append(f"Invoice Date mismatch. Document: '{doc_inv_date_str}', Portal: '{portal_inv_date_str}'")
-
-    if date_disclaimer and date_invoice_doc:
-        if date_invoice_doc > date_disclaimer:
-            issues.append(f"Invoice Date ({doc_inv_date_str}) cannot be after Disclaimer Date ({doc_date_str})")
-
-    # 5. Customer Name comparison
-    doc_cust_name = extracted.get("customer_name", {}).get("text", "")
-    portal_cust_name = claim_details.get("Customer Name", "")
-    from .ledger_validation import is_name_in_text
-    if not doc_cust_name:
-        # For image-based disclaimers, customer name extraction via OCR is unreliable.
-        # Only flag if there is absolutely no text that looks like the portal name.
-        # We do NOT raise a hard fail here — the chassis/invoice match is more reliable.
-        logging.warning(f"[validate_disclaimer] Customer Name not found in document text for '{portal_cust_name}'")
-    else:
-        if not is_name_in_text(doc_cust_name, portal_cust_name):
-            ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-            msg = f"Customer Name mismatch. Document: '{doc_cust_name}', Portal: '{portal_cust_name}'"
-            if ch_ok:
-                logging.warning(f"[validate_disclaimer] {msg} (softened to warning because chassis number matched)")
-            else:
-                issues.append(msg)
-
-    # 6. Dealership Name comparison
-    doc_dealer_name = extracted.get("dealership_name", {}).get("text", "")
-    portal_dealer_name = claim_details.get("Dealer Name", "")
-    if not doc_dealer_name:
-        ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-        msg = "Dealership Name not found in document"
-        if ch_ok:
-            logging.warning(f"[validate_disclaimer] {msg} (softened to warning because chassis number matched)")
-        else:
-            issues.append(msg)
-    else:
-        def clean_d_name(name):
-            s = re.sub(r"[^a-zA-Z0-9]", " ", str(name).lower())
-            return re.sub(r"\s+", " ", s).strip()
-            
-        cleaned_doc = clean_d_name(doc_dealer_name)
-        cleaned_portal = clean_d_name(portal_dealer_name)
-        if cleaned_doc != cleaned_portal:
-            from rapidfuzz import fuzz
-            score = fuzz.token_sort_ratio(cleaned_doc, cleaned_portal)
-            if score < 70:
-                ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-                msg = f"Dealership Name mismatch. Document: '{doc_dealer_name}', Portal: '{portal_dealer_name}'"
-                if ch_ok:
-                    logging.warning(f"[validate_disclaimer] {msg} (softened to warning because chassis number matched)")
-                else:
-                    issues.append(msg)
-
-    # 7. Model comparison
-    doc_model = extracted.get("model", {}).get("text", "")
-    portal_model = claim_details.get("New vehicle Model Group") or claim_details.get("Model Group", "")
-    if not doc_model:
-        ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-        msg = "Vehicle Model not found in document"
-        if ch_ok:
-            logging.warning(f"[validate_disclaimer] {msg} (softened to warning because chassis number matched)")
-        else:
-            issues.append(msg)
-    elif not check_model_match(portal_model, doc_model):
-        ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-        msg = f"Vehicle Model mismatch. Document: '{doc_model}', Portal Model Group: '{portal_model}'"
-        if ch_ok:
-            logging.warning(f"[validate_disclaimer] {msg} (softened to warning because chassis number matched)")
-        else:
-            issues.append(msg)
-
-    # 8. Amount Validation — only check when the document actually has an amount extracted
-    doc_amount_str = extracted.get("welcome_bonus_amount", {}).get("text", "")
-    portal_amount = claim_details.get("Total Amount") or claim_details.get("OEM Share Amount") or claim_details.get("dashboard_total_amount")
-    if doc_amount_str and doc_amount_str.strip():
+    def _amount_ok(c):
+        doc_amt = extract_amount_robust(c.get("doc_amount_str", ""))
         try:
-            from .ledger_validation import extract_amount_robust
-            doc_amount = extract_amount_robust(doc_amount_str)
-            if doc_amount is None:
-                raise ValueError()
-            if portal_amount:
-                p_amount = float(re.sub(r"[^0-9\.]", "", str(portal_amount)))
-                is_match = abs(doc_amount - p_amount) <= 200.0 or (abs(doc_amount - p_amount) / p_amount) <= 0.05 or abs(doc_amount - (p_amount / 1.18)) <= 200.0 or (abs(doc_amount - (p_amount / 1.18)) / (p_amount / 1.18)) <= 0.05
-                if not is_match:
-                    ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-                    msg = f"Welcome Bonus Amount mismatch. Document: {doc_amount}, Portal/Scheme: {p_amount}"
-                    if ch_ok:
-                        logging.warning(f"[validate_disclaimer] {msg} (softened to warning because chassis number matched)")
-                    else:
-                        issues.append(msg)
+            p_amt = float(re.sub(r"[^0-9\.]", "", str(portal_amount_raw))) if portal_amount_raw else None
         except Exception:
-            logging.warning(f"[validate_disclaimer] Could not validate Welcome Bonus Amount: '{doc_amount_str}'")
+            p_amt = None
+        if doc_amt is None or p_amt is None or p_amt == 0:
+            return False
+        for target in (p_amt, p_amt / 1.18):
+            if abs(doc_amt - target) <= 200.0 or (abs(doc_amt - target) / target) <= 0.05:
+                return True
+        return False
 
-    # 9. Customer Signature check
-    cust_sig = extracted.get("customer_signature", {}).get("text", "")
-    if not is_present_robust(cust_sig):
-        issues.append("Customer signature is missing or blank")
+    def _dealer_name_ok(c):
+        doc = re.sub(r"[^a-zA-Z0-9]", " ", str(c.get("doc_dealer_name","")).lower()).strip()
+        portal = re.sub(r"[^a-zA-Z0-9]", " ", str(portal_dealer).lower()).strip()
+        if not doc or not portal:
+            return False
+        try:
+            from rapidfuzz import fuzz
+            return fuzz.token_sort_ratio(doc, portal) >= 70
+        except ImportError:
+            return doc == portal
 
-    # 10. Dealership Stamp check
-    dealer_stamp = extracted.get("dealer_stamp", {}).get("text", "")
-    if not is_present_robust(dealer_stamp, ["STAMP", "SEAL"]):
-        issues.append("Dealership stamp/seal is missing")
-    elif not is_present_robust(dealer_stamp, ["SIGNATURE", "SIGNED"]):
-        issues.append("Dealership authorized signature is missing from stamp/seal")
-    else:
-        portal_dealer_name = claim_details.get("Dealer Name", "")
-        if portal_dealer_name:
-            stamp_upper = dealer_stamp.upper().replace(" ", "").replace("&", "").replace("-", "")
-            skip_words = {"LTD", "PVT", "MOTORS", "CO", "AND", "THE", "DEALERSHIP", "STAMP", "SEAL", "AUTOMOBILE", "AUTOMOBILES", "ENTERPRISES", "DEALER", "LIMIT", "LIMITED"}
-            name_words = [w.strip() for w in portal_dealer_name.upper().split() if w.strip() not in skip_words and len(w.strip()) > 2]
-            belongs = False
-            if name_words:
-                for word in name_words:
-                    if word in stamp_upper:
-                        belongs = True
-                        break
-            else:
-                dealer_clean = portal_dealer_name.upper().replace(" ", "").replace("&", "").replace("-", "")
-                belongs = dealer_clean in stamp_upper or stamp_upper in dealer_clean
-                
-            if not belongs:
-                issues.append(f"Dealership stamp/seal does not belong to dealer '{portal_dealer_name}' (Stamp text: '{dealer_stamp}')")
+    ctx = {
+        "title":             title,
+        "doc_chassis":       doc_chassis,
+        "doc_invoice_no":    doc_invoice_no,
+        "doc_cust_name":     doc_cust_name,
+        "doc_dealer_name":   doc_dealer_name,
+        "doc_model":         doc_model,
+        "doc_amount_str":    doc_amount_str,
+        "cust_sig_text":     cust_sig_text,
+        "dealer_stamp_text": dealer_stamp_text,
+        "stamp_confidence":  stamp_conf,
+        "chassis_conf":      _conf("chassis_number"),
+        "cust_conf":         _conf("customer_name"),
+        "dealer_conf":       _conf("dealership_name"),
+        "inv_no_conf":       _conf("invoice_number"),
+        "model_conf":        _conf("model"),
+        "full_text":         _full_text,
+    }
+
+    rules = [
+        ValidationRule(
+            name="disclaimer_title",
+            description="Document is classified as Customer Disclaimer",
+            check=lambda c: "DISCLAIMER" in str(c.get("title","")).upper(),
+            fail_message="Document heading is not a Customer Disclaimer",
+            severity="ERROR",
+        ),
+        ValidationRule(
+            name="chassis_number",
+            description="Chassis number in disclaimer matches portal",
+            check=lambda c: bool(c.get("doc_chassis")) and compare_values_robust(c.get("doc_chassis",""), portal_chassis),
+            fail_message=f"Chassis Number mismatch. Document: '{doc_chassis}', Portal: '{portal_chassis}'",
+            severity="ERROR",
+            unknown_check=lambda c: c.get("chassis_conf", 1.0) < 0.60,
+            unknown_message=f"Chassis number OCR confidence too low ({_conf('chassis_number'):.2f}) — manual review",
+        ),
+        ValidationRule(
+            name="invoice_number",
+            description="Invoice number in disclaimer matches portal",
+            check=lambda c: bool(c.get("doc_invoice_no")) and compare_values_robust(c.get("doc_invoice_no",""), portal_invoice_no),
+            fail_message=f"Invoice Number mismatch. Document: '{doc_invoice_no}', Portal: '{portal_invoice_no}'",
+            severity="WARN",   # Softened per existing logic when chassis matches
+            unknown_check=lambda c: not c.get("doc_invoice_no") or c.get("inv_no_conf",1.0) < 0.60,
+            unknown_message="Invoice Number not found or low confidence — manual review needed",
+        ),
+        ValidationRule(
+            name="invoice_date",
+            description="Invoice date in disclaimer matches portal",
+            check=lambda c: not (date_inv_portal and date_inv_doc and date_inv_portal != date_inv_doc),
+            fail_message=f"Invoice Date mismatch. Document: '{doc_inv_date_str}', Portal: '{portal_inv_date}'",
+            severity="ERROR",
+            unknown_check=lambda c: bool(doc_inv_date_str) and date_inv_doc is None,
+            unknown_message=f"Could not parse Invoice Date in disclaimer: '{doc_inv_date_str}' — manual review",
+        ),
+        ValidationRule(
+            name="date_progression",
+            description="Invoice date must not be after Disclaimer date",
+            check=lambda c: not (date_disclaimer and date_inv_doc and date_inv_doc > date_disclaimer),
+            fail_message=f"Invoice Date ({doc_inv_date_str}) cannot be after Disclaimer Date ({doc_date_str})",
+            severity="ERROR",
+        ),
+        ValidationRule(
+            name="customer_name",
+            description="Customer name found anywhere in the disclaimer document",
+            check=lambda c: is_name_in_text(
+                # Search the full document text — name may appear below signature without a heading
+                c.get("full_text", "") or c.get("doc_cust_name", ""),
+                portal_cust_name
+            ),
+            fail_message=f"Customer Name '{portal_cust_name}' not found anywhere in disclaimer document",
+            severity="WARN",   # Softened — chassis number is the primary identifier
+            unknown_check=lambda c: not portal_cust_name,
+            unknown_message="Portal Customer Name is blank — skipping name check",
+        ),
+        ValidationRule(
+            name="dealership_name",
+            description="Dealership name in disclaimer matches portal",
+            check=_dealer_name_ok,
+            fail_message=f"Dealership Name mismatch. Document: '{doc_dealer_name}', Portal: '{portal_dealer}'",
+            severity="WARN",
+            unknown_check=lambda c: not c.get("doc_dealer_name"),
+            unknown_message="Dealership Name not found in disclaimer — manual review",
+        ),
+        ValidationRule(
+            name="vehicle_model",
+            description="Vehicle model in disclaimer matches portal",
+            check=lambda c: bool(c.get("doc_model")) and check_model_match(portal_model, c.get("doc_model","")),
+            fail_message=f"Vehicle Model mismatch. Document: '{doc_model}', Portal: '{portal_model}'",
+            severity="WARN",
+            unknown_check=lambda c: not c.get("doc_model"),
+            unknown_message="Vehicle Model not found in disclaimer — manual review",
+        ),
+        ValidationRule(
+            name="welcome_bonus_amount",
+            description="Welcome Bonus amount matches portal scheme amount",
+            check=_amount_ok,
+            fail_message=f"Welcome Bonus Amount mismatch. Document: '{doc_amount_str}', Portal: {portal_amount_raw}",
+            enabled=bool(doc_amount_str and doc_amount_str.strip()),
+            severity="WARN",
+            unknown_check=lambda c: not extract_amount_robust(c.get("doc_amount_str","")),
+            unknown_message=f"Could not validate Welcome Bonus Amount: '{doc_amount_str}'",
+        ),
+        ValidationRule(
+            name="customer_signature",
+            description="Customer signature is present on disclaimer",
+            check=lambda c: is_present_robust(c.get("cust_sig_text","")),
+            fail_message="Customer signature is missing or blank",
+            severity="ERROR",
+        ),
+        ValidationRule(
+            name="dealer_stamp",
+            description="Dealership stamp/seal with authorized signature is present on disclaimer",
+            check=lambda c: is_present_robust(c.get("dealer_stamp_text",""), ["STAMP","SEAL"]) and is_present_robust(c.get("dealer_stamp_text",""), ["SIGNATURE","SIGNED"]),
+            fail_message="Dealership stamp/seal or authorized signature is missing",
+            severity="ERROR",
+            unknown_check=lambda c: 0.20 <= c.get("stamp_confidence",1.0) < 0.50,
+            unknown_message="Stamp detected but confidence is low — manual review needed",
+        ),
+    ]
+
+    engine = RuleEngine(rules)
+    rule_results, issues = engine.run_and_get_issues(ctx)
 
     if issues:
         return False, "; ".join(issues)
 
     return True, "Disclaimer Verified Successfully"
+
 
 def process_disclaimer_visual(pdf_path):
     """

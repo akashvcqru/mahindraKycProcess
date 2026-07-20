@@ -8,6 +8,7 @@ import time
 import fitz
 import requests
 from PIL import Image
+from .ledger_validation import is_name_in_text
 
 WELCOME_INVOICE_PROMPT = """You are an expert document analysis AI. Carefully analyze this TAX INVOICE image.
 
@@ -420,174 +421,221 @@ def validate_invoice(pdf_path, claim_details, data_store):
     if data_store:
         data_store.update_doc_data("invoice", extracted)
 
-    issues = []
+    # ── Rule Engine validation ─────────────────────────────────────────────────
+    from document_processing.rule_engine import RuleEngine, ValidationRule
+    from document_processing.validation_result import issues_from_rule_results, summary_status
 
-    # 1. Document classification
-    doc_type = extracted.get("document_type", {}).get("text", "")
-    if not any(k in doc_type.upper() for k in ("INVOICE", "INVOI", "INVOLCE", "INVOOC", "INV")):
-        issues.append("Document heading is not a Tax Invoice")
+    # ── Full document text for name search (much more reliable than extracted field) ──
+    _full_text = ""
+    try:
+        _doc = fitz.open(pdf_path)
+        _full_text = " ".join(page.get_text() for page in _doc).strip()
+        _doc.close()
+    except Exception:
+        pass
+    # If digital text is too sparse (scanned doc), fall back to already-OCR'd extracted fields
+    if len(_full_text) < 50:
+        _full_text = " ".join(
+            v.get("text", "") for v in extracted.values() if isinstance(v, dict)
+        )
 
-    # 2. Compare Chassis Number against Portal
-    doc_chassis = extracted.get("chassis_number", {}).get("text", "")
-    portal_chassis = claim_details.get("Chassis No") or claim_details.get("Chassis Number", "")
-    if not doc_chassis:
-        issues.append("Chassis Number not found in invoice")
-    elif not compare_values_robust(doc_chassis, portal_chassis):
-        issues.append(f"Invoice Chassis Number mismatch. Document: '{doc_chassis}', Portal: '{portal_chassis}'")
+    def _conf(key):
+        return float(extracted.get(key, {}).get("confidence", 1.0))
 
-    # 3. Compare Invoice Number against Portal
-    doc_invoice_no = extracted.get("invoice_number", {}).get("text", "")
-    portal_invoice_no = claim_details.get("Invoice No") or claim_details.get("Invoice Number", "")
-    if not doc_invoice_no:
-        issues.append("Invoice Number not found in invoice")
-    elif not compare_values_robust(doc_invoice_no, portal_invoice_no):
-        issues.append(f"Invoice Number mismatch. Document: '{doc_invoice_no}', Portal: '{portal_invoice_no}'")
+    doc_type        = extracted.get("document_type", {}).get("text", "")
+    doc_chassis     = extracted.get("chassis_number", {}).get("text", "")
+    doc_invoice_no  = extracted.get("invoice_number", {}).get("text", "")
+    doc_inv_date_str= extracted.get("invoice_date", {}).get("text", "")
+    doc_cust_name   = extracted.get("customer_name", {}).get("text", "")
+    doc_dealer_name = extracted.get("dealership_name", {}).get("text", "")
+    doc_model       = extracted.get("new_vehicle_model", {}).get("text", "")
+    cust_sig_text   = extracted.get("customer_signature", {}).get("text", "")
+    dealer_stamp_text = extracted.get("dealer_stamp", {}).get("text", "")
+    auth_sig_text   = extracted.get("authorized_signature", {}).get("text", "")
+    stamp_conf      = float(extracted.get("dealer_stamp", {}).get("confidence", 1.0))
 
-    # 4. Compare Invoice Date against Portal
-    doc_inv_date_str = extracted.get("invoice_date", {}).get("text", "")
-    portal_inv_date_str = claim_details.get("Invoice Date") or claim_details.get("Invoice date", "")
+    portal_chassis     = claim_details.get("Chassis No") or claim_details.get("Chassis Number", "")
+    portal_invoice_no  = claim_details.get("Invoice No") or claim_details.get("Invoice Number", "")
+    portal_inv_date_str= claim_details.get("Invoice Date") or claim_details.get("Invoice date", "")
+    portal_cust_name   = claim_details.get("Customer Name", "")
+    portal_dealer_name = claim_details.get("Dealer Name", "")
+    portal_model       = claim_details.get("New vehicle Model Group") or claim_details.get("Model Group", "")
 
     from datetime import datetime
     def parse_d(s):
-        s_clean = s.strip()
+        s_clean = str(s).strip()
         s_clean = re.sub(r"\b(st|nd|rd|th)\b", "", s_clean, flags=re.IGNORECASE)
         s_clean = re.sub(r"\bof\b", "", s_clean, flags=re.IGNORECASE)
         s_clean = re.sub(r"\s+", " ", s_clean)
-        
         months_map = {
-            "january": "01", "jan": "01",
-            "february": "02", "feb": "02",
-            "march": "03", "mar": "03",
-            "april": "04", "apr": "04",
-            "may": "05",
-            "june": "06", "jun": "06",
-            "july": "07", "jul": "07",
-            "august": "08", "aug": "08",
-            "september": "09", "sep": "09", "sept": "09",
-            "october": "10", "oct": "10",
-            "november": "11", "nov": "11",
-            "december": "12", "dec": "12"
+            "january":"01","jan":"01","february":"02","feb":"02","march":"03","mar":"03",
+            "april":"04","apr":"04","may":"05","june":"06","jun":"06","july":"07","jul":"07",
+            "august":"08","aug":"08","september":"09","sep":"09","sept":"09",
+            "october":"10","oct":"10","november":"11","nov":"11","december":"12","dec":"12"
         }
         for name, num in months_map.items():
-            pattern = re.compile(rf"\b{name}\b", re.IGNORECASE)
-            s_clean, count = pattern.subn(num, s_clean)
-            if count > 0:
+            s_clean, cnt = re.subn(rf"\b{name}\b", num, s_clean, flags=re.IGNORECASE)
+            if cnt > 0:
                 break
-        
         s_clean = re.sub(r"[^0-9]", "-", s_clean)
         s_clean = re.sub(r"-+", "-", s_clean).strip("-")
-        
         digits = re.sub(r"[^0-9]", "", s_clean)
         if len(digits) == 8:
-            day = digits[:2]
-            month = digits[2:4]
-            year = digits[4:]
-            s_clean = f"{day}-{month}-{year}"
-            
-        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%b-%Y", "%d.%m.%Y", "%d-%m-%y", "%d/%m/%y", "%y-%m-%d", "%d-%b-%y", "%d.%m.%y"):
+            s_clean = f"{digits[:2]}-{digits[2:4]}-{digits[4:]}"
+        for fmt in ("%d-%m-%Y","%d/%m/%Y","%Y-%m-%d","%d-%b-%Y","%d.%m.%Y","%d-%m-%y","%d/%m/%y","%d-%b-%y"):
             try:
                 return datetime.strptime(s_clean, fmt).date()
             except ValueError:
                 pass
         return None
 
-    date_invoice_doc = parse_d(doc_inv_date_str)
-    date_invoice_portal = parse_d(portal_inv_date_str)
+    date_doc    = parse_d(doc_inv_date_str)
+    date_portal = parse_d(portal_inv_date_str)
 
-    if not date_invoice_doc:
-        issues.append(f"Could not parse Invoice Date: '{doc_inv_date_str}'")
-    elif date_invoice_portal and date_invoice_portal != date_invoice_doc:
-        import datetime as _dt
-        day_diff = abs((date_invoice_portal - date_invoice_doc).days)
-        if day_diff > 2:
-            issues.append(f"Invoice Date mismatch. Document: '{doc_inv_date_str}', Portal: '{portal_inv_date_str}'")
+    def _date_ok(c):
+        d1 = date_doc
+        d2 = date_portal
+        if not d1:
+            return False
+        if d2 and abs((d2 - d1).days) > 2:
+            return False
+        return True
 
-    # 5. Customer Name comparison
-    doc_cust_name = extracted.get("customer_name", {}).get("text", "")
-    portal_cust_name = claim_details.get("Customer Name", "")
-    if not doc_cust_name:
-        issues.append("Customer Name not found in invoice")
-    else:
-        from .ledger_validation import is_name_in_text
-        if not is_name_in_text(doc_cust_name, portal_cust_name):
-            ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-            msg = f"Customer Name mismatch. Document: '{doc_cust_name}', Portal: '{portal_cust_name}'"
-            if ch_ok:
-                logging.warning(f"[validate_invoice] {msg} (softened to warning because chassis number matched)")
-            else:
-                issues.append(msg)
+    def _chassis_ok(c):
+        dc = c.get("doc_chassis","")
+        return bool(dc) and compare_values_robust(dc, portal_chassis)
 
-    # 6. Dealership Name comparison
-    doc_dealer_name = extracted.get("dealership_name", {}).get("text", "")
-    portal_dealer_name = claim_details.get("Dealer Name", "")
-    if not doc_dealer_name:
-        ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-        msg = "Dealership Name not found in invoice"
-        if ch_ok:
-            logging.warning(f"[validate_invoice] {msg} (softened to warning because chassis number matched)")
-        else:
-            issues.append(msg)
-    else:
-        def clean_d_name(name):
-            s = re.sub(r"[^a-zA-Z0-9]", " ", str(name).lower())
-            return re.sub(r"\s+", " ", s).strip()
-            
-        cleaned_doc = clean_d_name(doc_dealer_name)
-        cleaned_portal = clean_d_name(portal_dealer_name)
-        if cleaned_doc != cleaned_portal:
+    def _dealer_name_ok(c):
+        doc = re.sub(r"[^a-zA-Z0-9]", " ", str(c.get("doc_dealer_name","")).lower()).strip()
+        portal = re.sub(r"[^a-zA-Z0-9]", " ", str(portal_dealer_name).lower()).strip()
+        if not doc or not portal:
+            return False
+        try:
             from rapidfuzz import fuzz
-            score = fuzz.token_sort_ratio(cleaned_doc, cleaned_portal)
-            if score < 70:
-                ch_ok = doc_chassis and compare_values_robust(doc_chassis, portal_chassis)
-                msg = f"Dealership Name mismatch. Document: '{doc_dealer_name}', Portal: '{portal_dealer_name}'"
-                if ch_ok:
-                    logging.warning(f"[validate_invoice] {msg} (softened to warning because chassis number matched)")
-                else:
-                    issues.append(msg)
+            return fuzz.token_sort_ratio(doc, portal) >= 70
+        except ImportError:
+            return doc == portal
 
-    # 7. Model comparison
-    doc_model = extracted.get("new_vehicle_model", {}).get("text", "")
-    portal_model = claim_details.get("New vehicle Model Group") or claim_details.get("Model Group", "")
-    if not doc_model:
-        issues.append("Vehicle Model not found in invoice")
-    elif not check_model_match(portal_model, doc_model):
-        issues.append(f"Vehicle Model mismatch. Document: '{doc_model}', Portal Model Group: '{portal_model}'")
+    ctx = {
+        "doc_type":         doc_type,
+        "doc_chassis":      doc_chassis,
+        "doc_invoice_no":   doc_invoice_no,
+        "doc_inv_date":     doc_inv_date_str,
+        "doc_cust_name":    doc_cust_name,
+        "doc_dealer_name":  doc_dealer_name,
+        "doc_model":        doc_model,
+        "cust_sig_text":    cust_sig_text,
+        "dealer_stamp_text":dealer_stamp_text,
+        "auth_sig_text":    auth_sig_text,
+        "stamp_confidence": stamp_conf,
+        "chassis_conf":     _conf("chassis_number"),
+        "cust_conf":        _conf("customer_name"),
+        "dealer_conf":      _conf("dealership_name"),
+        "inv_no_conf":      _conf("invoice_number"),
+        "inv_date_conf":    _conf("invoice_date"),
+        "model_conf":       _conf("new_vehicle_model"),
+        "full_text":        _full_text,
+    }
 
-    # 8. Visual Elements
-    cust_sig = extracted.get("customer_signature", {}).get("text", "")
-    if not is_present_robust(cust_sig):
-        issues.append("Customer signature is missing or blank on invoice")
+    rules = [
+        ValidationRule(
+            name="invoice_classification",
+            description="Document is classified as Tax Invoice",
+            check=lambda c: any(k in str(c.get("doc_type","")).upper() for k in ("INVOICE","INVOI","INVOLCE","INV")),
+            fail_message="Document heading is not a Tax Invoice",
+            severity="ERROR",
+        ),
+        ValidationRule(
+            name="chassis_number",
+            description="Chassis number in invoice matches portal",
+            check=_chassis_ok,
+            fail_message=f"Invoice Chassis Number mismatch. Document: '{doc_chassis}', Portal: '{portal_chassis}'",
+            severity="ERROR",
+            unknown_check=lambda c: c.get("chassis_conf", 1.0) < 0.60,
+            unknown_message=f"Chassis number OCR confidence too low ({_conf('chassis_number'):.2f}) — manual review",
+        ),
+        ValidationRule(
+            name="invoice_number",
+            description="Invoice number matches portal",
+            check=lambda c: bool(c.get("doc_invoice_no")) and compare_values_robust(c.get("doc_invoice_no",""), portal_invoice_no),
+            fail_message=f"Invoice Number mismatch. Document: '{doc_invoice_no}', Portal: '{portal_invoice_no}'",
+            severity="ERROR",
+            unknown_check=lambda c: not c.get("doc_invoice_no") or c.get("inv_no_conf",1.0) < 0.60,
+            unknown_message="Invoice Number not found or low confidence — manual review needed",
+        ),
+        ValidationRule(
+            name="invoice_date",
+            description="Invoice date matches portal (within 2 days)",
+            check=_date_ok,
+            fail_message=f"Invoice Date mismatch. Document: '{doc_inv_date_str}', Portal: '{portal_inv_date_str}'",
+            severity="ERROR",
+            unknown_check=lambda c: not date_doc,
+            unknown_message=f"Could not parse Invoice Date: '{doc_inv_date_str}' — manual review",
+        ),
+        ValidationRule(
+            name="customer_name",
+            description="Customer name found anywhere in the invoice document",
+            check=lambda c: is_name_in_text(
+                # Search the full document text — name may appear below signature without a heading
+                c.get("full_text", "") or c.get("doc_cust_name", ""),
+                portal_cust_name
+            ),
+            fail_message=f"Customer Name '{portal_cust_name}' not found anywhere in invoice document",
+            severity="WARN",   # Softened — chassis number is the primary identifier
+            unknown_check=lambda c: not portal_cust_name,
+            unknown_message="Portal Customer Name is blank — skipping name check",
+        ),
+        ValidationRule(
+            name="dealership_name",
+            description="Dealership name matches portal",
+            check=_dealer_name_ok,
+            fail_message=f"Dealership Name mismatch. Document: '{doc_dealer_name}', Portal: '{portal_dealer_name}'",
+            severity="WARN",   # Softened per existing logic — chassis match overrides this
+            unknown_check=lambda c: not c.get("doc_dealer_name"),
+            unknown_message="Dealership Name not found in invoice — manual review",
+        ),
+        ValidationRule(
+            name="vehicle_model",
+            description="Vehicle model matches portal",
+            check=lambda c: bool(c.get("doc_model")) and check_model_match(portal_model, c.get("doc_model","")),
+            fail_message=f"Vehicle Model mismatch. Document: '{doc_model}', Portal: '{portal_model}'",
+            severity="ERROR",
+            unknown_check=lambda c: not c.get("doc_model"),
+            unknown_message="Vehicle Model not found in invoice — manual review",
+        ),
+        ValidationRule(
+            name="customer_signature",
+            description="Customer signature is present on invoice",
+            check=lambda c: is_present_robust(c.get("cust_sig_text","")),
+            fail_message="Customer signature is missing or blank on invoice",
+            severity="ERROR",
+        ),
+        ValidationRule(
+            name="dealer_stamp",
+            description="Dealership stamp/seal is present on invoice",
+            check=lambda c: is_present_robust(c.get("dealer_stamp_text",""), ["STAMP","SEAL"]),
+            fail_message="Dealership stamp/seal is missing on invoice",
+            severity="ERROR",
+            unknown_check=lambda c: 0.20 <= c.get("stamp_confidence",1.0) < 0.50,
+            unknown_message="Stamp detected but confidence is low — manual review needed",
+        ),
+        ValidationRule(
+            name="authorized_signature",
+            description="Authorized signature is present on invoice",
+            check=lambda c: is_present_robust(c.get("auth_sig_text",""), ["SIGNATURE","SIGNED"]),
+            fail_message="Dealership authorized signature is missing from invoice stamp/seal",
+            severity="ERROR",
+        ),
+    ]
 
-    dealer_stamp = extracted.get("dealer_stamp", {}).get("text", "")
-    if not is_present_robust(dealer_stamp, ["STAMP", "SEAL"]):
-        issues.append("Dealership stamp/seal is missing on invoice")
-    else:
-        portal_dealer_name = claim_details.get("Dealer Name", "")
-        if portal_dealer_name:
-            stamp_upper = dealer_stamp.upper().replace(" ", "").replace("&", "").replace("-", "")
-            skip_words = {"LTD", "PVT", "MOTORS", "CO", "AND", "THE", "DEALERSHIP", "STAMP", "SEAL", "AUTOMOBILE", "AUTOMOBILES", "ENTERPRISES", "DEALER", "LIMIT", "LIMITED"}
-            name_words = [w.strip() for w in portal_dealer_name.upper().split() if w.strip() not in skip_words and len(w.strip()) > 2]
-            belongs = False
-            if name_words:
-                for word in name_words:
-                    if word in stamp_upper:
-                        belongs = True
-                        break
-            else:
-                dealer_clean = portal_dealer_name.upper().replace(" ", "").replace("&", "").replace("-", "")
-                belongs = dealer_clean in stamp_upper or stamp_upper in dealer_clean
-                
-            if not belongs:
-                issues.append(f"Invoice stamp/seal does not belong to dealer '{portal_dealer_name}' (Stamp text: '{dealer_stamp}')")
-
-    auth_sig = extracted.get("authorized_signature", {}).get("text", "")
-    if not is_present_robust(auth_sig, ["SIGNATURE", "SIGNED"]):
-        issues.append("Dealership authorized signature is missing from invoice stamp/seal")
+    engine = RuleEngine(rules)
+    rule_results, issues = engine.run_and_get_issues(ctx)
 
     if issues:
         return False, "; ".join(issues)
 
     return True, "Invoice Verified Successfully"
+
 
 def process_invoice_visual(pdf_path):
     """

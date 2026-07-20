@@ -8,8 +8,9 @@ from .ledger_validation import validate_ledger
 from .invoice_validation import validate_invoice
 from .disclaimer_validation import validate_disclaimer
 from .relational_document_validation import validate_relational
+from document_processing.classifier import classify_document as _classify_document
 
-# Keywords/prefixes for document classification
+# Keywords/prefixes for document classification (kept for legacy processor.get_pdf_text)
 _LEDGER_PREFIXES  = ("LDGR", "LES", "L-", "LGR", "LDR", "LDG")
 _LEDGER_KEYWORDS  = ("LEDGER",)
 _INVOICE_PREFIXES = ("INV",)
@@ -63,37 +64,18 @@ def get_pdf_text(f_path):
     return text
 
 def classify_document(f_path):
-    filename = os.path.basename(f_path).upper()
-    
-    # ── 1. Filename prefix/keyword checks ──
-    if "TAX INVOICE" in filename or "GST INVOICE" in filename or "INVOICE" in filename:
-        return "INVOICE"
-    for p in _INVOICE_PREFIXES:
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
-            return "INVOICE"
-
-    if any(k in filename for k in ("LEDGER", "STMT", "STATEMENT")):
-        return "LEDGER"
-    for p in _LEDGER_PREFIXES:
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
-            return "LEDGER"
-
-    if "DISCLAIMER" in filename or "DESCLAIMER" in filename:
-        return "DISCLAIMER"
-    for p in _DISCLAIMER_PREFIXES:
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
-            return "DISCLAIMER"
-
-    # ── 2. Content fallback checks ──
-    text = get_pdf_text(f_path).upper()
-    if "CUSTOMER DISCLAIMER" in text or "DISCLAIMER FOR WELCOME" in text or "DISCLAIMER" in text or "DESCLAIMER" in text:
-        return "DISCLAIMER"
-    if "STATEMENT OF ACCOUNT" in text or "LEDGER" in text or "JOURNAL ENTRY" in text:
-        return "LEDGER"
-    if "TAX INVOICE" in text or "INVOICE" in text:
-        return "INVOICE"
-        
-    return None
+    """Thin wrapper around the new centralized document classifier."""
+    result = _classify_document(f_path)
+    doc_type = result.get("type")
+    confidence = result.get("confidence", 0.0)
+    # Only return types relevant to welcome_scheme
+    if doc_type in ("INVOICE", "LEDGER", "DISCLAIMER"):
+        return doc_type
+    # Low confidence = log as unknown
+    if confidence < 0.50:
+        logging.warning(f"[processor] Could not classify {os.path.basename(f_path)} (conf={confidence:.2f})")
+        return None
+    return doc_type
 
 def process_welcome(
     target_dir,
@@ -164,13 +146,23 @@ def process_welcome(
             
             ext = data_store.get_doc_data("ledger")
             ui_extracted = {k: v.get("text") for k, v in ext.items() if isinstance(v, dict)}
+
+            def _conf_status(key, pass_str="PASS", fail_str="FAIL"):
+                """Return PASS/FAIL/UNKNOWN based on field confidence."""
+                field = ext.get(key, {})
+                if isinstance(field, dict):
+                    conf = field.get("confidence", 1.0)
+                    if conf < 0.60:
+                        return "UNKNOWN"
+                return pass_str
+
             ui_validations = {
                 "Ledger Heading Classification": "PASS" if any(k in ext.get("document_type", {}).get("text", "").upper() for k in ("LEDGER", "STATEMENT", "ACCOUNT", "STMT")) else "FAIL",
-                "Customer Name Verification": "MATCH" if "Customer Name mismatch" not in msg else "MISMATCH",
-                "Dealership Name Verification": "MATCH" if "Dealership Name mismatch" not in msg else "MISMATCH",
-                "Welcome Bonus Amount Verification": "MATCH" if "Amount mismatch" not in msg else "MISMATCH",
-                "Dealership Stamp/Seal Presence": "FOUND" if "stamp/seal is missing" not in msg else "MISSING",
-                "Stamp Authorized Signature": "FOUND" if "authorized signature is missing" not in msg else "MISSING"
+                "Customer Name Verification": "UNKNOWN" if _conf_status("customer_name") == "UNKNOWN" else ("PASS" if "Customer Name mismatch" not in msg else "FAIL"),
+                "Dealership Name Verification": "UNKNOWN" if _conf_status("dealership_name") == "UNKNOWN" else ("PASS" if "Dealership Name mismatch" not in msg else "FAIL"),
+                "Welcome Bonus Amount Verification": "PASS" if "Amount mismatch" not in msg else "FAIL",
+                "Dealership Stamp/Seal Presence": "UNKNOWN" if "stamp/seal is missing" not in msg and ext.get("dealer_stamp", {}).get("confidence", 1.0) < 0.60 else ("PASS" if "stamp/seal is missing" not in msg else "FAIL"),
+                "Stamp Authorized Signature": "PASS" if "authorized signature is missing" not in msg else "FAIL"
             }
 
         # ── Invoice ──────────────────────────────────────────────────────────
@@ -182,17 +174,24 @@ def process_welcome(
             
             ext = data_store.get_doc_data("invoice")
             ui_extracted = {k: v.get("text") for k, v in ext.items() if isinstance(v, dict)}
+
+            def _inv_conf_status(key):
+                field = ext.get(key, {})
+                if isinstance(field, dict) and field.get("confidence", 1.0) < 0.60:
+                    return "UNKNOWN"
+                return None
+
             ui_validations = {
                 "Invoice Classification": "PASS" if "INVOICE" in ext.get("document_type", {}).get("text", "").upper() else "FAIL",
-                "Chassis Number Verification": "MATCH" if "Chassis Number mismatch" not in msg and "Chassis Number not found" not in msg else "MISMATCH",
-                "Invoice Number Verification": "MATCH" if "Invoice Number mismatch" not in msg else "MISMATCH",
-                "Invoice Date Verification": "MATCH" if "Invoice Date mismatch" not in msg else "MISMATCH",
-                "Customer Name Verification": "MATCH" if "Customer Name mismatch" not in msg else "MISMATCH",
-                "Dealership Name Verification": "MATCH" if "Dealership Name mismatch" not in msg else "MISMATCH",
-                "New Vehicle Model Verification": "MATCH" if "Vehicle Model mismatch" not in msg else "MISMATCH",
-                "Customer Signature Presence": "FOUND" if "Customer signature is missing" not in msg else "MISSING",
-                "Dealership Stamp/Seal Presence": "FOUND" if "stamp/seal is missing" not in msg else "MISSING",
-                "Stamp Authorized Signature": "FOUND" if "authorized signature is missing" not in msg else "MISSING"
+                "Chassis Number Verification": _inv_conf_status("chassis_number") or ("PASS" if "Chassis Number mismatch" not in msg and "Chassis Number not found" not in msg else "FAIL"),
+                "Invoice Number Verification": _inv_conf_status("invoice_number") or ("PASS" if "Invoice Number mismatch" not in msg else "FAIL"),
+                "Invoice Date Verification": _inv_conf_status("invoice_date") or ("PASS" if "Invoice Date mismatch" not in msg else "FAIL"),
+                "Customer Name Verification": _inv_conf_status("customer_name") or ("PASS" if "Customer Name mismatch" not in msg else "FAIL"),
+                "Dealership Name Verification": _inv_conf_status("dealership_name") or ("PASS" if "Dealership Name mismatch" not in msg else "FAIL"),
+                "New Vehicle Model Verification": _inv_conf_status("new_vehicle_model") or ("PASS" if "Vehicle Model mismatch" not in msg else "FAIL"),
+                "Customer Signature Presence": "UNKNOWN" if ext.get("customer_signature", {}).get("confidence", 1.0) < 0.35 else ("PASS" if "Customer signature is missing" not in msg else "FAIL"),
+                "Dealership Stamp/Seal Presence": "UNKNOWN" if ext.get("dealer_stamp", {}).get("confidence", 1.0) < 0.35 else ("PASS" if "stamp/seal is missing" not in msg else "FAIL"),
+                "Stamp Authorized Signature": "PASS" if "authorized signature is missing" not in msg else "FAIL"
             }
 
         # ── Disclaimer ───────────────────────────────────────────────────────
@@ -204,19 +203,26 @@ def process_welcome(
             
             ext = data_store.get_doc_data("disclaimer")
             ui_extracted = {k: v.get("text") for k, v in ext.items() if isinstance(v, dict)}
+
+            def _disc_conf_status(key):
+                field = ext.get(key, {})
+                if isinstance(field, dict) and field.get("confidence", 1.0) < 0.60:
+                    return "UNKNOWN"
+                return None
+
             ui_validations = {
                 "Disclaimer Heading Classification": "PASS" if "DISCLAIMER" in ext.get("document_title", {}).get("text", "").upper() else "FAIL",
-                "Chassis Number Verification": "MATCH" if "Chassis Number mismatch" not in msg and "Chassis Number not found" not in msg else "MISMATCH",
-                "Invoice Number Verification": "MATCH" if "Invoice Number mismatch" not in msg else "MISMATCH",
-                "Invoice Date Verification": "MATCH" if "Invoice Date mismatch" not in msg else "MISMATCH",
+                "Chassis Number Verification": _disc_conf_status("chassis_number") or ("PASS" if "Chassis Number mismatch" not in msg and "Chassis Number not found" not in msg else "FAIL"),
+                "Invoice Number Verification": _disc_conf_status("invoice_number") or ("PASS" if "Invoice Number mismatch" not in msg else "FAIL"),
+                "Invoice Date Verification": _disc_conf_status("invoice_date") or ("PASS" if "Invoice Date mismatch" not in msg else "FAIL"),
                 "Date Progression (Invoice <= Disclaimer)": "PASS" if "cannot be after" not in msg else "FAIL",
-                "Customer Name Verification": "MATCH" if "Customer Name mismatch" not in msg else "MISMATCH",
-                "Dealership Name Verification": "MATCH" if "Dealership Name mismatch" not in msg else "MISMATCH",
-                "New Vehicle Model Verification": "MATCH" if "Vehicle Model mismatch" not in msg else "MISMATCH",
-                "Welcome Bonus Amount Verification": "MATCH" if "Amount mismatch" not in msg else "MISMATCH",
-                "Customer Signature Presence": "FOUND" if "Customer signature is missing" not in msg else "MISSING",
-                "Dealership Stamp/Seal Presence": "FOUND" if "stamp/seal is missing" not in msg else "MISSING",
-                "Stamp Authorized Signature": "FOUND" if "authorized signature is missing" not in msg else "MISSING"
+                "Customer Name Verification": _disc_conf_status("customer_name") or ("PASS" if "Customer Name mismatch" not in msg else "FAIL"),
+                "Dealership Name Verification": _disc_conf_status("dealership_name") or ("PASS" if "Dealership Name mismatch" not in msg else "FAIL"),
+                "New Vehicle Model Verification": _disc_conf_status("model") or ("PASS" if "Vehicle Model mismatch" not in msg else "FAIL"),
+                "Welcome Bonus Amount Verification": "PASS" if "Amount mismatch" not in msg else "FAIL",
+                "Customer Signature Presence": "UNKNOWN" if ext.get("customer_signature", {}).get("confidence", 1.0) < 0.35 else ("PASS" if "Customer signature is missing" not in msg else "FAIL"),
+                "Dealership Stamp/Seal Presence": "UNKNOWN" if ext.get("dealer_stamp", {}).get("confidence", 1.0) < 0.35 else ("PASS" if "stamp/seal is missing" not in msg else "FAIL"),
+                "Stamp Authorized Signature": "PASS" if "authorized signature is missing" not in msg else "FAIL"
             }
 
         # Update GUI elements with extracted metadata

@@ -156,22 +156,10 @@ def try_extract_invoice_fields(pdf_path: str, claim_details: dict = None) -> dic
     cache_path = os.path.join("scratch", "ocr_txt", f"{parent}_{fname}.txt")
 
     if (len(result) < 4 or not has_critical) and not os.path.exists(cache_path):
-        logging.info(f"[reader_invoice] Text extraction insufficient. Running EasyOCR fallback for {pdf_path}...")
+        logging.info(f"[reader_invoice] Text extraction insufficient. Running OCR pipeline for {pdf_path}...")
         try:
-            import fitz
-            import easyocr
-            import numpy as np
-            import io
-            from PIL import Image
-            doc = fitz.open(pdf_path)
-            reader = easyocr.Reader(['en'], gpu=False, verbose=False)
-            ocr_lines = []
-            for page in doc:
-                pix = page.get_pixmap(dpi=150)
-                img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
-                res = reader.readtext(np.array(img), detail=0)
-                ocr_lines.extend(res)
-            ocr_text = "\n".join(ocr_lines)
+            from document_processing.ocr.engine import extract_full_text
+            ocr_text = extract_full_text(pdf_path, ocr_dpi=200)
             
             ocr_result = extract_fields_from_text(ocr_text)
             if len(ocr_result) > len(result):

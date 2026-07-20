@@ -20,88 +20,19 @@ _DISCLAIMER_KEYWORDS = ("DISCLAIMER",)
 
 
 def classify_document(f_path):
-    from .cod_validation import get_pdf_text
-    
-    filename = os.path.basename(f_path).upper()
-    
-    # ── 1. Strong Filename Checks (Prioritized over text to prevent overlapping keywords) ──
-    
-    # Invoice
-    if "TAX INVOICE" in filename or "GST INVOICE" in filename or "INVOICE" in filename or "INVOLCE" in filename:
-        return "INVOICE"
-    for p in ("INV",):
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
-            return "INVOICE"
-            
-    # Ledger
-    if any(k in filename for k in ("LEDGER", "STMT", "STATEMENT")):
-        return "LEDGER"
-    for p in ("LDGR", "LES", "LGR", "LDR", "LDG", "LED", "L-"):
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
-            return "LEDGER"
-            
-    # Disclaimer
-    if "DISCLAIMER" in filename or "DESCLAIMER" in filename:
-        return "DISCLAIMER"
-    for p in ("DIS", "DSC", "CD-", "DES", "DS"):
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
-            return "DISCLAIMER"
-            
-    # COD
-    if "TRANSFER CERTIFICATE OF DEPOSIT" in filename or "CERTIFICATE OF DEPOSIT" in filename:
-        return "COD"
-    for p in ("COD",):
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename or f"_{p}" in filename:
-            return "COD"
-            
-    # OEM (Vahan)
-    if any(k in filename for k in ("OEM", "VAHAN SCREEN", "VAHAN", "VAHON", "SCREENSHOT", "SCREEN SHORT", "OEM SCRAPPING")):
-        return "OEM"
-
-    # ── 2. Content text/OCR Fallback ──
-    text = ""
-    try:
-        text = get_pdf_text(f_path).upper()
-    except Exception as exc:
-        logging.warning(f"Could not extract text for classification of {f_path}: {exc}")
-
-    # OEM
-    if "OEM SCRAPPING" in text or "OEM INCENTIVE" in text or "DETAILS OF CDS" in text:
-        return "OEM"
-
-    # COD
-    if "CERTIFICATE OF DEPOSIT" in text or "CERTIFICATE DEPOSIT" in text:
-        return "COD"
-
-    # Disclaimer
-    if "DISCLAIMER" in text or "DESCLAIMER" in text:
-        return "DISCLAIMER"
-        
-    return None
-
-    if "TRANSFER CERTIFICATE OF DEPOSIT" in filename or "CERTIFICATE OF DEPOSIT" in filename or "COD" in filename:
-        return "COD"
-
-    for k in ("INVOICE", "TAX INV", "GST INV"):
-        if k in filename:
-            return "INVOICE"
-    for p in ("INV",):
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename:
-            return "INVOICE"
-
-    if any(k in filename for k in ("LEDGER", "STMT", "STATEMENT")):
-        return "LEDGER"
-    for p in ("LDGR", "LES", "LGR", "LDR", "LDG", "LED", "L-"):
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename:
-            return "LEDGER"
-
-    for k in ("CERTIFICATE OF DEPOSIT", "CERTIFICATE DEPOSIT", "SCRAPPAGE CERTIFICATE", "COD", "OEM", "VAHAN SCREEN", "VAHAN", "SCREENSHOT", "SCREEN SHORT", "OEM SCRAPPING", "OEM SCRAPPING INCENTIVE"):
-        if k in filename:
-            return "OEM"
-    for p in ("COD", "OEM"):
-        if filename.startswith(p) or f" {p}" in filename or f"-{p}" in filename:
-            return "OEM"
-
+    """Centralized document classifier wrapper for Scrappage Scheme."""
+    from document_processing.classifier import classify_document as _classify_document
+    result = _classify_document(f_path)
+    doc_type = result.get("type")
+    confidence = result.get("confidence", 0.0)
+    # Only return types relevant to scrappage_scheme
+    if doc_type in ("INVOICE", "LEDGER", "DISCLAIMER", "COD", "OEM"):
+        return doc_type
+    # Low confidence fallback logic
+    if confidence < 0.50:
+        logging.warning(f"[scrappage processor] Could not classify {os.path.basename(f_path)} (conf={confidence:.2f})")
+        return None
+    return doc_type
     return None
 
 

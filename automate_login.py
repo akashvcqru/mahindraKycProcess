@@ -1181,6 +1181,12 @@ def extract_scheme_type_from_old_vehicle_details(page):
 
 def select_drawer_timeline_tab(page, tab_name):
     """Clicks on a specific timeline item tab in the details drawer sidebar."""
+    # Wait for any loading spinners to disappear first
+    try:
+        page.wait_for_selector(".ant-spin-spinning", state="hidden", timeout=15000)
+    except Exception:
+        pass
+
     drawer_body = page.locator("div.ant-drawer-body")
     tab_locator = None
 
@@ -1376,6 +1382,12 @@ def download_supporting_documents(page, context, customer_name):
     
     logging.info(f"Target directory for documents: {target_dir}")
 
+    # Wait for any loading spinners to disappear first
+    try:
+        page.wait_for_selector(".ant-spin-spinning", state="hidden", timeout=15000)
+    except Exception:
+        pass
+
     # Target data-testid="downloadBtn" directly inside the supporting documents view
     button_selector = '[data-testid="downloadBtn"], svg[data-testid="downloadBtn"]'
     try:
@@ -1466,7 +1478,14 @@ def download_supporting_documents(page, context, customer_name):
                     # Click parent container (e.g. if btn is an SVG icon, click the containing button)
                     btn.locator("xpath=..").click(timeout=1000)
                 except Exception:
-                    btn.dispatch_event("click")
+                    try:
+                        btn.dispatch_event("click")
+                    except Exception:
+                        pass
+                    try:
+                        btn.locator("xpath=..").dispatch_event("click")
+                    except Exception:
+                        pass
 
             # Wait up to 10 seconds for file capture
             start_time = time.time()

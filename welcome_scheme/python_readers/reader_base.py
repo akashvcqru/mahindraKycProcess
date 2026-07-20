@@ -8,8 +8,9 @@ import logging
 import os
 import re
 
-import fitz  # PyMuPDF
-
+# New structured OCR engine (fitz fast-check + EasyOCR + preprocessing)
+from document_processing.ocr.engine import extract_full_text, extract_page
+from document_processing.ocr.fitz_reader import render_page_to_pil
 
 # Minimum characters of extracted text to consider a PDF "text-based"
 _TEXT_MIN_CHARS = 80
@@ -39,11 +40,8 @@ def extract_pdf_text(pdf_path: str) -> str:
 
     try:
         if pdf_path.lower().endswith(".pdf"):
-            doc = fitz.open(pdf_path)
-            pages_text = []
-            for page in doc:
-                pages_text.append(page.get_text("text"))
-            return "\n".join(pages_text)
+            # Use new pipeline: fitz first, EasyOCR+preprocessing fallback
+            return extract_full_text(pdf_path, ocr_dpi=200)
         else:
             return ""
     except Exception as exc:
@@ -59,13 +57,28 @@ def is_text_based(pdf_path: str) -> bool:
     return len(text.strip()) >= _TEXT_MIN_CHARS
 
 
-def _field(text_value: str, line_no: int = 0) -> dict:
-    """Build a standardised field dict returned by all readers."""
+def _field(text_value: str, line_no: int = 0, confidence: float = 1.0,
+           source: str = "python") -> dict:
+    """
+    Build a standardised field dict returned by all readers.
+
+    Args:
+        text_value:  The extracted text value
+        line_no:     Line number in the source document (1-indexed)
+        confidence:  Extraction confidence 0.0-1.0.
+                     Use 1.0 for regex-based extractions (certain).
+                     Use the actual OCR confidence for OCR-sourced fields.
+                     Fields with confidence < 0.60 should be routed to UNKNOWN
+                     instead of FAIL during validation.
+        source:      How the field was extracted: "python", "ocr", "vision"
+    """
     return {
-        "text": text_value.strip(),
-        "line": line_no,
-        "source": "python",
+        "text":       text_value.strip(),
+        "line":       line_no,
+        "confidence": round(float(confidence), 3),
+        "source":     source,
     }
+
 
 
 def first_match(pattern: str, text: str, flags=re.IGNORECASE) -> str | None:
@@ -256,24 +269,52 @@ def assist_extraction_with_portal(result: dict, text: str, claim_details: dict) 
 
         p_dt = parse_portal_d(portal_date)
         if p_dt:
-            day_str = str(p_dt.day)
-            day_padded = f"{p_dt.day:02d}"
-            month_str = f"{p_dt.month:02d}"
-            year_str = str(p_dt.year)
-            year_short = year_str[-2:]
-            
-            months_names = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
-            month_name = months_names[p_dt.month - 1]
-            
-            for i, ln in enumerate(lines, 1):
-                ln_up = ln.upper()
-                # Check if line contains day and year, and either month number or month name
-                if (day_str in ln_up or day_padded in ln_up) and (year_str in ln_up or year_short in ln_up):
-                    if month_str in ln_up or month_name in ln_up:
-                        date_match = re.search(r"(\d{1,2}[\-\/\.]?(?:[A-Z]{3,9}|\d{1,2})[\-\/\.]?\d{2,4})", ln_up)
-                        if date_match:
-                            result["invoice_date"] = _field(date_match.group(1), i)
-                            break
+            # Skip if already correctly extracted by the primary regex
+            existing_date_text = result.get("invoice_date", {}).get("text", "")
+            if existing_date_text:
+                existing_parsed = parse_portal_d(existing_date_text)
+                if existing_parsed == p_dt:
+                    # Primary regex already got it right — don't overwrite
+                    pass
+                else:
+                    existing_date_text = ""  # Wrong value — let assist fix it
+
+            if not existing_date_text:
+                day_padded = f"{p_dt.day:02d}"
+                month_str = f"{p_dt.month:02d}"
+                year_str = str(p_dt.year)
+                year_short = year_str[-2:]
+
+                months_names = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+                month_name = months_names[p_dt.month - 1]
+
+                # Tight date pattern: requires proper separators (-, /, .) between components
+                # This prevents matching invoice number fragments like 27DOO0172
+                DATE_PAT = re.compile(
+                    r"(?<![A-Z0-9])(\d{1,2}[\-\/\.][A-Za-z]{3,9}[\-\/\.]\d{2,4}"
+                    r"|\d{1,2}[\-\/\.]\d{1,2}[\-\/\.]\d{2,4}"
+                    r"|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4})(?![A-Z0-9])"
+                )
+
+                for i, ln in enumerate(lines, 1):
+                    ln_up = ln.upper()
+
+                    # Use word-boundary day check to avoid matching '17' inside '0172'
+                    day_found = bool(re.search(rf"(?<![0-9]){day_padded}(?![0-9])", ln_up))
+                    year_found = year_str in ln_up or year_short in ln_up
+                    month_found = month_str in ln_up or month_name in ln_up
+
+                    if not (day_found and year_found and month_found):
+                        continue
+
+                    # Prefer text after 'Invoice Date' keyword if present on this line
+                    inv_date_kw = re.search(r"Invoice[_\s]+Date[:\-_]?\s*", ln_up, re.IGNORECASE)
+                    search_str = ln_up[inv_date_kw.end():] if inv_date_kw else ln_up
+
+                    date_match = DATE_PAT.search(search_str)
+                    if date_match:
+                        result["invoice_date"] = _field(date_match.group(1), i)
+                        break
                         
     return result
 

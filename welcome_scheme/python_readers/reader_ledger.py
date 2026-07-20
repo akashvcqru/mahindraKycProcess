@@ -97,10 +97,10 @@ def _extract_bonus_row(text: str, lines: list[str], claim_details: dict = None) 
                     cr_ln = lines[j]
                     if re.search(r"\bCr\b", cr_ln, re.IGNORECASE) or re.search(r"Credit\s+Note|Cr\s+", cr_ln, re.IGNORECASE):
                         block = "\n".join(lines[j: j + 3])
-                        norm = block.upper().replace("O", "0").replace("Q", "0").replace("I", "1").replace("S", "5").replace("Z", "7").replace("B", "8")
-                        norm = re.sub(r"(\d+)\s+(\d{2}(?:\b|[A-Z]))", r"\1.\2", norm)
+                        norm = block.upper().replace("O", "0").replace("Q", "0").replace("I", "1").replace("S", "5").replace("Z", "7").replace("B", "8").replace(",", "")
+                        norm = re.sub(r"(\d+)[ \t]+(\d{2}(?:\b|[A-Z]))", r"\1.\2", norm)
                         for _ in range(3):
-                            norm = re.sub(r"(\d+)\s+(\d{2,3}(?:\b|\.))", r"\1\2", norm)
+                            norm = re.sub(r"(\d+)[ \t]+(\d{2,3}(?:\b|\.))", r"\1\2", norm)
                         amt_matches = re.findall(r"\b(\d{4,10}(?:\.\d+)?)\b", norm)
                         for amt_str in amt_matches:
                             try:
@@ -137,16 +137,17 @@ def _extract_bonus_row(text: str, lines: list[str], claim_details: dict = None) 
                         except ValueError:
                             pass
                             
-            # Look for large amounts in next 3 lines (and previous 2 lines) if not found
-            amount_block = "\n".join(lines[max(0, i-3): i + 3])
-            norm_block = amount_block.upper().replace("O", "0").replace("Q", "0").replace("I", "1").replace("S", "5").replace("Z", "7").replace("B", "8")
+            # Look for large amounts in next 10 lines (and previous 3 lines) if not found
+            # Increased window from 3 to 10 lines to support OCR columns split horizontally
+            amount_block = "\n".join(lines[max(0, i-3): i + 10])
+            norm_block = amount_block.upper().replace("O", "0").replace("Q", "0").replace("I", "1").replace("S", "5").replace("Z", "7").replace("B", "8").replace(",", "")
 
             # If space is followed by exactly 2 digits, treat as decimal dot
-            norm_block = re.sub(r"(\d+)\s+(\d{2}(?:\b|[A-Z]))", r"\1\2", norm_block)
+            norm_block = re.sub(r"(\d+)[ \t]+(\d{2}(?:\b|[A-Z]))", r"\1\2", norm_block)
 
             # Clean OCR spaces in numbers (e.g. "25 428.78" -> "25428.78")
             for _ in range(3):
-                norm_block = re.sub(r"(\d+)\s+(\d{2,3}(?:\b|\.))", r"\1\2", norm_block)
+                norm_block = re.sub(r"(\d+)[ \t]+(\d{2,3}(?:\b|\.))", r"\1\2", norm_block)
 
             # Prefer amounts >= 1000 to avoid picking up 3-digit voucher numbers
             amt_matches = re.findall(r"\b(\d{4,10}(?:\.\d+)?)\b", norm_block)
@@ -164,6 +165,9 @@ def _extract_bonus_row(text: str, lines: list[str], claim_details: dict = None) 
                                     break
                         if best_match:
                             break
+                        # Avoid picking up years from date strings (e.g. 2024, 2025, 2026, 2027) as fallback amounts
+                        if val in (2024, 2025, 2026, 2027):
+                            continue
                         if not amount:
                             amount = a
                 except ValueError:
@@ -293,22 +297,10 @@ def try_extract_ledger_fields(pdf_path: str, claim_details: dict = None) -> dict
     cache_path = os.path.join("scratch", "ocr_txt", f"{parent}_{fname}.txt")
 
     if (len(result) < 3 or not has_critical) and not os.path.exists(cache_path):
-        logging.info(f"[reader_ledger] Text extraction insufficient. Running EasyOCR fallback for {pdf_path}...")
+        logging.info(f"[reader_ledger] Text extraction insufficient. Running OCR pipeline for {pdf_path}...")
         try:
-            import fitz
-            import easyocr
-            import numpy as np
-            import io
-            from PIL import Image
-            doc = fitz.open(pdf_path)
-            reader = easyocr.Reader(['en'], gpu=False, verbose=False)
-            ocr_lines = []
-            for page in doc:
-                pix = page.get_pixmap(dpi=150)
-                img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
-                res = reader.readtext(np.array(img), detail=0)
-                ocr_lines.extend(res)
-            ocr_text = "\n".join(ocr_lines)
+            from document_processing.ocr.engine import extract_full_text
+            ocr_text = extract_full_text(pdf_path, ocr_dpi=200)
             
             ocr_result = extract_fields_from_text(ocr_text, claim_details)
             if len(ocr_result) > len(result):

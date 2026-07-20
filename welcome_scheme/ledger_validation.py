@@ -329,106 +329,144 @@ def validate_ledger(pdf_path, claim_details, data_store):
     if data_store:
         data_store.update_doc_data("ledger", extracted)
 
-    issues = []
+    # ── Rule Engine validation ─────────────────────────────────────────────────
+    from document_processing.rule_engine import RuleEngine, ValidationRule, make_fuzzy_name_rule, make_presence_rule
+    from document_processing.validation_result import issues_from_rule_results, summary_status, ValidationStatus
 
-    # 1. Document title check
-    title = extracted.get("document_type", {}).get("text", "")
-    if not any(k in title.upper() for k in ("LEDGER", "STATEMENT", "ACCOUNT", "STMT")):
-        issues.append(f"Document heading '{title}' is not classified as a Ledger or Statement")
+    def _conf(key):
+        """Return OCR confidence for a field, defaulting to 1.0 (certain)."""
+        return float(extracted.get(key, {}).get("confidence", 1.0))
 
-    # 2. Customer Name check
-    doc_cust_name = extracted.get("customer_name", {}).get("text", "")
-    portal_cust_name = claim_details.get("Customer Name", "")
-    if not doc_cust_name:
-        issues.append("Customer Name not found in ledger")
-    elif not is_name_in_text(doc_cust_name, portal_cust_name):
-        issues.append(f"Customer Name mismatch. Document: '{doc_cust_name}', Portal: '{portal_cust_name}'")
+    title      = extracted.get("document_type", {}).get("text", "")
+    doc_cust   = extracted.get("customer_name", {}).get("text", "")
+    portal_cust = claim_details.get("Customer Name", "")
 
-    # 3. Dealership Name check on the Stamp/Header
     stamp_dealer_name = extracted.get("dealer_stamp", {}).get("stamp_dealer_name", "")
     if not stamp_dealer_name or stamp_dealer_name.upper() in ("MISSING", "N/A", "NONE"):
         stamp_dealer_name = extracted.get("dealership_name", {}).get("text", "")
-    
-    portal_dealer_name = claim_details.get("Dealer Name", "")
-    if not stamp_dealer_name:
-        issues.append("Dealership Name could not be found on stamp or header")
-    else:
-        # Clean names to remove punctuation (handles S.N. vs S. N. or SN)
-        def clean_d_name(name):
-            s = re.sub(r"[^a-zA-Z0-9]", " ", str(name).lower())
-            return re.sub(r"\s+", " ", s).strip()
-            
-        cleaned_doc = clean_d_name(stamp_dealer_name)
-        cleaned_portal = clean_d_name(portal_dealer_name)
-        if cleaned_doc != cleaned_portal:
-            from rapidfuzz import fuzz
-            score = fuzz.token_sort_ratio(cleaned_doc, cleaned_portal)
-            if score < 70:
-                issues.append(f"Dealership Name on stamp/header mismatch. Document: '{stamp_dealer_name}', Portal: '{portal_dealer_name}'")
+    portal_dealer = claim_details.get("Dealer Name", "")
 
-    # 4. Welcome Bonus Row credit amount check
-    wb_row_text = extracted.get("welcome_bonus_row", {}).get("text", "")
-    wb_row_amount_str = extracted.get("welcome_bonus_row", {}).get("amount", "")
-    
-    if not wb_row_text or not is_present_robust(wb_row_text):
-        issues.append("Welcome Bonus row entry not found in ledger")
-    else:
-        # Check if "WELCOME" or "BONUS" or "LOYALTY" is in the row description text
-        if not any(k in wb_row_text.upper() for k in ("WELCOME", "BONUS", "LOYALTY")):
-            issues.append(f"Welcome Bonus is not mentioned in the transaction row: '{wb_row_text}'")
-            
-        # Compare the amount written in that row with the portal total amount
-        portal_amount = claim_details.get("Total Amount") or claim_details.get("OEM Share Amount") or claim_details.get("dashboard_total_amount")
+    wb_row_text   = extracted.get("welcome_bonus_row", {}).get("text", "")
+    wb_row_amount = extracted.get("welcome_bonus_row", {}).get("amount", "")
+    portal_amount_raw = claim_details.get("Total Amount") or claim_details.get("OEM Share Amount") or claim_details.get("dashboard_total_amount")
+    try:
+        portal_amount_float = float(re.sub(r"[^0-9\.]", "", str(portal_amount_raw))) if portal_amount_raw else None
+    except Exception:
+        portal_amount_float = None
+
+    dealer_stamp_text  = extracted.get("dealer_stamp", {}).get("text", "")
+    auth_sig_text      = extracted.get("authorized_signature", {}).get("text", "")
+    stamp_conf         = float(extracted.get("dealer_stamp", {}).get("confidence", 1.0))
+
+    ctx = {
+        "title":             title,
+        "doc_cust":          doc_cust,
+        "portal_cust":       portal_cust,
+        "cust_conf":         _conf("customer_name"),
+        "stamp_dealer_name": stamp_dealer_name,
+        "portal_dealer":     portal_dealer,
+        "dealer_conf":       _conf("dealership_name"),
+        "wb_row_text":       wb_row_text,
+        "wb_row_amount":     wb_row_amount,
+        "portal_amount":     portal_amount_float,
+        "dealer_stamp_text": dealer_stamp_text,
+        "auth_sig_text":     auth_sig_text,
+        "stamp_confidence":  stamp_conf,
+    }
+
+    def _amount_ok(ctx):
+        doc_amt = extract_amount_robust(ctx.get("wb_row_amount", ""))
+        p_amt   = ctx.get("portal_amount")
+        if doc_amt is None or p_amt is None or p_amt == 0:
+            return False
+        for target in (p_amt, p_amt / 1.18, p_amt * 1.18):
+            if abs(doc_amt - target) <= 200.0 or (abs(doc_amt - target) / target) <= 0.05:
+                return True
+        return False
+
+    def _amount_unknown(ctx):
+        return extract_amount_robust(ctx.get("wb_row_amount", "")) is None
+
+    def _dealer_name_ok(ctx):
+        doc = re.sub(r"[^a-zA-Z0-9]", " ", str(ctx.get("stamp_dealer_name", "")).lower()).strip()
+        portal = re.sub(r"[^a-zA-Z0-9]", " ", str(ctx.get("portal_dealer", "")).lower()).strip()
+        if not doc or not portal:
+            return False
         try:
-            doc_amount = extract_amount_robust(wb_row_amount_str)
-            if doc_amount is None:
-                raise ValueError()
-            if portal_amount:
-                p_amount = float(re.sub(r"[^0-9\.]", "", str(portal_amount)))
-                
-                # Check match using flat tolerance (200.0) or percentage tolerance (5%) to handle digit OCR confusion (e.g. 2->3 or 1->4)
-                def check_match_with_tol(d_amt, p_amt):
-                    for target in (p_amt, p_amt / 1.18, p_amt * 1.18):
-                        if abs(d_amt - target) <= 200.0 or (abs(d_amt - target) / target) <= 0.05:
-                            return True
-                    return False
-                    
-                if not check_match_with_tol(doc_amount, p_amount):
-                    issues.append(f"Welcome Bonus Row credit amount mismatch. Row: {doc_amount} (text: '{wb_row_amount_str}'), Portal/Scheme: {p_amount}")
-        except Exception:
-            issues.append(f"Could not validate Welcome Bonus Row credit amount: '{wb_row_amount_str}'")
+            from rapidfuzz import fuzz
+            return fuzz.token_sort_ratio(doc, portal) >= 70
+        except ImportError:
+            return doc == portal
 
-    # 5. Visual Stamp / Signature check
-    dealer_stamp = extracted.get("dealer_stamp", {}).get("text", "")
-    if not is_present_robust(dealer_stamp, ["STAMP", "SEAL"]):
-        issues.append("Dealership stamp/seal is missing on ledger")
-    else:
-        portal_dealer_name = claim_details.get("Dealer Name", "")
-        if portal_dealer_name:
-            stamp_upper = dealer_stamp.upper().replace(" ", "").replace("&", "").replace("-", "")
-            skip_words = {"LTD", "PVT", "MOTORS", "CO", "AND", "THE", "DEALERSHIP", "STAMP", "SEAL", "AUTOMOBILE", "AUTOMOBILES", "ENTERPRISES", "DEALER", "LIMIT", "LIMITED"}
-            name_words = [w.strip() for w in portal_dealer_name.upper().split() if w.strip() not in skip_words and len(w.strip()) > 2]
-            belongs = False
-            if name_words:
-                for word in name_words:
-                    if word in stamp_upper:
-                        belongs = True
-                        break
-            else:
-                dealer_clean = portal_dealer_name.upper().replace(" ", "").replace("&", "").replace("-", "")
-                belongs = dealer_clean in stamp_upper or stamp_upper in dealer_clean
-                
-            if not belongs:
-                issues.append(f"Ledger stamp/seal does not belong to dealer '{portal_dealer_name}' (Stamp text: '{dealer_stamp}')")
+    rules = [
+        ValidationRule(
+            name="ledger_heading",
+            description="Document is classified as Ledger / Statement of Account",
+            check=lambda c: any(k in str(c.get("title","")).upper() for k in ("LEDGER","STATEMENT","ACCOUNT","STMT")),
+            fail_message=f"Document heading '{title}' is not classified as a Ledger or Statement",
+            severity="ERROR",
+        ),
+        ValidationRule(
+            name="customer_name",
+            description="Customer name in ledger matches portal",
+            check=lambda c: bool(c.get("doc_cust")) and is_name_in_text(c.get("doc_cust",""), c.get("portal_cust","")),
+            fail_message=f"Customer Name mismatch. Document: '{doc_cust}', Portal: '{portal_cust}'",
+            severity="ERROR",
+            unknown_check=lambda c: c.get("cust_conf", 1.0) < 0.60,
+            unknown_message=f"Customer Name low OCR confidence ({_conf('customer_name'):.2f}) — manual review needed",
+        ),
+        ValidationRule(
+            name="dealership_name",
+            description="Dealership name on stamp/header matches portal",
+            check=_dealer_name_ok,
+            fail_message=f"Dealership Name mismatch. Document: '{stamp_dealer_name}', Portal: '{portal_dealer}'",
+            severity="ERROR",
+            unknown_check=lambda c: not c.get("stamp_dealer_name"),
+            unknown_message="Dealership name not found on stamp or header — manual review needed",
+        ),
+        ValidationRule(
+            name="welcome_bonus_row_present",
+            description="Welcome Bonus row is present in ledger",
+            check=lambda c: bool(c.get("wb_row_text")) and is_present_robust(c.get("wb_row_text","")) and any(k in str(c.get("wb_row_text","")).upper() for k in ("WELCOME","BONUS","LOYALTY")),
+            fail_message="Welcome Bonus row entry not found in ledger",
+            severity="ERROR",
+        ),
+        ValidationRule(
+            name="welcome_bonus_amount",
+            description="Welcome Bonus amount matches portal scheme amount",
+            check=_amount_ok,
+            fail_message=f"Welcome Bonus Row amount mismatch. Row: '{wb_row_amount}', Portal: {portal_amount_float}",
+            severity="ERROR",
+            unknown_check=_amount_unknown,
+            unknown_message=f"Welcome Bonus amount not found in row '{wb_row_amount}' — manual review needed",
+        ),
+        ValidationRule(
+            name="dealer_stamp",
+            description="Dealership stamp/seal is present on ledger",
+            check=lambda c: is_present_robust(c.get("dealer_stamp_text",""), ["STAMP","SEAL"]),
+            fail_message="Dealership stamp/seal is missing on ledger",
+            severity="ERROR",
+            unknown_check=lambda c: 0.20 <= c.get("stamp_confidence", 1.0) < 0.50,
+            unknown_message="Stamp detected but confidence is low — manual review needed",
+        ),
+        ValidationRule(
+            name="authorized_signature",
+            description="Authorized signature is present on ledger",
+            check=lambda c: is_present_robust(c.get("auth_sig_text",""), ["SIGNATURE","SIGNED"]),
+            fail_message="Dealership authorized signature is missing from ledger stamp/seal",
+            severity="ERROR",
+        ),
+    ]
 
-    auth_sig = extracted.get("authorized_signature", {}).get("text", "")
-    if not is_present_robust(auth_sig, ["SIGNATURE", "SIGNED"]):
-        issues.append("Dealership authorized signature is missing from ledger stamp/seal")
+    engine = RuleEngine(rules)
+    rule_results, issues = engine.run_and_get_issues(ctx)
+    overall = summary_status(rule_results)
 
     if issues:
         return False, "; ".join(issues)
 
     return True, "Ledger Verified Successfully"
+
 
 def process_east_welcome_bonus_ledger(pdf_path):
     """

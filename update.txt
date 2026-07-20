@@ -1,0 +1,57 @@
+Looking at these three pages, your stack is close but has real gaps for *this specific type* of document. Here's the breakdown:
+
+**What PyMuPDF + EasyOCR + Pillow handles fine:**
+- These are scanned/photographed pages, not born-digital PDFs (you can see paper texture, slight skew, and a staple mark on images 1/2). So `fitz` will find zero extractable text on the ledger pages — you'll be in OCR fallback 100% of the time here, not "fallback" in the occasional sense. That's expected and your EasyOCR path handles it.
+- Printed tabular text (dates, particulars, amounts) — EasyOCR should read these reasonably well since the font is clean and high-contrast.
+
+**Where this stack will struggle or fail outright:**
+
+1. **Table structure reconstruction** — EasyOCR gives you text + bounding boxes, not rows/columns. Your ledger has 6 columns (Date, Particulars, Vch Type, Vch No, Debit, Credit) and the invoice has a dense multi-column tax table (Taxable Value, CGST/SGST rate+amt, Comp Cess). Without the Y-axis row-pairing + X-axis column-binning logic you and I discussed earlier, you'll get a bag of unordered text fragments, not a structured table. This needs custom spatial-clustering code on top of EasyOCR's output — it's not something the three libraries give you for free.
+
+2. **QR codes** — Image 3 (the tax invoice) has two QR codes (top-right "Electronic Reference Number" area and bottom-left). EasyOCR won't decode these — it's a text OCR engine, not a barcode reader. You'll need `pyzbar` or OpenCV's `QRCodeDetector` added to the stack if that data matters.
+
+3. **Watermark/stamp interference** — Image 1/2 has the circular company stamp overlapping the closing balance row area, and image 3 has a large ghosted Mahindra logo watermark behind the entire invoice table. This bleeds into OCR confidence and can cause misreads or dropped characters on overlapping text. You'll likely need a preprocessing step (contrast/threshold adjustment via OpenCV, not just Pillow) before feeding to EasyOCR.
+
+4. **Handwritten signature** — image 3 has a handwritten signature ("R. Basumatary"). EasyOCR is weak on cursive handwriting — this is exactly why we landed on TrOCR for the handwritten fields in your earlier invoice-extraction pipeline. If you need to verify signature *presence* only, EasyOCR/contour-detection is fine; if you need to transcribe it, you need TrOCR.
+
+5. **Field-label fuzzy matching** — OCR will occasionally misread labels (e.g. "CGST/SAC" vs "CGST/HSN", "Vch No." vs "Vch No"). Without RapidFuzz doing fuzzy matching against a canonical field list, small OCR errors will break any downstream field-mapping logic.
+
+**Bottom line:** your 3-library stack is a good *foundation* but incomplete for production use on these documents. I'd add:
+- `OpenCV` — deskew/preprocess before OCR, plus QR decoding
+- `RapidFuzz` — fuzzy-match OCR'd labels to canonical field names
+- Custom spatial clustering — turn EasyOCR's box outputs into actual table rows/columns (the Y-axis pairing strategy from before)
+- `TrOCR` — only if you need to transcribe the handwritten signature, not just detect it
+
+Want me to sketch the row/column reconstruction logic for the ledger table specifically? That's the piece most likely to trip you up given how tight the columns are on image 1/2.
+
+
+
+Add OpenCV for preprocessing + QR
+Install opencv-python. Before OCR, deskew each page and boost contrast so the watermark/stamp doesn't bleed into text. Use cv2.QRCodeDetector (or pyzbar) to decode the QR codes separately from the text pipeline.
+
+Keep PyMuPDF as a cheap first check
+Still run fitz.open() first. If it returns extractable text (rare for these scanned pages, but worth checking per-batch in case some documents are digital), skip OCR entirely for that page and save time.
+
+Run EasyOCR on the preprocessed image
+Feed the cleaned image (not the raw upload) to EasyOCR. Keep detail=1 so you get bounding boxes back, not just flat text — you need coordinates for the next step
+Reconstruct table rows/columns from OCR boxes
+Write the spatial-clustering logic: group text boxes into rows by Y-coordinate proximity (with a tolerance band), then assign each row's boxes to columns by X-coordinate ranges you calibrate from a few sample documents (Date / Particulars / Vch Type / Vch No / Debit / Credit for the ledger; similar for the invoice's tax table).
+
+Fuzzy-match field labels with RapidFuzz
+Match OCR'd header/label text against your canonical field list (e.g. 'Vch No.', 'CGST/SGST', 'Taxable Value') so small OCR misreads don't break your mapping logic downstream.
+
+Add TrOCR only if you need the signature transcribed
+If you just need to confirm a signature exists, contour/blob detection is enough. If you need to actually read handwritten text (like the signed name), route that specific crop through TrOCR instead of EasyOCR.
+
+Use Pillow for cropping evidence images
+Once you know row/column boundaries from step 4, use Pillow to crop and save the relevant regions (closing balance, stamp, signature, QR area) as evidence screenshots — this part of your original plan stays as-is.
+
+That's the sequence I'd follow, in order — each step builds on the last, so don't skip 1 and 4 even though they're less exciting than wiring up EasyOCR itself.
+
+A couple of practical notes on top of that:
+
+- **Do steps 1–2 first on a small batch (5-10 pages)** before writing any table-reconstruction code. Preprocessing quality directly determines whether step 4's column-binning even works — garbage OCR boxes make spatial clustering unreliable no matter how good your logic is.
+- **Calibrate column X-ranges separately for the ledger vs the tax invoice** — they're different layouts (6 columns vs the dense GST table), so don't try to write one generic column-splitter for both.
+- **The QR decode (step 1) is independent** — you can build and test that in isolation anytime, it doesn't block the rest of the pipeline.
+
+Want me to write the actual row/column clustering function (step 4) for the ledger table specifically? I can use the Y-coordinates visible in image 1/2 as a concrete test case to get the tolerance bands right.

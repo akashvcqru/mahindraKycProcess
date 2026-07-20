@@ -118,28 +118,41 @@ class ManualKycPanel(tk.Frame):
         # Mousewheel zoom & scroll bindings
         self.pdf_canvas.bind("<MouseWheel>", self.on_pdf_mousewheel)
 
-        # Visual Confirmation Viewer
-        self.visual_frame = tk.LabelFrame(self.workspace_pane, text="Visual Confirmation Crops", bg=CARD_BG_COLOR, fg="#60A5FA", font=("Segoe UI", 10, "bold"), bd=1)
-        self.workspace_pane.add(self.visual_frame, minsize=350)
+        # Visual Confirmation Viewer has been removed to maximize space for Portal Details.
 
-        self.visual_canvas = tk.Canvas(self.visual_frame, bg="#2D2D2D", highlightthickness=0)
-        vis_vscroll = ttk.Scrollbar(self.visual_frame, orient="vertical", command=self.visual_canvas.yview)
-        self.visual_canvas.configure(yscrollcommand=vis_vscroll.set)
-        
-        vis_vscroll.pack(side="right", fill="y")
-        self.visual_canvas.pack(side="left", fill="both", expand=True, padx=2, pady=2)
+        # Portal Details Viewer
+        self.portal_frame = tk.LabelFrame(self.workspace_pane, text="Portal Details", bg=CARD_BG_COLOR, fg="#60A5FA", font=("Segoe UI", 10, "bold"), bd=1)
+        self.workspace_pane.add(self.portal_frame, minsize=300)
 
-        self.visual_inner = tk.Frame(self.visual_canvas, bg="#2D2D2D")
-        self.visual_canvas.create_window((0, 0), window=self.visual_inner, anchor="nw")
+        self.portal_canvas = tk.Canvas(self.portal_frame, bg="#2D2D2D", highlightthickness=0)
+        port_vscroll = ttk.Scrollbar(self.portal_frame, orient="vertical", command=self.portal_canvas.yview)
+        self.portal_canvas.configure(yscrollcommand=port_vscroll.set)
         
-        # Configure mousewheel and scroll bindings
-        self.visual_inner.bind("<Configure>", lambda e: self.visual_canvas.configure(scrollregion=self.visual_canvas.bbox("all")))
-        self.visual_canvas.bind_all("<MouseWheel>", self.on_mousewheel)
+        port_vscroll.pack(side="right", fill="y")
+        self.portal_canvas.pack(side="left", fill="both", expand=True, padx=2, pady=2)
+
+        self.portal_inner = tk.Frame(self.portal_canvas, bg="#2D2D2D")
+        self.portal_canvas.create_window((0, 0), window=self.portal_inner, anchor="nw")
+        
+        self.portal_inner.bind("<Configure>", lambda e: self.portal_canvas.configure(scrollregion=self.portal_canvas.bbox("all")))
+
+        self.portal_canvas.bind_all("<MouseWheel>", self.on_mousewheel)
 
     def on_mousewheel(self, event):
-        # Only scroll if mouse is over manual kyc visual panel
-        if self.winfo_ismapped() and self.visual_canvas.winfo_exists():
-            self.visual_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        # Only scroll if manual kyc panel is mapped/visible
+        if self.winfo_ismapped():
+            try:
+                widget = self.winfo_containing(event.x_root, event.y_root)
+                if not widget:
+                    return
+                curr = widget
+                while curr:
+                    if hasattr(self, "portal_canvas") and curr == self.portal_canvas:
+                        self.portal_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                        break
+                    curr = curr.master
+            except Exception:
+                pass
 
     def start_pan(self, event):
         self.pdf_canvas.scan_mark(event.x, event.y)
@@ -198,6 +211,10 @@ class ManualKycPanel(tk.Frame):
         docs = claim.get("documents", [])
         names = [d.get("file_name") for d in docs]
         self.doc_selector.configure(values=names)
+        
+        active_doc = docs[0] if docs else None
+        self.load_portal_details(claim, active_doc)
+        
         if names:
             self.doc_selector.set(names[0])
             self.load_pdf(docs[0])
@@ -213,6 +230,7 @@ class ManualKycPanel(tk.Frame):
         doc = next((d for d in self.selected_claim.get("documents", []) if d.get("file_name") == name), None)
         if doc:
             self.load_pdf(doc)
+            self.load_portal_details(self.selected_claim, doc)
 
     def clear_queue(self):
         self.processed_claims = []
@@ -225,6 +243,7 @@ class ManualKycPanel(tk.Frame):
         self.pdf_canvas.delete("all")
         self.page_label.config(text="Page 0 of 0")
         self.clear_visuals()
+        self.clear_portal_details()
 
     def load_pdf(self, doc_dict):
         path = doc_dict.get("file_path")
@@ -280,8 +299,7 @@ class ManualKycPanel(tk.Frame):
             self.pdf_canvas.delete("all")
             self.page_label.config(text="Not Found")
             
-        # Async load the visual confirmations for this selected document dict
-        self.load_visual_confirmations(doc_dict)
+        # Visual confirmations loading has been removed.
 
     def display_downloaded_image(self):
         if not hasattr(self, "current_image_original") or not self.current_image_original:
@@ -348,203 +366,7 @@ class ManualKycPanel(tk.Frame):
                 self.display_downloaded_image()
 
     def clear_visuals(self):
-        for widget in self.visual_inner.winfo_children():
-            widget.destroy()
         self.visual_images.clear()
-
-    # --- Live on-the-fly extraction of Visual Crops, exactly mirroring AppUI ---
-    def load_visual_confirmations(self, doc_dict):
-        self.clear_visuals()
-        
-        extracted_data = doc_dict.get("extracted_data", {})
-        pdf_path = doc_dict.get("file_path", doc_dict.get("path", ""))
-        doc_type = doc_dict.get("file_type", doc_dict.get("doc_type", "")).upper()
-        
-        is_ledger = False
-        fname_lower = os.path.basename(pdf_path).lower() if pdf_path else ""
-        dict_fname_lower = doc_dict.get("file_name", "").lower()
-        _ledger_prefixes = ("l-", "les", "ldgr", "lgr", "ldr", "ldg")
-        if (doc_type == "LEDGER" or 
-            "ledger" in fname_lower or 
-            "ledger" in dict_fname_lower or 
-            any(fname_lower.startswith(p) for p in _ledger_prefixes) or
-            any(dict_fname_lower.startswith(p) for p in _ledger_prefixes)):
-            is_ledger = True
-
-        is_invoice = False
-        _invoice_prefixes = ("inv",)
-        _invoice_keywords = ("invoice",)
-        if (doc_type == "INVOICE" or
-            any(fname_lower.startswith(p) for p in _invoice_prefixes) or
-            any(dict_fname_lower.startswith(p) for p in _invoice_prefixes) or
-            any(k in fname_lower for k in _invoice_keywords) or
-            any(k in dict_fname_lower for k in _invoice_keywords)):
-            is_invoice = True
-
-        is_cod = False
-        _cod_prefixes = ("cod",)
-        _cod_keywords = ("certificate of deposit", "cod")
-        if (doc_type == "COD" or
-            any(fname_lower.startswith(p) for p in _cod_prefixes) or
-            any(dict_fname_lower.startswith(p) for p in _cod_prefixes) or
-            any(k in fname_lower for k in _cod_keywords) or
-            any(k in dict_fname_lower for k in _cod_keywords)):
-            is_cod = True
-
-        is_oem = False
-        _oem_prefixes = ("oem",)
-        _oem_keywords = ("scrappage certificate", "oem")
-        if (doc_type == "OEM" or
-            any(fname_lower.startswith(p) for p in _oem_prefixes) or
-            any(dict_fname_lower.startswith(p) for p in _oem_prefixes) or
-            any(k in fname_lower for k in _oem_keywords) or
-            any(k in dict_fname_lower for k in _oem_keywords)):
-            is_oem = True
-
-        is_disclaimer = False
-        _dis_prefixes = ("dis", "dsc", "cd-")
-        _dis_keywords = ("disclaimer",)
-        if (doc_type == "DISCLAIMER" or
-            any(fname_lower.startswith(p) for p in _dis_prefixes) or
-            any(dict_fname_lower.startswith(p) for p in _dis_prefixes) or
-            any(k in fname_lower for k in _dis_keywords) or
-            any(k in dict_fname_lower for k in _dis_keywords)):
-            is_disclaimer = True
-
-        # Render loading status
-        loading_lbl = tk.Label(
-            self.visual_inner,
-            text="⏳ Extracting verification crops...\nPlease wait...",
-            fg=TEXT_LIGHT_COLOR, bg="#2D2D2D",
-            font=("Segoe UI", 10), justify=tk.CENTER
-        )
-        loading_lbl.pack(pady=40)
-
-        # Worker tasks
-        def task():
-            try:
-                visual_data = {}
-                scheme_type = self.app_ref.scheme_type_var.get()
-                
-                if is_ledger and os.path.exists(pdf_path):
-                    if scheme_type == "Scrappage Bonus Scheme":
-                        import scrappage_scheme.ledger_validation as scrappage_ledger
-                        results = scrappage_ledger.process_scrappage_ledger_visual(pdf_path)
-                    else:
-                        import welcome_scheme.ledger_validation as welcome_ledger
-                        results = welcome_ledger.process_east_welcome_bonus_ledger(pdf_path)
-                elif is_invoice and os.path.exists(pdf_path):
-                    if scheme_type == "Scrappage Bonus Scheme":
-                        import scrappage_scheme.invoice_validation as inv_mod
-                        results = inv_mod.process_invoice_visual(pdf_path)
-                    else:
-                        import welcome_scheme.invoice_validation as welcome_inv
-                        results = welcome_inv.process_invoice_visual(pdf_path)
-                elif is_cod and os.path.exists(pdf_path):
-                    import scrappage_scheme.cod_validation as cod_mod
-                    results = cod_mod.process_cod_visual(pdf_path)
-                elif is_oem and os.path.exists(pdf_path):
-                    import scrappage_scheme.oem_document_validation as oem_mod
-                    c_details = self.selected_claim.get("claim_details") or {}
-                    v_details = self.selected_claim.get("old_vehicle_details") or {}
-                    results = oem_mod.process_oem_visual(
-                        pdf_path,
-                        old_chassis=v_details.get("Chassis No", "").strip(),
-                        old_reg=v_details.get("Reg. No", v_details.get("Reg No", "")).strip() or c_details.get("Reg. No", "").strip(),
-                        new_chassis=c_details.get("Chassis No", "").strip()
-                    )
-                elif is_disclaimer and os.path.exists(pdf_path):
-                    if scheme_type == "Scrappage Bonus Scheme":
-                        import scrappage_scheme.disclaimer_validation as dis_mod
-                        results = dis_mod.process_disclaimer_visual(pdf_path)
-                    else:
-                        import welcome_scheme.disclaimer_validation as welcome_disclaimer
-                        results = welcome_disclaimer.process_disclaimer_visual(pdf_path)
-                else:
-                    results = []
-
-                for item in results:
-                    f = item.get("field", "")
-                    if f:
-                        visual_data[f] = {
-                            "value": item.get("value", ""),
-                            "confidence": 95,
-                            "image_base64": item.get("crop_b64", item.get("crop", ""))
-                        }
-                        
-                # Fallback to already parsed extractions
-                if not visual_data:
-                    visual_data = extracted_data.get("visual_extractions", {})
-                
-                self.after(0, self._render_visual_cards, visual_data, loading_lbl)
-            except Exception as e:
-                logging.error(f"[Manual KYC Panel] Visual extraction thread failed: {e}")
-                fallback_data = extracted_data.get("visual_extractions", {})
-                self.after(0, self._render_visual_cards, fallback_data, loading_lbl)
-
-        threading.Thread(target=task, daemon=True).start()
-
-    def _render_visual_cards(self, visual_data, loading_lbl):
-        if loading_lbl:
-            loading_lbl.destroy()
-
-        if not visual_data:
-            tk.Label(self.visual_inner, text="👁️ No visual crop data available.", fg=TEXT_LIGHT_COLOR, bg="#2D2D2D", font=("Segoe UI", 10)).pack(pady=40)
-            return
-
-        emoji_map = {
-            "seal_stamp_dealer_name": "🏢 Dealer Stamp",
-            "customer_signature": "✍️ Customer Signature",
-            "dealer_signature": "✍️ Dealer Signature",
-            "invoice_number": "📄 Invoice Number",
-            "chassis_number": "🚗 Chassis Number",
-            "invoice_date": "📅 Invoice Date",
-            "customer_name": "👤 Customer Name",
-            "registration_number": "🚙 Registration",
-            "welcome_bonus_amount": "🎁 Welcome Bonus",
-            "dealership_name": "🏪 Dealership Name",
-            "document_type": "📑 Document Type",
-        }
-
-        for field_name, extraction in visual_data.items():
-            card = tk.Frame(self.visual_inner, bg=CARD_BG_COLOR, bd=1, relief="solid")
-            card.pack(fill="x", padx=10, pady=5)
-
-            # Header
-            header = tk.Frame(card, bg="#2A2A2A")
-            header.pack(fill="x")
-            
-            title = emoji_map.get(field_name, field_name.replace("_", " ").title())
-            tk.Label(header, text=title, font=("Segoe UI", 9, "bold"), fg=TEXT_COLOR, bg="#2A2A2A").pack(side="left", padx=10, pady=6)
-
-            confidence = extraction.get("confidence", 0)
-            badge_color = SUCCESS_COLOR if confidence >= 80 else (WARNING_COLOR if confidence >= 60 else ERROR_COLOR)
-            tk.Label(header, text=f"{confidence}%", font=("Segoe UI", 9, "bold"), fg=badge_color, bg="#2A2A2A").pack(side="right", padx=10, pady=6)
-
-            # Body
-            body = tk.Frame(card, bg=CARD_BG_COLOR)
-            body.pack(fill="both", expand=True, padx=10, pady=10)
-
-            img_b64 = extraction.get("image_base64")
-            if img_b64:
-                try:
-                    img_bytes = base64.b64decode(img_b64)
-                    img = Image.open(io.BytesIO(img_bytes))
-                    
-                    # Resize thumbnail
-                    img.thumbnail((320, 160), Image.Resampling.LANCZOS)
-                    photo = ImageTk.PhotoImage(img)
-                    self.visual_images.append(photo)
-
-                    tk.Label(body, image=photo, bg=CARD_BG_COLOR).pack(pady=(0, 8))
-                except Exception as e:
-                    tk.Label(body, text="⚠️ Image decode error", fg=ERROR_COLOR, bg=CARD_BG_COLOR, font=("Segoe UI", 8)).pack()
-            else:
-                tk.Label(body, text="⚠️ No image data", fg=WARNING_COLOR, bg=CARD_BG_COLOR).pack()
-
-            # Extracted Value Label
-            val_txt = extraction.get("value", "")
-            tk.Label(body, text=f"Extracted: {val_txt}", font=("Segoe UI", 9, "bold"), fg=TEXT_COLOR, bg=CARD_BG_COLOR).pack(anchor="w")
 
 
 
@@ -558,6 +380,7 @@ class ManualKycPanel(tk.Frame):
         
         # Clear viewers
         self.clear_visuals()
+        self.clear_portal_details()
         self.pdf_canvas.delete("all")
         self.page_label.config(text="Page 0 of 0")
         self.selected_claim = None
@@ -567,3 +390,104 @@ class ManualKycPanel(tk.Frame):
         children = self.history_tree.get_children()
         if children:
             self.history_tree.selection_set(children[0])
+
+    def clear_portal_details(self):
+        for widget in self.portal_inner.winfo_children():
+            widget.destroy()
+
+    def load_portal_details(self, claim, active_doc=None):
+        self.clear_portal_details()
+        
+        claim_details = claim.get("claim_details") or {}
+        old_vehicle_details = claim.get("old_vehicle_details") or {}
+        
+        # ── Verification Issues / Mismatches Section ──
+        row_issues = claim.get("issues") or []
+        if row_issues:
+            issues_section = tk.LabelFrame(
+                self.portal_inner, text="Hold Reasons / Mismatches", bg=CARD_BG_COLOR, fg=ERROR_COLOR, font=("Segoe UI", 10, "bold"), bd=1
+            )
+            issues_section.pack(fill="x", padx=10, pady=5)
+            
+            for issue in row_issues:
+                row_f = tk.Frame(issues_section, bg=CARD_BG_COLOR)
+                row_f.pack(fill="x", padx=8, pady=3)
+                
+                # Warning label
+                warn_lbl = tk.Label(row_f, text="⚠", font=("Segoe UI", 10, "bold"), fg=ERROR_COLOR, bg=CARD_BG_COLOR, anchor="nw")
+                warn_lbl.pack(side="left", padx=(2, 5))
+                
+                issue_lbl = tk.Label(row_f, text=str(issue), font=("Segoe UI", 9, "bold"), fg="#F87171", bg=CARD_BG_COLOR, anchor="w", wraplength=210, justify="left")
+                issue_lbl.pack(side="left", fill="x", expand=True)
+        
+        # ── Active Document Verification Rules Section ──
+        if active_doc:
+            validations = active_doc.get("validations") or {}
+            if validations:
+                doc_type = active_doc.get("file_type") or "UNKNOWN"
+                doc_section = tk.LabelFrame(
+                    self.portal_inner, text=f"Doc Verification: {doc_type}", bg=CARD_BG_COLOR, fg="#60A5FA", font=("Segoe UI", 10, "bold"), bd=1
+                )
+                doc_section.pack(fill="x", padx=10, pady=5)
+                
+                for rule_name, rule_res in validations.items():
+                    row_f = tk.Frame(doc_section, bg=CARD_BG_COLOR)
+                    row_f.pack(fill="x", padx=8, pady=2)
+                    
+                    res_str = str(rule_res)
+                    res_upper = res_str.upper()
+                    if any(k in res_upper for k in ("MATCH", "VALID", "OK", "TRUE", "PRESENT")):
+                        fg_color = SUCCESS_COLOR
+                    elif any(k in res_upper for k in ("MISMATCH", "INVALID", "FAILED", "FALSE", "MISSING")):
+                        fg_color = ERROR_COLOR
+                    else:
+                        fg_color = TEXT_COLOR
+                        
+                    rule_lbl = tk.Label(row_f, text=f"• {rule_name}:", font=("Segoe UI", 9, "bold"), fg=TEXT_LIGHT_COLOR, bg=CARD_BG_COLOR, anchor="w")
+                    rule_lbl.pack(side="left", padx=2)
+                    
+                    val_lbl = tk.Label(row_f, text=res_str, font=("Segoe UI", 9, "bold"), fg=fg_color, bg=CARD_BG_COLOR, anchor="w", wraplength=140, justify="left")
+                    val_lbl.pack(side="left", padx=5, fill="x", expand=True)
+        
+        # ── Claim Details Section ──
+        claim_section = tk.LabelFrame(
+            self.portal_inner, text="Claim Details", bg=CARD_BG_COLOR, fg="#60A5FA", font=("Segoe UI", 10, "bold"), bd=1
+        )
+        claim_section.pack(fill="x", padx=10, pady=5)
+        
+        if claim_details:
+            # We want to display these details beautifully. Let's make a grid or simple key-value layout.
+            for k, v in claim_details.items():
+                if not v or str(v).strip() in ("-", ""):
+                    continue
+                row_f = tk.Frame(claim_section, bg=CARD_BG_COLOR)
+                row_f.pack(fill="x", padx=8, pady=3)
+                
+                k_lbl = tk.Label(row_f, text=f"{k}:", font=("Segoe UI", 9, "bold"), fg=TEXT_LIGHT_COLOR, bg=CARD_BG_COLOR, anchor="w")
+                k_lbl.pack(side="left", padx=2)
+                
+                v_lbl = tk.Label(row_f, text=str(v), font=("Segoe UI", 9), fg=TEXT_COLOR, bg=CARD_BG_COLOR, anchor="w", wraplength=220, justify="left")
+                v_lbl.pack(side="left", padx=5, fill="x", expand=True)
+        else:
+            tk.Label(claim_section, text="No Claim Details Available", fg=TEXT_LIGHT_COLOR, bg=CARD_BG_COLOR, font=("Segoe UI", 9, "italic")).pack(pady=10)
+
+        # ── Old Vehicle Details Section ──
+        old_veh_section = tk.LabelFrame(
+            self.portal_inner, text="Old Vehicle Details", bg=CARD_BG_COLOR, fg="#60A5FA", font=("Segoe UI", 10, "bold"), bd=1
+        )
+        old_veh_section.pack(fill="x", padx=10, pady=5)
+        
+        if old_vehicle_details:
+            for k, v in old_vehicle_details.items():
+                if not v or str(v).strip() in ("-", ""):
+                    continue
+                row_f = tk.Frame(old_veh_section, bg=CARD_BG_COLOR)
+                row_f.pack(fill="x", padx=8, pady=3)
+                
+                k_lbl = tk.Label(row_f, text=f"{k}:", font=("Segoe UI", 9, "bold"), fg=TEXT_LIGHT_COLOR, bg=CARD_BG_COLOR, anchor="w")
+                k_lbl.pack(side="left", padx=2)
+                
+                v_lbl = tk.Label(row_f, text=str(v), font=("Segoe UI", 9), fg=TEXT_COLOR, bg=CARD_BG_COLOR, anchor="w", wraplength=220, justify="left")
+                v_lbl.pack(side="left", padx=5, fill="x", expand=True)
+        else:
+            tk.Label(old_veh_section, text="No Old Vehicle Details Available", fg=TEXT_LIGHT_COLOR, bg=CARD_BG_COLOR, font=("Segoe UI", 9, "italic")).pack(pady=10)
